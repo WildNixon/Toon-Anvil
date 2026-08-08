@@ -55,6 +55,64 @@ raw JSON, and a play guide — every line tagged with where it came from:
 
 ---
 
+## Status: v1.0
+
+Everything below was exercised by hand before release — not "it renders", but
+"it does the thing".
+
+**Working**
+
+| Area | What was verified |
+|---|---|
+| **Homebrew** | Ingests PDF / HTML / Markdown / JSON / text. Balance verdict, auto-balance, play guide, and all four outputs (page, sheet HTML, sheet PDF, JSON). |
+| **Emulator** | Campaigns 1→20, seeded and reproducible. Per-feature ablation with bootstrap confidence intervals. "Plays most like" on measured behaviour. |
+| **Build** | Roster, identity, class / level / multiclass, four ability methods, proficiencies. |
+| **Play** | AC, HP, proficiency, initiative, passive Perception, all 13 conditions, damage / heal, short and long rest, resource pools, attacks, features, inventory. |
+| **Combat** | Encounters, initiative order, adding your character, SRD monsters, or custom combatants. |
+| **Shop** | Generates stock at SRD prices with per-shop variance. |
+| **Roleplay** | Structured beats — promises, secrets, choices, people met. |
+| **Chronicle** | Event log with export to Markdown, printable HTML and raw JSON, plus open-thread tracking. |
+| **DM** | Encounter builder with XP budgeting, bestiary search, rules reference. |
+
+**Not finished — known and deliberate**
+
+These are limitations, not bugs. Nothing here is hidden at runtime; the app
+reports each one where it matters.
+
+1. **No spell selection.** Slots, save DC, attack bonus and always-prepared
+   spells all derive correctly, but there is no screen for choosing your
+   prepared or known spells. The data model supports it; the UI doesn't yet.
+   This is the biggest gap for playing a caster.
+2. **Equipment is managed in Play, not Build.** A new character starts with
+   nothing, so its AC is 10 until you add armour via Play → Inventory or buy
+   some in Shop.
+3. **Ability-score methods advise rather than enforce.** Standard array tells
+   you the numbers but doesn't assign or validate them; point buy shows your
+   spend and turns red over budget rather than blocking it.
+4. **Reactions are never simulated.** The mapper understands them, and they are
+   the second most common mechanic in the test corpus, but the simulator has no
+   trigger model — so a reaction contributes nothing to any measured number.
+   `app/sim/executable.js` lists exactly what does and doesn't execute, and the
+   play guide says so per subclass.
+5. **27% of the reference corpus measures as tied.** The simulator scores every
+   feature action identically, because mapped text carries no structured
+   payload — "push 15 feet" and "frighten the target" are the same event to it.
+   Where this happens, "plays most like" says the subclasses can't be separated
+   instead of inventing a resemblance. This is a ceiling of text-mapped
+   simulation, not something a bug fix removes.
+6. **Hit points can't be rolled in the UI.** Max HP is derived using the 2024
+   fixed-value rule. `hp.override` in the character JSON wins if your table
+   rolls, but there's no field for it yet.
+7. **The bestiary starts empty.** It's search-driven — type a monster name.
+   All 330 are there; none are listed until you ask.
+8. **PDF is the weakest input.** Text extraction loses layout, and a
+   two-column page can mis-group features across subclasses. Every result
+   carries a coverage number so you can see how much survived. Saving the
+   source page as HTML gives markedly better results.
+
+**Not planned:** anything that reads D&D Beyond, and any bulk crawl of a
+homebrew site.
+
 ## Install
 
 Needs Python 3.10+.

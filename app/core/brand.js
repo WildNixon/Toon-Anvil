@@ -13,7 +13,7 @@ export const BRAND = {
   nameParts: ['Toon', 'Anvil'],
   tagline: 'Drop in homebrew. Get back a balanced subclass, a sheet, and a plan.',
   short: 'Toon Anvil',
-  version: '1.0.0',
+  version: '1.0.0',   // see README 'Status: v1.0'
   repo: 'https://github.com/WildNixon/Toon-Anvil',
 };
 
