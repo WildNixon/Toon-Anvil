@@ -76,6 +76,7 @@ Everything below was exercised by hand before release — not "it renders", but
 | **Chronicle** | Event log with export to Markdown, printable HTML and raw JSON, plus open-thread tracking. |
 | **DM** | Seven tools: live encounter runner, party dashboard, treasure, improv generators, XP budgeter, bestiary, rules reference. All offline. |
 | **Sandbox** | Throwaway in-memory session with an export path back out. |
+| **Settings** | Storage mode, connector status, and local ambience. |
 
 **Not finished — known and deliberate**
 
@@ -168,6 +169,30 @@ One honest limitation: the bestiary carries no environment data, so terrain is
 an authored weighting over creature *type*, plus a hand-written exclusion list
 (no crocodiles in the arctic). It lives in `app/data/dm-tables.json` as data
 rather than code, so you can disagree with it and edit it.
+
+## Optional connectors
+
+Toon Anvil works completely offline and nothing below is required. If you want
+them, **Settings** lists every connector, whether it is configured, and the
+exact variable to set.
+
+| | |
+|---|---|
+| **Writing** | Ollama (local, no key), Anthropic, or any OpenAI-compatible endpoint. Used for improvisation — NPC dialogue, room description — always as a draft you edit, never as a rules answer. |
+| **Pictures** | A local Stable Diffusion endpoint. Hosted image APIs are deliberately *not* wired up: they are the easiest way to spend real money by accident, and this tool otherwise costs nothing to run. |
+| **Sound** | Ambient beds synthesised in the browser (no key, no network, nothing to licence), Freesound search with attribution carried through, and ElevenLabs sound-effect generation. |
+
+**The keys are yours.** No key ships with this project, and none can be typed
+into the app — a field on a web page is the easiest place in the world to leak
+a credential from. Put yours in an environment variable, or in `secrets.json`
+in the project folder, which git excludes. **The browser never receives a key:**
+the page asks the local server, and the server makes the call. That removes two
+standard failure modes at once — a key sitting in `localStorage` where any
+injected script can read it, and provider CORS refusing a browser-origin
+request.
+
+The cheapest thing to add is a local model: install Ollama, pull a model, and
+the writing assistant works with no key and no cost.
 
 ## Try things without saving them
 

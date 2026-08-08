@@ -27,7 +27,7 @@ import time
 from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 
 ROOT = Path(__file__).resolve().parent
 APP = ROOT / "app"
@@ -348,6 +348,54 @@ class Handler(SimpleHTTPRequestHandler):
                 )
             return self._send_json({"ok": True, "file": path.name, "version": version})
 
+        # ---- optional connectors ---------------------------------------
+        #
+        # The browser never receives a key: it posts here, and this process
+        # calls the provider using whatever the USER configured in their
+        # environment or secrets.json. No key ships with this project.
+        if parsed.path.startswith("/api/llm") or parsed.path.startswith("/api/image") \
+                or parsed.path.startswith("/api/sfx"):
+            payload = self._read_json()
+            if payload is None:
+                return self._send_json({"error": "bad json body"}, 400)
+            try:
+                sys.path.insert(0, str(ROOT / "tools"))
+                import connectors                          # noqa: PLC0415
+            except Exception as exc:                       # noqa: BLE001
+                return self._send_json(
+                    {"error": f"connectors unavailable: {exc}"}, 503)
+
+            try:
+                if parsed.path == "/api/llm":
+                    out = connectors.generate_text(
+                        prompt=str(payload.get("prompt") or ""),
+                        system=payload.get("system"),
+                        provider=payload.get("provider"),
+                        max_tokens=int(payload.get("maxTokens") or 400),
+                        temperature=float(payload.get("temperature") or 0.9))
+                elif parsed.path == "/api/image":
+                    out = connectors.generate_image(
+                        prompt=str(payload.get("prompt") or ""),
+                        size=str(payload.get("size") or "512x512"),
+                        provider=payload.get("provider"))
+                elif parsed.path == "/api/sfx/search":
+                    out = connectors.search_sounds(
+                        query=str(payload.get("query") or ""),
+                        limit=int(payload.get("limit") or 8))
+                elif parsed.path == "/api/sfx/generate":
+                    out = connectors.generate_sound(
+                        prompt=str(payload.get("prompt") or ""),
+                        seconds=float(payload.get("seconds") or 4))
+                else:
+                    return self._send_json({"error": "unknown endpoint"}, 404)
+            except Exception as exc:                       # noqa: BLE001
+                # Never echo the request back: a provider error body can quote
+                # headers, and headers carry the key.
+                return self._send_json(
+                    {"ok": False, "error": f"{type(exc).__name__}"}, 502)
+
+            return self._send_json(out, 200 if out.get("ok") else 502)
+
         if parsed.path == "/api/appgym":
             payload = self._read_json()
             if payload is None:
@@ -413,7 +461,10 @@ class Handler(SimpleHTTPRequestHandler):
         return self._send_json({"error": "not found"}, 404)
 
     def _api_get(self, parsed) -> None:
-        parts = [p for p in parsed.path.split("/") if p]
+        # Percent-decode each segment. urlparse does not, so a document named
+        # "Monster Manual" arrived as "Monster%20Manual" and was rejected by
+        # safe_name() - every file with a space in its name was unreachable.
+        parts = [unquote(p) for p in parsed.path.split("/") if p]
         query = parse_qs(parsed.query)
 
         if parts == ["api", "health"]:
@@ -526,6 +577,20 @@ class Handler(SimpleHTTPRequestHandler):
                     + [{**f, "origin": "corpus"} for f in corpus_files]
                 ),
             })
+
+        if parts == ["api", "providers"]:
+            # Reports only WHETHER each connector is configured - never a key's
+            # value, so this is safe for the browser to hold and display.
+            try:
+                sys.path.insert(0, str(ROOT / "tools"))
+                import connectors                          # noqa: PLC0415
+                return self._send_json(connectors.describe())
+            except Exception as exc:                       # noqa: BLE001
+                return self._send_json({
+                    "available": False,
+                    "reason": f"connectors unavailable: {type(exc).__name__}",
+                    "providers": {},
+                })
 
         if parts == ["api", "appgym"]:
             # Graded runs of the application gym, newest last. Append-only so

@@ -187,21 +187,53 @@ export function parseStatblock(text, meta = {}) {
   const hitDice = hpRaw ? (/\(([^)]*d[^)]*)\)/.exec(hpRaw)?.[1] || null) : null;
   const speed = labelled(src, 'speed');
 
-  // Abilities: "STR 8 -1 -1", or a grid where scores and mods are on
-  // separate lines. The per-line form is tried first because it is
-  // unambiguous; the grid is a fallback with a warning.
+  // Abilities come in two shapes and both are common.
+  //
+  //   inline  "STR 8 -1 -1"           - one line per ability (2024 layout)
+  //   grid    "STR DEX CON INT WIS CHA"
+  //           "19 (+4) 10 (+0) 17 (+3) 12 (+1) 11 (+0) 15 (+2)"
+  //
+  // The grid is what a real Monster Manual gives you, and handling only the
+  // inline form found one ability out of six across 72 real statblocks.
   const abilities = {};
-  for (const k of ABILITY_KEYS) {
-    const re = new RegExp(`\\b${k}\\b[^\\dA-Za-z+-]{0,4}(\\d{1,2})\\s*([+-]\\s*\\d+)?\\s*([+-]\\s*\\d+)?`, 'i');
-    const m = re.exec(src);
-    if (!m) continue;
-    const score = Number(m[1]);
-    const mod = m[2] !== undefined && m[2] !== null
-      ? Number(String(m[2]).replace(/\s+/g, ''))
-      : Math.floor((score - 10) / 2);
-    const save = m[3] !== undefined && m[3] !== null
-      ? Number(String(m[3]).replace(/\s+/g, '')) : mod;
-    abilities[k] = { score, mod, save };
+  const grid = /\bSTR\b\s+DEX\s+CON\s+INT\s+WIS\s+CHA\b[^\n]*\n([^\n]+)/i.exec(src);
+  if (grid) {
+    // "19 (+4) 10 (+0) ..." - the parenthesised modifier is authoritative
+    // where present, because a printed score and modifier can disagree and
+    // the modifier is what gets rolled.
+    const pairs = [...grid[1].matchAll(/(\d{1,2})\s*\(\s*([+-]?\s*\d+)\s*\)/g)];
+    const bare = pairs.length ? [] : [...grid[1].matchAll(/(-?\d{1,2})/g)];
+    ABILITY_KEYS.forEach((k, i) => {
+      if (pairs[i]) {
+        const score = Number(pairs[i][1]);
+        abilities[k] = {
+          score,
+          mod: Number(String(pairs[i][2]).replace(/\s+/g, '')),
+          save: Number(String(pairs[i][2]).replace(/\s+/g, '')),
+        };
+      } else if (bare[i]) {
+        const score = Number(bare[i][1]);
+        abilities[k] = { score, mod: Math.floor((score - 10) / 2),
+          save: Math.floor((score - 10) / 2) };
+      }
+    });
+  }
+
+  if (Object.keys(abilities).length < 6) {
+    for (const k of ABILITY_KEYS) {
+      if (abilities[k]) continue;
+      const re = new RegExp(
+        `\\b${k}\\b[^\\dA-Za-z+-]{0,4}(\\d{1,2})\\s*([+-]\\s*\\d+)?\\s*([+-]\\s*\\d+)?`, 'i');
+      const m = re.exec(src);
+      if (!m) continue;
+      const score = Number(m[1]);
+      const mod = m[2] !== undefined && m[2] !== null
+        ? Number(String(m[2]).replace(/\s+/g, ''))
+        : Math.floor((score - 10) / 2);
+      const save = m[3] !== undefined && m[3] !== null
+        ? Number(String(m[3]).replace(/\s+/g, '')) : mod;
+      abilities[k] = { score, mod, save };
+    }
   }
   const gotAbilities = Object.keys(abilities).length;
   if (gotAbilities && gotAbilities < 6) {

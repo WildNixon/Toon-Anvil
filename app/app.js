@@ -21,6 +21,7 @@ const MODES = [
   { id: 'chronicle', label: 'Chronicle', load: () => import('./modes/chronicle/chronicle.js') },
   { id: 'dm',        label: 'DM',        load: () => import('./modes/dm/dm.js') },
   { id: 'homebrew',  label: 'Homebrew',  load: () => import('./homebrew/homebrew-ui.js') },
+  { id: 'settings',  label: 'Settings',  load: () => import('./modes/settings/settings.js') },
 ];
 
 /* ------------------------------------------------------------------ */

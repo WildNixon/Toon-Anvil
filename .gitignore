@@ -59,6 +59,12 @@ data/_*.txt
 srd_raw/
 extension/app/
 
+# --- API keys: YOURS, never ours, never committed --------------------------
+# No key ships with this project. secrets.json is where you put your own, and
+# it must never reach a commit. Environment variables are the alternative.
+secrets.json
+*.secrets.json
+
 # --- python ----------------------------------------------------------------
 __pycache__/
 *.py[cod]

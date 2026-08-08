@@ -638,6 +638,46 @@ export const FLOWS = [
   },
 
   {
+    id: 'settings_connectors',
+    title: 'Settings is honest about what is not connected',
+    async run(c, { doc }) {
+      c.feature('ui', 'settings', 'connectors');
+      c.ok(await goToMode(doc, 'Settings', 'Connectors'), 'Settings opens');
+      // The provider list arrives from /api/providers AFTER the panel paints,
+      // so the screen settles on "Checking..." first. Wait for the content,
+      // not for stillness.
+      const loaded = await waitFor(() => (/Ollama|not set up|unavailable/i
+        .test(mainText(doc)) ? mainText(doc) : null), { timeout: 10000 });
+      c.ok(!!loaded, 'the provider list finishes loading');
+      const t = (loaded || mainText(doc)).replace(/\s+/g, ' ');
+
+      c.ok(/Optional, and off by default/i.test(t),
+        'connectors are presented as optional');
+      // The claim that matters, stated where somebody will read it.
+      c.ok(/Your keys, not ours/i.test(t), 'it says whose keys these are');
+      c.ok(/secrets\.json/i.test(t), 'and where to put your own');
+
+      // Every provider is listed whether or not it works, so "why can't I do
+      // X" is answered on screen rather than in a README.
+      for (const name of ['Ollama', 'Anthropic', 'OpenAI', 'Stable Diffusion',
+        'ElevenLabs', 'Freesound']) {
+        c.ok(t.includes(name), `${name} is listed`);
+      }
+      c.ok(/not set up|ready/i.test(t), 'each says whether it is configured');
+
+      // Ambience is the part that needs nothing at all.
+      c.ok(/Tavern murmur|Fireside|Rain/i.test(t),
+        'local ambience is offered with no key');
+
+      // And no key is ever typed here.
+      const fields = [...doc.querySelectorAll('main input')];
+      c.ok(!fields.some((i) => /key|token|secret|password/i.test(
+        `${i.placeholder} ${i.name} ${i.type}`)),
+      'there is no field to type a key into');
+    },
+  },
+
+  {
     id: 'sandbox_bar',
     title: 'The sandbox says what it is and offers a way out',
     async run(c, { doc, win }) {

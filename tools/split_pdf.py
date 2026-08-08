@@ -276,6 +276,70 @@ def blocks_from(pages: list[str]) -> list[dict]:
                 "chars": len(body),
 
             })
+    return stitch_statblocks(out)
+
+
+# A statblock is one thing to a reader and several blocks to this splitter: the
+# ability table, "Challenge", and every action name are all heading-shaped, so
+# each starts a new block. On a real Monster Manual that left BUGBEAR as 116
+# characters ending at "Speed 30ft." - correct AC and hit points, and no
+# abilities, challenge rating or actions, because they were in the next four
+# blocks. The parser was blamed for this before the cause was found.
+STATBLOCK_START = re.compile(r"Armor Class\s*\d+", re.I)
+STATBLOCK_END = re.compile(r"Challenge\s*[\d/]+|CR\s*[\d/]+", re.I)
+# Headings that continue a statblock rather than beginning something new.
+CONTINUATION = re.compile(
+    r"^\s*(?:actions?|reactions?|bonus actions?|legendary actions?|traits?"
+    r"|lair actions?|regional effects?|villain actions?"
+    r"|(?:str|dex|con|int|wis|cha)\b.*"
+    r"|[A-Z][A-Za-z'()\- ]{0,40}\.?)\s*$",
+)
+
+
+def stitch_statblocks(blocks: list[dict]) -> list[dict]:
+    """Re-join the pieces of a statblock into one block.
+
+    Starts at a block containing "Armor Class N" and absorbs following blocks
+    until the challenge rating has been seen AND a following block looks like a
+    new creature rather than a continuation - or until nothing statblock-shaped
+    remains. Conservative on purpose: over-merging two creatures is worse than
+    under-merging one, so a second "Armor Class" always ends the run.
+    """
+    out: list[dict] = []
+    i = 0
+    while i < len(blocks):
+        b = blocks[i]
+        if not STATBLOCK_START.search(b["text"][:400]):
+            out.append(b)
+            i += 1
+            continue
+
+        merged = dict(b)
+        parts = [b["text"]]
+        seen_cr = bool(STATBLOCK_END.search(b["text"]))
+        j = i + 1
+        while j < len(blocks):
+            nxt = blocks[j]
+            # A second statblock always ends the run, whatever else is true.
+            if STATBLOCK_START.search(nxt["text"][:400]):
+                break
+            # Once the challenge rating has been seen, only continuation-shaped
+            # headings keep the run going.
+            if seen_cr and not CONTINUATION.match(nxt["title"]):
+                break
+            # Never swallow more than a couple of pages: a runaway merge would
+            # turn a chapter into one "monster".
+            if nxt["page"] - b["page"] > 2:
+                break
+            parts.append(f"{nxt['title']}\n{nxt['text']}")
+            seen_cr = seen_cr or bool(STATBLOCK_END.search(nxt["text"]))
+            j += 1
+
+        merged["text"] = "\n".join(parts)
+        merged["chars"] = len(merged["text"])
+        merged["stitched"] = j - i
+        out.append(merged)
+        i = j
     return out
 
 

@@ -1433,6 +1433,97 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- connectors ------------------------------------- */
+  {
+    id: 'connectors',
+    title: 'Optional connectors',
+    why: 'These are the only part of the app that can reach the network. The '
+       + 'property worth testing is not that they work - it is that the app '
+       + 'is unharmed when they do not.',
+    scenarios: [
+      {
+        id: 'degrade_cleanly',
+        title: 'Nothing configured is a clean answer, not an exception',
+        async run(c, { providers }) {
+          c.feature('connectors');
+          // Every one of these sits beside something that already works
+          // offline. A thrown error would take the working thing down with it,
+          // so failure has to be a VALUE.
+          const calls = [
+            ['generateText', () => providers.generateText({ prompt: 'hello' })],
+            ['generateImage', () => providers.generateImage({ prompt: 'a door' })],
+            ['searchSounds', () => providers.searchSounds({ query: 'rain' })],
+            ['generateSound', () => providers.generateSound({ prompt: 'a bell' })],
+          ];
+          for (const [name, fn] of calls) {
+            let res = null;
+            let threw = false;
+            try { res = await fn(); } catch { threw = true; }
+            c.ok(!threw, `${name} does not throw when unconfigured`);
+            c.ok(res && typeof res.ok === 'boolean',
+              `${name} returns a result object`);
+            if (res && !res.ok) {
+              c.ok(typeof res.reason === 'string' && res.reason.length > 10,
+                `${name} explains why in words`, res.reason);
+            }
+          }
+        },
+      },
+      {
+        id: 'empty_input_refused',
+        title: 'An empty prompt is refused without a network call',
+        async run(c, { providers }) {
+          c.feature('connectors');
+          for (const [name, res] of [
+            ['text', await providers.generateText({ prompt: '   ' })],
+            ['image', await providers.generateImage({ prompt: '' })],
+            ['search', await providers.searchSounds({ query: '' })],
+          ]) {
+            c.ok(!res.ok, `${name}: empty input is refused`);
+            c.ok(!/server|fetch/i.test(res.reason || ''),
+              `${name}: refused locally rather than by asking`, res.reason);
+          }
+        },
+      },
+      {
+        id: 'capabilities_never_leak',
+        title: 'Capability reporting never carries a key',
+        async run(c, { providers }) {
+          c.feature('connectors', 'security');
+          const caps = await providers.capabilities({ refresh: true });
+          c.ok(typeof caps === 'object', 'capabilities returns an object');
+          const blob = JSON.stringify(caps);
+          // The whole design is that the browser learns WHETHER, never WHAT.
+          c.ok(!/sk-[A-Za-z0-9]/.test(blob), 'no OpenAI-shaped key');
+          c.ok(!/sk-ant-/.test(blob), 'no Anthropic-shaped key');
+          c.ok(!/"(?:apiKey|api_key|key|token|secret)"\s*:\s*"[^"]{12,}"/i.test(blob),
+            'no field that looks like a credential');
+          for (const p of Object.values(caps.providers || {})) {
+            c.ok(typeof p.configured === 'boolean',
+              `${p.label}: reports only whether it is configured`);
+          }
+        },
+      },
+      {
+        id: 'local_ambience',
+        title: 'Ambience needs no key and no network',
+        run(c, { providers }) {
+          c.feature('connectors', 'sfx');
+          const ids = Object.keys(providers.BEDS);
+          c.ok(ids.length >= 4, 'several beds are offered', ids.join(', '));
+          for (const [id, bed] of Object.entries(providers.BEDS)) {
+            c.ok(typeof bed.label === 'string' && bed.label.length > 2,
+              `${id} has a readable name`);
+            c.ok(bed.gain > 0 && bed.gain < 0.5,
+              `${id} is mixed at a sane level`, String(bed.gain));
+          }
+          const bad = providers.playBed('no-such-bed');
+          c.ok(!bad.ok, 'an unknown bed is refused rather than thrown');
+        },
+      },
+    ],
+  },
+
   /* ---------------- cross-engine agreement ------------------------- */
   {
     id: 'agreement',
