@@ -105,7 +105,12 @@ reports each one where it matters.
    rolls, but there's no field for it yet.
 7. **The bestiary starts empty.** It's search-driven — type a monster name.
    All 330 are there; none are listed until you ask.
-8. **PDF is the weakest input.** Text extraction loses layout, and a
+8. **Roleplay collects details through native `prompt()` dialogs.** They work,
+   but they're modal, unstyled, and blocked outright in some embedded contexts
+   — including automation, which is why the test suite has to stand in for
+   your typing. An in-app form would be better, particularly in the Chrome
+   side panel.
+9. **PDF is the weakest input.** Text extraction loses layout, and a
    two-column page can mis-group features across subclasses. Every result
    carries a coverage number so you can see how much survived. Saving the
    source page as HTML gives markedly better results.
@@ -272,10 +277,25 @@ Two rules keep it honest:
 - **The coverage bar rises when the suite grows.** A fixed bar goes green
   forever while the ratio of tested to shipped quietly falls.
 
-**Include UI tier** additionally loads the real app in an iframe and drives all
-eight modes, which is the only way to catch a mode whose wiring broke while its
-logic still passes. **Publish result** appends to a local history so the pass
-rate can be graphed across runs.
+**Include UI tier** drives the real app the way a person does — 11 journeys and
+65 assertions that click, type, and then check what the *screen* says. It
+builds a character, levels it, damages it, rests it off, toggles conditions,
+generates a shop and buys something, runs an encounter through initiative,
+records a roleplay beat and finds it in the chronicle, exports for a DM,
+searches the bestiary, and ingests the shipped example end to end.
+
+It runs against `/?storage=memory` — an ephemeral boot where both the character
+store and the event log live in memory and vanish on reload, so driving the app
+can't create junk characters or append to a real chronicle. That flag is
+available to you as well if you ever want a throwaway session; a banner makes
+it obvious that nothing is being saved.
+
+Timing is handled by waiting for a *condition*, never by sleeping a guessed
+number of milliseconds — fixed sleeps are how a suite becomes flaky, a flaky
+suite gets ignored, and an ignored suite is worse than none.
+
+**Publish result** appends to a local history so the pass rate can be graphed
+across runs.
 
 **Mutation check** answers the question a green suite cannot answer about
 itself: *would it notice if something broke?* It injects five known defects —

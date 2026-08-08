@@ -44,9 +44,14 @@ export function recompute() {
 export async function saveCharacter(patch) {
   const { character } = getState();
   if (!character) return null;
-  const next = typeof patch === 'function'
+  const edited = typeof patch === 'function'
     ? patch(structuredClone(character))
     : { ...character, ...patch };
+  // Reconcile on every save, not just on load. Levelling up in Build is an
+  // edit, and without this the character keeps its old current HP against its
+  // new maximum - a level 5 fighter reading 10 of 34 and looking wounded when
+  // it has never been hit.
+  const next = reconcileHp(edited);
   await db.put('characters', next);
   setState({ character: next });
   recompute();
@@ -58,19 +63,24 @@ export async function saveCharacter(patch) {
 /**
  * Bring a character's stored HP into line with its derived maximum.
  *
- * Max HP became derived from class, level and Constitution; before that it was
- * stored and stuck at 10 forever. A character saved under the old scheme has a
- * stale hp.max, and if it was at full health it must stay at full health
- * rather than looking like it has taken 24 points of damage.
+ * Max HP is derived from class, level and Constitution, but `current` is play
+ * state and stays stored. Whenever the maximum MOVES - levelling up, taking a
+ * Constitution boost, respeccing - the stored pair goes stale and has to be
+ * reconciled:
  *
- * This runs ONCE, when the character is loaded, because it is a write. The
- * same check inside derive() would be wrong: after real damage the stored max
- * is stale, so "current >= storedMax" reads as full and the character heals
- * itself on every render.
+ *   at full before  -> at full after. Levelling from 1 to 5 must read 34 of
+ *                      34, not 10 of 34. Anything else means every character
+ *                      looks wounded the moment it levels, which is exactly
+ *                      what happened before this ran on save as well as load.
+ *   wounded before  -> still wounded. You do not heal by gaining a level.
+ *
+ * Deliberately NOT inside derive(): this is a write, and the same test there
+ * would compare against a stale stored max, so a damaged character would read
+ * as full and heal itself on every render.
  */
-async function migrateHp(character) {
-  const { compendium, homebrew } = getState();
-  if (!character?.classes?.length) return character;
+function reconcileHp(character, state = getState()) {
+  const { compendium, homebrew } = state;
+  if (!character?.classes?.length || !compendium?.classes) return character;
   const storedMax = Number(character.hp?.max || 0);
   const d = derive(character, {
     classes: compendium.classes || [], species: compendium.species || [],
@@ -81,7 +91,7 @@ async function migrateHp(character) {
 
   const wasFull = character.hp?.current === undefined
     || Number(character.hp.current) >= storedMax;
-  const next = {
+  return {
     ...character,
     hp: {
       ...character.hp,
@@ -89,7 +99,11 @@ async function migrateHp(character) {
       current: wasFull ? d.hp.max : Math.min(Number(character.hp.current), d.hp.max),
     },
   };
-  await db.put('characters', next);
+}
+
+async function migrateHp(character) {
+  const next = reconcileHp(character);
+  if (next !== character) await db.put('characters', next);
   return next;
 }
 
@@ -195,8 +209,27 @@ watch('mode', renderMode);
 /* ------------------------------------------------------------------ */
 
 async function boot() {
-  const adapter = await initDb();
-  setState({ dataSource: adapter.mode });
+  // ?storage=memory boots an ephemeral session: nothing is written to disk or
+  // to the server, and everything is gone on reload. The UI test tier uses it
+  // so that driving the real app cannot touch real characters or append to a
+  // real chronicle. It is per-load and never stored as a preference.
+  const params = new URLSearchParams(location.search);
+  const prefer = params.get('storage') === 'memory' ? 'memory' : undefined;
+  const adapter = await initDb({ prefer });
+  setState({ dataSource: adapter.mode, ephemeral: prefer === 'memory' });
+
+  // An ephemeral session that looks exactly like a real one is a trap - it is
+  // how somebody builds a character for an hour and then loses it. Say so.
+  if (prefer === 'memory') {
+    const flag = document.createElement('div');
+    flag.id = 'ephemeral-banner';
+    flag.textContent = 'EPHEMERAL SESSION — nothing is saved, everything is '
+      + 'lost on reload';
+    flag.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9999;'
+      + 'background:#9a6a12;color:#fff;font:700 11px/1.9 Consolas,monospace;'
+      + 'letter-spacing:.14em;text-align:center;text-transform:uppercase';
+    document.body.append(flag);
+  }
 
   const compendium = await compendia(
     'classes', 'species', 'backgrounds', 'feats', 'spells',

@@ -66,8 +66,9 @@
 </div>
 
 <script type="module">
-import { runLogic, grade, publishRun, loadHistory, runMutations, BARS }
+import { runLogic, grade, publishRun, loadHistory, runMutations, Check, BARS }
   from './appgym.js';
+import { runFlows } from './uiflows.js';
 import { initDb, MemoryAdapter, db, KINDS, compendia, dataFile } from '../core/db.js';
 import * as engine from '../core/engine.js';
 import * as events from '../core/events.js';
@@ -117,48 +118,14 @@ async function buildCtx() {
 }
 
 /**
- * UI tier: load the real app in an iframe and drive each mode.
+ * UI tier: drive the real app the way a person does.
  *
- * Deliberately shallow. It exists to catch a mode whose wiring broke while its
- * logic still passes - the one failure the logic tier structurally cannot see.
+ * Was a shallow "did the mode render" check, which only ever caught a broken
+ * import. Now it clicks, types and asserts on what the screen says afterwards,
+ * against an EPHEMERAL boot so nothing it does touches real data.
  */
 async function runUi() {
-  const MODES = ['Build','Play','Combat','Shop','Roleplay','Chronicle','DM','Homebrew'];
-  const frame = document.createElement('iframe');
-  frame.src = '/index.html';
-  frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;height:900px;border:0';
-  document.body.append(frame);
-  await new Promise((r) => { frame.onload = r; setTimeout(r, 12000); });
-  await new Promise((r) => setTimeout(r, 2500));
-
-  const doc = frame.contentDocument;
-  const win = frame.contentWindow;
-  const errors = [];
-  win.addEventListener('error', (e) => errors.push(e.message));
-
-  const out = [];
-  for (const mode of MODES) {
-    const btn = [...doc.querySelectorAll('button')]
-      .find((b) => b.textContent.trim() === mode);
-    if (!btn) { out.push({ mode, ok: false, reason: 'nav button missing' }); continue; }
-    const before = errors.length;
-    btn.click();
-    await new Promise((r) => setTimeout(r, 1100));
-    const main = doc.querySelector('main');
-    const chars = (main?.textContent || '').trim().length;
-    const controls = main ? main.querySelectorAll('button,input,select,textarea').length : 0;
-    out.push({
-      mode,
-      chars, controls,
-      threwOnRender: errors.length > before,
-      // A mode is "rendering" if it produced real content AND something to
-      // interact with. Text alone can be a stuck loading message.
-      ok: chars > 60 && controls > 0 && errors.length === before,
-    });
-    log(`  ui ${mode}: ${chars} chars, ${controls} controls`);
-  }
-  frame.remove();
-  return out;
+  return runFlows(Check, { onProgress: ({ flow }) => log(`  ui ${flow}`) });
 }
 
 function drawBars(g) {
@@ -278,9 +245,13 @@ async function run(withUi) {
     if (ui) {
       $('#features').innerHTML += '<h2 style="font-family:var(--display,sans-serif);'
         + 'text-transform:uppercase;font-size:18px;margin-top:16px">UI tier</h2>'
-        + ui.map((m) => `<span class="feat" style="background:${
-          m.ok ? 'rgba(47,107,98,.2)' : 'rgba(163,48,26,.2)'}">${m.mode}: ${
-          m.ok ? 'ok' : (m.reason || 'no content')}</span>`).join('');
+        + ui.map((m) => `<div class="sc ${m.error ? 'err' : m.ok ? 'ok' : 'bad'}">
+            <span class="tag">${m.error ? 'ERROR' : m.ok ? 'PASS' : 'FAIL'}</span>
+            <span style="flex:1">${m.title}</span>
+            <span class="n">${m.passed}/${m.total} · ${m.ms}ms</span></div>`
+          + (m.error ? `<div class="fail">${m.error}</div>` : '')
+          + m.failures.map((f) => `<div class="fail">✗ ${f.label}${
+            f.detail ? ` — ${f.detail}` : ''}</div>`).join('')).join('');
     }
     log(`\n${g.pass ? 'PASS' : 'FAIL'} — ${g.scenariosPassed}/${g.scenarios} scenarios, `
       + `${g.checksPassed}/${g.checks} checks, ${g.features.length} features`);

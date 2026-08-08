@@ -235,6 +235,19 @@ export async function initDb({ prefer, inject } = {}) {
   }
   const choice = prefer || localStorage.getItem(PREF_KEY) || 'auto';
 
+  // Ephemeral mode. Everything - characters AND the event log, since both go
+  // through this adapter - lives in memory and is gone on reload. The UI test
+  // tier runs the real app this way so that clicking through it cannot create
+  // junk characters or append to somebody's real chronicle.
+  //
+  // Deliberately NOT reachable from the stored preference: it is opt-in per
+  // load, so nobody can leave the app in a state where their work silently
+  // stops being saved.
+  if (choice === 'memory') {
+    adapter = await new MemoryAdapter().init();
+    return adapter;
+  }
+
   if (choice !== 'local') {
     try {
       adapter = await new ServerAdapter(serverBase()).init();

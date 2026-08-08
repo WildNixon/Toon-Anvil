@@ -1164,14 +1164,22 @@ export const BARS = {
   // bar and becomes decoration - it would read green forever while the ratio
   // of things tested to things shipped quietly fell.
   minFeaturesCovered: 30,
-  uiModesRendering: 1.0,
+  // Renamed from uiModesRendering when the UI tier stopped merely checking
+  // that a mode rendered and started clicking through it. "Rendering" was a
+  // much weaker claim and the name would have kept implying it.
+  uiFlowsPassing: 1.0,
 };
 
 export function grade(suites, ui = null) {
   const scenarios = suites.flatMap((s) => s.scenarios);
   const checks = scenarios.reduce((n, s) => n + s.total, 0);
   const checksPassed = scenarios.reduce((n, s) => n + s.passed, 0);
-  const features = new Set(scenarios.flatMap((s) => s.features));
+  // Coverage counts both tiers: a feature only the UI tier touches is still
+  // covered, and it is often the ONLY tier that can touch it.
+  const features = new Set([
+    ...scenarios.flatMap((s) => s.features),
+    ...(ui || []).flatMap((f) => f.features || []),
+  ]);
 
   const thin = scenarios.filter(
     (s) => !s.error && s.total < BARS.minChecksPerScenario,
@@ -1195,21 +1203,42 @@ export function grade(suites, ui = null) {
       bar: scenarios.length, ok: thin.length === 0 },
   ];
   if (uiRate !== null) {
-    bars.push({ id: 'uiModesRendering', value: uiRate, bar: BARS.uiModesRendering,
-      ok: uiRate >= BARS.uiModesRendering });
+    bars.push({ id: 'uiFlowsPassing', value: uiRate, bar: BARS.uiFlowsPassing,
+      ok: uiRate >= BARS.uiFlowsPassing });
   }
+
+  // UI assertions are counted and reported SEPARATELY rather than folded into
+  // the logic totals. They are a different kind of evidence - slower, fewer,
+  // and about what the screen says rather than what a function returns - and
+  // averaging the two would let a big fast suite hide a failing journey.
+  const uiChecks = ui ? ui.reduce((n, f) => n + (f.total || 0), 0) : 0;
+  const uiPassed = ui ? ui.reduce((n, f) => n + (f.passed || 0), 0) : 0;
 
   return {
     scenarios: scenarios.length,
     scenariosPassed: scenarios.filter((s) => s.ok).length,
     checks,
     checksPassed,
+    ui: ui ? {
+      flows: ui.length,
+      flowsPassed: ui.filter((f) => f.ok).length,
+      checks: uiChecks,
+      checksPassed: uiPassed,
+    } : null,
     features: [...features].sort(),
     thin: thin.map((s) => `${s.id} (${s.total} checks)`),
-    errors: scenarios.filter((s) => s.error).map((s) => `${s.id}: ${s.error}`),
-    failures: scenarios.flatMap((s) => s.failures.map(
-      (f) => `${s.id}: ${f.label}${f.detail ? ` - ${f.detail}` : ''}`,
-    )),
+    errors: [
+      ...scenarios.filter((s) => s.error).map((s) => `${s.id}: ${s.error}`),
+      ...(ui || []).filter((f) => f.error).map((f) => `ui/${f.id}: ${f.error}`),
+    ],
+    failures: [
+      ...scenarios.flatMap((s) => s.failures.map(
+        (f) => `${s.id}: ${f.label}${f.detail ? ` - ${f.detail}` : ''}`,
+      )),
+      ...(ui || []).flatMap((s) => s.failures.map(
+        (f) => `ui/${s.id}: ${f.label}${f.detail ? ` - ${f.detail}` : ''}`,
+      )),
+    ],
     bars,
     pass: bars.every((b) => b.ok),
   };
