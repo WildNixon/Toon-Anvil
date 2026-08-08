@@ -1630,7 +1630,7 @@ export const SUITES = [
           if (!kim.ok) { c.ok(false, 'the player joined'); return; }
 
           for (const kind of ['homebrew', 'custom-monsters', 'custom-items',
-            'custom-spells', 'npcs', 'shops', 'campaigns']) {
+            'custom-spells', 'npcs', 'shops', 'campaigns', 'encounters']) {
             // eslint-disable-next-line no-await-in-loop
             const r = await table.put(kind, 'gym-shared', { name: 'Mine' }, kim.token);
             c.eq(r.status, 403, `a player cannot write ${kind}`);
@@ -1878,6 +1878,212 @@ export const SUITES = [
           const afterClose = await table.changes(afterJoin.rev);
           c.ok(afterClose.changes.some((x) => x.kind === 'table'),
             'and so is closing it, which revokes every token');
+        },
+      },
+    ],
+  },
+
+  /* ---------------- the shared fight -------------------------------- */
+  {
+    id: 'shared',
+    title: 'One fight, two sides of the screen',
+    why: 'The DM and the players look at the same encounter from different '
+       + 'seats. These tests check that what a player receives really is '
+       + 'missing the numbers the DM withheld - not merely not drawn - and '
+       + 'that the two views agree about everything else.',
+    scenarios: [
+      {
+        id: 'snapshot_is_small_and_faithful',
+        title: 'What goes over the wire is the fight, without the bestiary',
+        run(c, { dm, monsters }) {
+          c.feature('shared', 'encounter', 'sync');
+          const runner = dm.runner;
+          runner.reset();
+          const ogre = monsters.find((m) => /ogre/i.test(m.name)) || monsters[0];
+          runner.addMonsters(ogre, 2);
+          const snap = runner.snapshot();
+
+          c.eq(snap.id, runner.SHARED_ID, 'it is the one shared encounter');
+          c.eq(snap.combatants.length, 2, 'both monsters travel');
+          c.ok(snap.combatants.every((x) => x.stat === undefined),
+            'the statblock is dropped - it is already in every compendium, '
+            + 'and sending it would cost a few hundred kilobytes per hit point');
+          const size = JSON.stringify(snap).length;
+          c.ok(size < 4000, 'so a two-monster fight is small', `${size} bytes`);
+
+          // Round-trip: what we send must be what we get back, or the DM's
+          // screen and the players' drift apart after one reload.
+          const before = JSON.stringify(snap);
+          runner.reset();
+          runner.adopt(snap);
+          c.eq(JSON.stringify(runner.snapshot()), before,
+            'adopting a snapshot reproduces it exactly');
+          runner.reset();
+        },
+      },
+      {
+        id: 'adopt_keeps_ids_unique',
+        title: 'Adding to an adopted fight does not collide with what arrived',
+        run(c, { dm, monsters }) {
+          c.feature('shared', 'encounter');
+          const runner = dm.runner;
+          runner.reset();
+          runner.addMonsters(monsters[0], 3);
+          const snap = runner.snapshot();
+          const arrived = snap.combatants.map((x) => x.id);
+
+          // Simulate a DM reloading: fresh module state, then adopt.
+          runner.reset();
+          runner.adopt(snap);
+          runner.addMonsters(monsters[1] || monsters[0], 1);
+          const ids = runner.state.combatants.map((x) => x.id);
+          c.eq(new Set(ids).size, ids.length,
+            'every combatant still has its own id', ids.join(','));
+          c.ok(!arrived.includes(ids[ids.length - 1]),
+            'the newcomer did not take an id that was already in the fight');
+          runner.reset();
+        },
+      },
+      {
+        id: 'monster_hp_is_withheld_not_merely_undrawn',
+        title: 'A player is not sent the numbers the DM is hiding',
+        async run(c, { table }) {
+          c.feature('shared', 'encounter', 'security');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          const fight = {
+            id: 'current', round: 2, turn: 0, started: true,
+            showMonsterHp: false,
+            combatants: [
+              { id: 'c1', kind: 'pc', characterId: 'kim-1', name: 'Kim',
+                ac: 16, hp: 22, hpMax: 30, init: 18 },
+              { id: 'c2', kind: 'monster', name: 'Ogre',
+                ac: 11, hp: 13, hpMax: 59, temp: 4, init: 9 },
+            ],
+          };
+          await table.put('encounters', 'current', fight, dm.token);
+
+          const asDm = await table.get('encounters', 'current', dm.token);
+          c.eq(asDm.combatants[1].hp, 13, 'the DM still sees the real number');
+
+          const asPlayer = await table.get('encounters', 'current', kim.token);
+          const ogre = asPlayer.combatants.find((x) => x.name === 'Ogre');
+          c.ok(!!ogre, 'the player still sees the monster is there');
+          c.eq(ogre?.hp, undefined, 'but not its hit points');
+          c.eq(ogre?.hpMax, undefined, 'nor its maximum');
+          c.eq(ogre?.temp, undefined, 'nor its temporary hit points');
+          c.eq(ogre?.band, 'bloodied', 'only how hurt it looks');
+
+          // The point of doing this on the server. A UI that merely declines
+          // to draw the number leaves it sitting in the payload, where the
+          // network tab shows it to anyone curious.
+          const wire = JSON.stringify(asPlayer);
+          c.ok(!wire.includes('59'),
+            'the hidden number is nowhere in what was sent', wire.slice(0, 200));
+
+          // Player characters keep their numbers: everyone at a real table can
+          // see their own sheet and says "I'm on 22" out loud.
+          const me = asPlayer.combatants.find((x) => x.kind === 'pc');
+          c.eq(me?.hp, 22, 'player characters keep their hit points');
+
+          await table.del('encounters', 'current', dm.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'the_dm_can_open_the_numbers',
+        title: 'Turning enemy HP on actually sends it',
+        async run(c, { table }) {
+          c.feature('shared', 'encounter');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          const body = (show) => ({ id: 'current', showMonsterHp: show,
+            combatants: [{ id: 'c1', kind: 'monster', name: 'Ogre',
+              ac: 11, hp: 13, hpMax: 59 }] });
+
+          await table.put('encounters', 'current', body(false), dm.token);
+          const hidden = await table.get('encounters', 'current', kim.token);
+          c.eq(hidden.combatants[0].hp, undefined, 'hidden by default');
+
+          await table.put('encounters', 'current', body(true), dm.token);
+          const shown = await table.get('encounters', 'current', kim.token);
+          c.eq(shown.combatants[0].hp, 13, 'and shown once the DM says so');
+          c.eq(shown.combatants[0].hpMax, 59, 'maximum included');
+          c.eq(shown.combatants[0].band, undefined,
+            'with no band, because the number is the better answer');
+
+          await table.del('encounters', 'current', dm.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'bands_agree_across_the_wire',
+        title: 'The server and the client draw the same line at bloodied',
+        async run(c, { table, dm }) {
+          c.feature('shared', 'encounter');
+          await table.close();
+          const host = await table.open('Gym DM');
+          const kim = await table.join(host.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          // The band lives in two places - hp_band() in tools/table.py decides
+          // what a player receives, band() in runner.js lets the DM preview it.
+          // Two implementations of one rule drift; this is what stops them.
+          // An EVEN maximum, so "exactly half" is a real value. The first
+          // version of this used 30/59 and called it half - it is 50.8%, and
+          // the assertion failed while both implementations agreed perfectly.
+          const cases = [
+            { hp: 60, hpMax: 60 }, { hp: 59, hpMax: 60 },
+            { hp: 30, hpMax: 60 }, { hp: 29, hpMax: 60 },
+            { hp: 1, hpMax: 60 }, { hp: 0, hpMax: 60 },
+            { hp: 7, hpMax: 7 }, { hp: 4, hpMax: 7 },
+          ];
+          await table.put('encounters', 'current', {
+            id: 'current',
+            showMonsterHp: false,
+            combatants: cases.map((x, i) => ({
+              id: `c${i}`, kind: 'monster', name: `M${i}`, ac: 10, ...x })),
+          }, host.token);
+
+          const asPlayer = await table.get('encounters', 'current', kim.token);
+          for (const [i, x] of cases.entries()) {
+            const fromServer = asPlayer.combatants[i].band;
+            const fromClient = dm.runner.band(x);
+            c.eq(fromServer, fromClient,
+              `${x.hp}/${x.hpMax} is "${fromClient}" on both sides`);
+          }
+          // And that the boundary is where 5e puts it, not one off it.
+          c.eq(asPlayer.combatants[2].band, 'bloodied', 'exactly half is bloodied');
+          c.eq(asPlayer.combatants[1].band, 'hurt', 'just below full is only hurt');
+
+          await table.del('encounters', 'current', host.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'solo_never_publishes',
+        title: 'A solo DM never touches the network',
+        async run(c, { table, dm }) {
+          c.feature('shared', 'encounter');
+          await table.close();
+          const runner = dm.runner;
+          runner.reset();
+
+          c.ok(!runner.isShared(),
+            'with no table open the encounter is not shared');
+          const out = await runner.publish();
+          c.ok(out.skipped, 'publishing is skipped rather than attempted');
+          c.eq(await runner.pull(), null, 'and there is nothing to pull');
+
+          // The promise the runner has always made: an encounter is scratch.
+          runner.reset();
+          c.eq(runner.state.combatants.length, 0, 'reset still clears it');
         },
       },
     ],
@@ -2171,6 +2377,31 @@ export const MUTATIONS = [
     // hit points indefinitely while looking perfectly healthy.
     patch: (ctx) => ({ table: { ...ctx.table,
       changes: async (since) => ({ ...(await ctx.table.changes(since)), gap: false }) } }),
+  },
+  {
+    id: 'hp_hidden_in_ui_only',
+    what: 'the server sends monster HP and trusts the UI not to draw it',
+    // The mistake this project would most plausibly have made: hiding the
+    // number in the renderer. It LOOKS identical on screen and leaks the
+    // number to anyone who opens the network tab.
+    patch: (ctx) => ({ table: { ...ctx.table,
+      get: async (kind, id, token) => {
+        const r = await ctx.table.get(kind, id, token);
+        if (kind !== 'encounters' || !r?.combatants) return r;
+        return { ...r,
+          combatants: r.combatants.map((x) => ({ ...x, hp: 13, hpMax: 59 })) };
+      } } }),
+  },
+  {
+    id: 'snapshot_carries_statblocks',
+    what: 'snapshot() sends each monster\'s whole statblock',
+    patch: (ctx) => ({ dm: { ...ctx.dm,
+      runner: { ...ctx.dm.runner,
+        snapshot: () => {
+          const s = ctx.dm.runner.snapshot();
+          return { ...s, combatants: s.combatants.map((x) => ({ ...x,
+            stat: { name: x.name, filler: 'x'.repeat(5000) } })) };
+        } } } }),
   },
   {
     id: 'unbounded_encounters',

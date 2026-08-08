@@ -23,6 +23,7 @@
  * can be rebuilt at any time without taking somebody's homebrew with it.
  */
 export const KINDS = ['characters', 'campaigns', 'homebrew', 'npcs', 'shops',
+  'encounters',
   'custom-monsters', 'custom-items', 'custom-spells', 'profiles'];
 
 /** Which compendium each custom store extends. */

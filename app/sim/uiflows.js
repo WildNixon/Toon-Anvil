@@ -890,15 +890,32 @@ async function bootClient(label) {
   return { frame, doc };
 }
 
-/** Open the probe character in Play mode and return a reader for its HP. */
+/**
+ * Open the probe character in Play mode and return a reader for its HP.
+ *
+ * The roster is a grid of clickable DIVs, not buttons. Searching for a button
+ * matched nothing, `pick?.click()` did nothing, and the app stayed on whichever
+ * character was selected last - so this flow spent a whole stage measuring the
+ * wrong sheet while reporting success. Hence the second assertion: being on A
+ * sheet is not the same as being on the right one.
+ */
 async function openProbe(doc, name) {
+  const hp = () => readNumberAfter(doc, 'HP');
   await goToMode(doc, 'Build', 'Roster');
-  const pick = await waitFor(() => [...doc.querySelectorAll('main button')]
-    .find((b) => b.textContent.trim().startsWith(name)) || null, { timeout: 8000 });
-  pick?.click();
+  const pick = await waitFor(() => [...doc.querySelectorAll('main .clickable')]
+    .find((e) => e.textContent.includes(name)) || null, { timeout: 8000 });
+  if (!pick) return { ok: false, reason: 'the probe was not in the roster', hp };
+  pick.click();
   await waitUntilSettled(doc);
-  const ok = await goToMode(doc, 'Play', (d = doc) => /Adjust HP/.test(mainText(d)));
-  return { ok, hp: () => readNumberAfter(doc, 'HP') };
+
+  const opened = await goToMode(doc, 'Play',
+    (d = doc) => /Adjust HP/.test(mainText(d)));
+  if (!opened) return { ok: false, reason: 'Play never rendered a sheet', hp };
+  const onProbe = await waitFor(() => (
+    (doc.querySelector('#who')?.textContent || '').includes(name) ? true : null),
+  { timeout: 4000 });
+  return { ok: Boolean(onProbe),
+    reason: onProbe ? '' : 'Play opened on a different character', hp };
 }
 
 export async function runTwoClient(CheckClass) {
@@ -939,8 +956,9 @@ export async function runTwoClient(CheckClass) {
 
     const openA = await openProbe(a.doc, 'Gym Sync Probe');
     const openB = await openProbe(b.doc, 'Gym Sync Probe');
-    check.ok(openA.ok, 'client A has the probe open in Play');
-    check.ok(openB.ok, 'client B has the same character open');
+    check.ok(openA.ok, 'client A has the probe open in Play', openA.reason);
+    check.ok(openB.ok, 'client B has the same character open', openB.reason);
+    if (!openA.ok || !openB.ok) throw new Error('both clients must be on the probe');
 
     const startB = await waitFor(() => (Number.isFinite(openB.hp()) ? openB.hp() : null));
     check.ok(Number.isFinite(startB), 'client B shows hit points', `read ${startB}`);
@@ -977,6 +995,149 @@ export async function runTwoClient(CheckClass) {
   return {
     id: 'two_clients_stay_in_step',
     title: 'Two clients stay in step without a reload',
+    passed: check.passed,
+    total: check.total,
+    failures: check.failures,
+    features: [...check.touched],
+    error,
+    empty: !error && check.total === 0,
+    ok: !error && check.total > 0 && check.failures.length === 0,
+    ms: +(performance.now() - t0).toFixed(0),
+  };
+}
+
+/**
+ * The player's side of the table.
+ *
+ * Boots a real client, joins it as a PLAYER, and checks the three things the
+ * player view promises: the DM's tools are not in the nav, the fight is
+ * visible, and the enemy hit points are not - in the payload, not merely on
+ * screen.
+ *
+ * Like the two-client flow this needs the real server, so it closes the table
+ * and removes the encounter on every path out.
+ */
+export async function runPlayerView(CheckClass) {
+  const check = new CheckClass('player_sees_a_players_table');
+  const t0 = performance.now();
+  let error = null;
+  const frames = [];
+  let dmToken = null;
+  try {
+    check.feature('ui', 'table', 'shared', 'encounter', 'permissions');
+
+    const reachable = await api('/api/changes?since=0');
+    check.ok(reachable.status === 200, 'the shared server is reachable',
+      `HTTP ${reachable.status}`);
+    if (reachable.status !== 200) throw new Error('no server: no table to sit at');
+
+    await api('/api/table/close', { method: 'POST' });
+    const opened = await api('/api/table/open', {
+      method: 'POST', body: JSON.stringify({ name: 'Gym DM' }),
+    });
+    dmToken = opened.body.token;
+    check.ok(!!opened.body.code, 'the DM opened a table', opened.body.code);
+
+    // A fight in progress, with a number the DM is keeping to themselves.
+    await api('/api/encounters/current', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Toon-Token': dmToken },
+      body: JSON.stringify({
+        id: 'current', round: 3, turn: 1, started: true, showMonsterHp: false,
+        combatants: [
+          { id: 'c1', kind: 'pc', name: 'Gym Player', ac: 16, hp: 22,
+            hpMax: 30, init: 18, conditions: [] },
+          { id: 'c2', kind: 'monster', name: 'Gym Ogre', ac: 11, hp: 13,
+            hpMax: 59, init: 9, conditions: [] },
+        ],
+      }),
+    });
+
+    const joined = await api('/api/table/join', {
+      method: 'POST',
+      body: JSON.stringify({ code: opened.body.code, name: 'Gym Player' }),
+    });
+    check.ok(joined.body.ok, 'a player joined with the code');
+    if (!joined.body.ok) throw new Error('the player could not join');
+
+    // Boot a client already holding the player's token, the way a browser
+    // that joined a moment ago would be.
+    const frame = document.createElement('iframe');
+    frame.src = '/index.html';
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;'
+      + 'height:1000px;border:0';
+    document.body.append(frame);
+    frames.push(frame);
+    // The token has to be in place BEFORE the app boots, or it boots as a
+    // browser with no seat at the table and asks to join.
+    await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
+    frame.contentWindow.localStorage.setItem('toonanvil.token', joined.body.token);
+    frame.contentWindow.location.reload();
+    await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
+
+    const doc = frame.contentDocument;
+    const ready = await waitFor(() => (doc.querySelector('main')
+      && button(doc, 'Play') ? true : null), { timeout: 15000 });
+    check.ok(!!ready, 'the app booted as a player');
+    if (!ready) throw new Error('the player client never became interactive');
+
+    // --- the nav is a player's nav ---------------------------------------
+    const navLabels = [...doc.querySelectorAll('#modes button')]
+      .map((b) => b.textContent.trim());
+    check.ok(navLabels.includes('Table'),
+      'the shared table is in the nav', navLabels.join(', '));
+    check.ok(!navLabels.includes('DM'),
+      'the DM screen is not', navLabels.join(', '));
+    check.ok(!navLabels.includes('Homebrew'),
+      'and neither is the homebrew analyser');
+    check.ok(navLabels.includes('Play') && navLabels.includes('Build'),
+      'but their own sheet still is - a player owns their character fully');
+
+    // --- the fight ---------------------------------------------------------
+    check.ok(await goToMode(doc, 'Table', (d = doc) => /Gym Ogre/.test(mainText(d))),
+      'the Table screen shows the fight the DM is running');
+    const text = mainText(doc);
+    check.ok(/Round 3/.test(text), 'including the round', text.slice(0, 120));
+    check.ok(/Gym Ogre/.test(text), 'and the monster by name');
+    check.ok(/Bloodied/i.test(text),
+      'with how hurt it looks instead of a number');
+    check.ok(!/\b59\b/.test(text) && !/13\s*\/\s*59/.test(text),
+      'the hidden number is not on screen', text.slice(0, 200));
+
+    // The screen not drawing it is half the claim. This is the other half.
+    const asPlayer = await fetch('/api/encounters/current', {
+      headers: { 'X-Toon-Token': joined.body.token },
+    }).then((r) => r.text());
+    check.ok(!asPlayer.includes('59'),
+      'and was never sent to this browser at all', asPlayer.slice(0, 200));
+
+    // --- and it is read-only ----------------------------------------------
+    const main = doc.querySelector('main');
+    check.ok(!button(main, 'Hit') && !button(main, 'Roll initiative & start'),
+      'the player view offers no controls over the fight');
+    const refused = await fetch('/api/encounters/current', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json',
+        'X-Toon-Token': joined.body.token },
+      body: JSON.stringify({ combatants: [] }),
+    });
+    check.eq(refused.status, 403,
+      'and the server refuses the write regardless of what the UI offers');
+  } catch (err) {
+    error = `${err.name}: ${err.message}`;
+  } finally {
+    for (const f of frames) f.remove();
+    try {
+      if (dmToken) {
+        await api('/api/encounters/current', {
+          method: 'DELETE', headers: { 'X-Toon-Token': dmToken } });
+      }
+      await api('/api/table/close', { method: 'POST' });
+    } catch { /* the server went away; nothing more we can do */ }
+  }
+  return {
+    id: 'player_sees_a_players_table',
+    title: "A player gets a player's screen",
     passed: check.passed,
     total: check.total,
     failures: check.failures,
@@ -1054,5 +1215,7 @@ export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
   // server, so it manages its own clients and cleans up after itself.
   results.push(await runTwoClient(CheckClass));
   onProgress({ flow: 'two_clients_stay_in_step' });
+  results.push(await runPlayerView(CheckClass));
+  onProgress({ flow: 'player_sees_a_players_table' });
   return results;
 }

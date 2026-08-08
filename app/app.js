@@ -14,17 +14,40 @@ import { derive } from './core/derive.js';
 import * as session from './core/session.js';
 import * as live from './core/live.js';
 
+/**
+ * `dmOnly` hides a mode from players at a table; `tableOnly` shows one only
+ * when there IS a table. Solo play sees everything except the table view,
+ * because with nobody else at the table there is nothing to show.
+ *
+ * This is navigation, not security. A player who types the hash reaches the
+ * mode; what stops them changing anything is the server refusing the write.
+ * Hiding these is about giving a player a screen that is about their game
+ * rather than one with the DM's tools greyed out in it.
+ */
 const MODES = [
   { id: 'build',     label: 'Build',     load: () => import('./modes/build/build.js') },
   { id: 'sheet',     label: 'Play',      load: () => import('./modes/sheet/sheet.js') },
+  { id: 'table',     label: 'Table',     tableOnly: true,
+    load: () => import('./modes/table/table.js') },
   { id: 'combat',    label: 'Combat',    load: () => import('./modes/combat/combat.js') },
   { id: 'shop',      label: 'Shop',      load: () => import('./modes/shop/shop.js') },
   { id: 'rp',        label: 'Roleplay',  load: () => import('./modes/rp/rp.js') },
   { id: 'chronicle', label: 'Chronicle', load: () => import('./modes/chronicle/chronicle.js') },
-  { id: 'dm',        label: 'DM',        load: () => import('./modes/dm/dm.js') },
-  { id: 'homebrew',  label: 'Homebrew',  load: () => import('./homebrew/homebrew-ui.js') },
+  { id: 'dm',        label: 'DM',        dmOnly: true,
+    load: () => import('./modes/dm/dm.js') },
+  { id: 'homebrew',  label: 'Homebrew',  dmOnly: true,
+    load: () => import('./homebrew/homebrew-ui.js') },
   { id: 'settings',  label: 'Settings',  load: () => import('./modes/settings/settings.js') },
 ];
+
+/** Which modes belong in the nav for whoever is using this browser. */
+function visibleModes() {
+  return MODES.filter((m) => {
+    if (m.dmOnly && !session.isDm()) return false;
+    if (m.tableOnly && !session.isOpen()) return false;
+    return true;
+  });
+}
 
 /* ------------------------------------------------------------------ */
 /* derived character - recomputed whenever the character changes       */
@@ -133,7 +156,17 @@ let currentMode = null;
 async function renderMode() {
   const { mode } = getState();
   const view = $('#view');
-  const entry = MODES.find((m) => m.id === mode) || MODES[0];
+  // A hash can point at a mode this browser should not be on - a player who
+  // joined while sitting on the DM screen, or one who typed #dm. Fall back to
+  // the first mode they DO have rather than rendering a screen full of
+  // controls the server will refuse.
+  const allowed = visibleModes();
+  let entry = allowed.find((m) => m.id === mode);
+  if (!entry) {
+    entry = allowed[0] || MODES[0];
+    setState({ mode: entry.id });
+    if (location.hash.replace('#', '') !== entry.id) location.hash = `#${entry.id}`;
+  }
   if (currentMode === entry.id && view.dataset.rendered === entry.id) {
     // Already mounted; modes re-render themselves via their own subscriptions.
   }
@@ -166,7 +199,7 @@ function renderNav() {
   const nav = $('#modes');
   const { mode } = getState();
   nav.innerHTML = '';
-  for (const m of MODES) {
+  for (const m of visibleModes()) {
     const b = document.createElement('button');
     b.textContent = m.label;
     b.setAttribute('aria-current', String(m.id === mode));
@@ -242,8 +275,12 @@ async function watchTheTable() {
     setState({ characters: await db.list('characters') });
 
     if (tableChanged) {
+      // Joining or leaving changes which modes exist, so the nav is rebuilt
+      // and the current mode re-checked - a player who joined while on the DM
+      // screen should not be left sitting on it.
       await session.refresh();
       renderNav();
+      if (!visibleModes().some((m) => m.id === getState().mode)) await renderMode();
     }
 
     if (touchedMe && mine) {
@@ -521,7 +558,7 @@ async function boot() {
   setState({ characters, homebrew, ready: true });
 
   const hash = location.hash.replace('#', '');
-  const mode = MODES.some((m) => m.id === hash) ? hash : 'build';
+  const mode = visibleModes().some((m) => m.id === hash) ? hash : 'build';
 
   const last = localStorage.getItem('toonanvil.lastCharacter');
   if (last && characters.some((c) => c.id === last)) await selectCharacter(last);
@@ -555,7 +592,7 @@ async function boot() {
 
 window.addEventListener('hashchange', () => {
   const hash = location.hash.replace('#', '');
-  if (MODES.some((m) => m.id === hash)) setState({ mode: hash });
+  if (visibleModes().some((m) => m.id === hash)) setState({ mode: hash });
 });
 
 // Surface real failures instead of a blank page.

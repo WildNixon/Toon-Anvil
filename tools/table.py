@@ -190,8 +190,63 @@ def set_owner(profile_id: str, character_id: str) -> dict:
 
 # Kinds a player may never write, whatever they own. These change the shared
 # world rather than one character.
-SHARED_KINDS = {"homebrew", "campaigns", "npcs", "shops",
+SHARED_KINDS = {"homebrew", "campaigns", "npcs", "shops", "encounters",
                 "custom-monsters", "custom-items", "custom-spells"}
+
+
+# --------------------------------------------------------------------------
+# what a player is allowed to SEE
+# --------------------------------------------------------------------------
+
+def hp_band(hp: float, hp_max: float) -> str:
+    """How hurt something looks from across the room.
+
+    Four bands, because that is roughly what a player can tell by looking:
+    unhurt, hurt, bloodied (the half-way mark 5e already uses), and down.
+    """
+    if hp <= 0:
+        return "down"
+    frac = (hp / hp_max) if hp_max else 1.0
+    if frac <= 0.5:
+        return "bloodied"
+    if frac < 1.0:
+        return "hurt"
+    return "unhurt"
+
+
+def redact_encounter(record: dict, profile: dict | None) -> dict:
+    """Strip monster hit points unless the DM chose to show them.
+
+    Done HERE rather than in the renderer, for the same reason the permission
+    table is enforced on the server: hiding a number in the UI leaves it in the
+    payload, and a player with the network tab open would read exactly the
+    number the DM decided not to show. A band goes over the wire instead, so
+    there is nothing to uncover.
+
+    Player characters keep their numbers. Everyone at a real table can see
+    their own sheet and hears "I'm at 4 hit points" said out loud.
+    """
+    if not isinstance(record, dict):
+        return record
+    # No table, or the DM: nothing to hide from.
+    if profile is None or profile.get("role") == "dm":
+        return record
+    if record.get("showMonsterHp"):
+        return record
+
+    out = dict(record)
+    out["combatants"] = []
+    for c in record.get("combatants") or []:
+        if not isinstance(c, dict) or c.get("kind") == "pc":
+            out["combatants"].append(c)
+            continue
+        hidden = dict(c)
+        hidden["band"] = hp_band(c.get("hp") or 0, c.get("hpMax") or 0)
+        hidden["hpHidden"] = True
+        for key in ("hp", "hpMax", "temp"):
+            hidden.pop(key, None)
+        out["combatants"].append(hidden)
+    return out
 
 
 def may_write(profile: dict | None, kind: str, record_id: str,

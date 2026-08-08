@@ -15,7 +15,7 @@ import {
   encounterBudget, CR_XP, XP_BUDGET, ABILITIES,
 } from '../../core/rules2024.js';
 import { go, saveCharacter } from '../../app.js';
-import { runnerPanel } from './runner.js';
+import { runnerPanel, publish, pull, adopt } from './runner.js';
 import { partyPanel } from './party.js';
 import { lootPanel, improvPanel } from './panels.js';
 import { addMonsters } from './runner.js';
@@ -46,6 +46,10 @@ export async function render(root) {
     ]);
   }
   if (!tables) tables = await dataFile('dm-tables.json', null);
+  // A DM who reloads mid-fight gets the fight back. Solo this is a no-op:
+  // pull() answers null with no table open, and the encounter stays scratch.
+  const shared = await pull();
+  if (shared) adopt(shared);
   draw();
 }
 
@@ -64,6 +68,11 @@ function draw() {
   container.innerHTML = '';
   container.append(tabsPanel());
   if (tab === 'runner') {
+    // Every mutation in the runner ends in a redraw, so publishing here covers
+    // all of them without each button having to remember. publish() skips a
+    // write that would change nothing, and does nothing at all with no table
+    // open - a solo DM never touches the network.
+    publish();
     container.append(runnerPanel({
       characters: getState().characters || [],
       sources: sources(), monsters, redraw: draw,

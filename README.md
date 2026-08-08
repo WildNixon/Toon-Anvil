@@ -217,6 +217,26 @@ once.
 | Their own character | edit | edit |
 | Another player's character | edit | read |
 | Homebrew, custom content, campaign | edit | read |
+| The encounter | edit | read |
+
+**The fight is shared.** When a table is open, the DM's encounter runner
+publishes to the server after every change, and each player gets a **Table**
+screen: the initiative order, the round, whose turn it is, and their own line
+marked. It is the same renderer the DM uses, in read-only mode — two renderers
+for one initiative order is how the two views end up disagreeing about whose
+turn it is.
+
+**Enemy hit points are hidden by default**, with a toggle for the DM. Players
+see a band — unhurt, hurt, bloodied, down — which is roughly what you can tell
+by looking. That hiding happens on the **server**: the number is not sent, not
+merely not drawn. Hiding it in the UI would leave it in the payload for anyone
+who opens the network tab. Player characters keep their numbers, because
+everyone at a real table can see their own sheet.
+
+Players get a nav without the DM screen or the homebrew analyser, and keep
+Build and Play — a player owns their character fully. That is navigation, not
+security: what stops a player changing the fight is the server refusing the
+write.
 
 **Everyone's screen keeps up.** When the DM applies damage, the player looking
 at that sheet sees the number change — no reload, no refresh button. The server

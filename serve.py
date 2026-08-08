@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parent
 APP = ROOT / "app"
 DATA = ROOT / "data"
 
-KINDS = {"characters", "campaigns", "homebrew", "npcs", "shops",
+KINDS = {"characters", "campaigns", "homebrew", "npcs", "shops", "encounters",
          # Content ingested from a dropped PDF or written by hand. Kept apart
          # from app/data/compendium so the bundled SRD can be rebuilt without
          # taking somebody's homebrew with it.
@@ -1053,6 +1053,14 @@ class Handler(SimpleHTTPRequestHandler):
                         records.append(json.loads(p.read_text(encoding="utf-8")))
                     except json.JSONDecodeError:
                         records.append({"id": p.stem, "_error": "unreadable"})
+                if parts[1] == "encounters":
+                    # The list endpoint reads the same files, so it needs the
+                    # same redaction. Missing it here would hand a player every
+                    # number the single-record route just withheld.
+                    mod = self._table()
+                    if mod:
+                        me = mod.whoami(self._token())
+                        records = [mod.redact_encounter(r, me) for r in records]
                 return self._send_json(records)
             rid = safe_id(parts[2])
             if not rid:
@@ -1061,9 +1069,14 @@ class Handler(SimpleHTTPRequestHandler):
             if not path.exists():
                 return self._send_json({"error": "not found"}, 404)
             try:
-                return self._send_json(json.loads(path.read_text(encoding="utf-8")))
+                record = json.loads(path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 return self._send_json({"error": "unreadable record"}, 500)
+            if parts[1] == "encounters":
+                mod = self._table()
+                if mod:
+                    record = mod.redact_encounter(record, mod.whoami(self._token()))
+            return self._send_json(record)
 
         return self._send_json({"error": "unknown endpoint"}, 404)
 
