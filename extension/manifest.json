@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Toon Anvil",
+  "version": "1.0.0",
+  "description": "Your D&D subclass, analysed and docked beside your VTT.",
+  "icons": {
+    "128": "app/icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Open Toon Anvil in the side panel"
+  },
+  "side_panel": {
+    "default_path": "app/index.html"
+  },
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:7801/*",
+    "http://localhost:7801/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

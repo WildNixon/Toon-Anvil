@@ -1,0 +1,34 @@
+{
+ "srdVersion": "5.2.1",
+ "license": "CC-BY-4.0",
+ "attribution": "This work includes material from the System Reference Document 5.2.1 (\"SRD 5.2.1\") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.",
+ "counts": {
+  "spells": 339,
+  "classes": 12,
+  "subclasses": 12,
+  "monsters": 330,
+  "weapons": 38,
+  "armor": 13,
+  "gear": 80,
+  "masteryProperties": 8,
+  "magicItems": 258,
+  "feats": 17,
+  "species": 9,
+  "backgrounds": 4,
+  "conditions": 15,
+  "glossary": 155,
+  "spellsInSource": 339
+ },
+ "problems": [],
+ "notes": [
+  "patched ability block from overrides: Ancient Red Dragon",
+  "patched ability block from overrides: Remorhaz",
+  "patched ability block from overrides: Will-o'-Wisp"
+ ],
+ "patchedMonsters": [
+  "Ancient Red Dragon",
+  "Remorhaz",
+  "Will-o'-Wisp"
+ ],
+ "unparsed": []
+}

@@ -1,0 +1,55 @@
+{
+  "_comment": [
+    "PRE-REGISTERED BARS. Written before the first graded run.",
+    "",
+    "grade.py reads these; it does not compute them. Changing a bar after seeing",
+    "results is how a grader stops being a measurement and starts being a",
+    "rationalisation, so any change must bump `version` and appears in the",
+    "report as a version change.",
+    "",
+    "Set 2026-08-08, version 1, before the first sweep was graded."
+  ],
+  "version": 2,
+  "setOn": "2026-08-08",
+  "_changelog": [
+    "v2 (2026-08-08): added wipeRateScale and controlScale, and switched the",
+    "survivability and control axes from RELATIVE to SCALED-ABSOLUTE.",
+    "",
+    "Why: relative comparison is unstable for small-magnitude rates and",
+    "undefined at zero. A 0.51% vs 0.30% wipe rate read as '-71% survivability'",
+    "when the real difference is 0.2 percentage points, about 0.8 extra wipes",
+    "per 392-encounter campaign. Worse, the Open Hand monk had a control rate of",
+    "exactly zero, so the Fool Monk's control axis saturated at 1.0 and could",
+    "never be tuned. Both axes are now expressed in units of 'how much",
+    "difference actually matters', which is defined at zero and stable near it.",
+    "",
+    "The v1 tuning results were recomputed under v2 and are superseded."
+  ],
+
+  "spellCoverageGate": 0.70,
+  "_spellCoverageGate": "Minimum combat-relevant executable spell coverage before a class's damage numbers may be published. Below this, metrics are SUPPRESSED, not estimated.",
+
+  "completionTarget": 0.90,
+  "_completionTarget": "Fraction of runs that should reach level 20. Below this, the harness is suspect before the classes are.",
+
+  "invariantTolerance": 0,
+  "_invariantTolerance": "Any invariant violation is a defect. There is no acceptable non-zero count.",
+
+  "balanceBand": 0.10,
+  "_balanceBand": "A homebrew subclass should sit within +/-10% of its SRD sibling on the composite of damage, survivability and control.",
+
+  "wipeRateScale": 0.02,
+  "_wipeRateScale": "One unit of survivability difference = 2 percentage points of party-wipe rate per encounter. Used as an absolute divisor so the axis is defined at zero and not dominated by noise in a tiny rate.",
+
+  "controlScale": 0.25,
+  "_controlScale": "One unit of control difference = 0.25 control events per action. Absolute for the same reason: an SRD sibling can legitimately have zero control, and dividing by it is undefined.",
+
+  "minAblationN": 10,
+  "_minAblationN": "Minimum paired seeds before an ablation delta may be quoted at all.",
+
+  "ciMustExcludeZero": true,
+  "_ciMustExcludeZero": "An ablation whose 95% bootstrap CI contains zero is reported as 'no detectable effect', never as its point estimate.",
+
+  "activeEffectCoverage": 1.0,
+  "_activeEffectCoverage": "Every ACTIVE effect present on a character must fire at least once across the sweep. Anything that never fires is UNTESTED and must not be scored as passing."
+}

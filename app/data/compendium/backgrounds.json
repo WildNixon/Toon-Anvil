@@ -1,0 +1,46 @@
+[
+ {
+  "id": "acolyte",
+  "name": "Acolyte",
+  "abilityScores": null,
+  "feat": null,
+  "skillProficiencies": null,
+  "toolProficiency": null,
+  "equipment": null,
+  "text": "**Ability Scores:** Intelligence, Wisdom, Charisma\n**Feat:** Magic Initiate (Cleric) (see \"Feats\")\n**Skill Proficiencies:** Insight and Religion\n**Tool Proficiency:** Calligrapher's Supplies\n**Equipment:** _Choose A or B:_ (A) Calligrapher's Supplies, Book (prayers), Holy Symbol, Parchment (10 sheets), Robe, 8 GP; or (B) 50 GP",
+  "source": "SRD 5.2.1"
+ },
+ {
+  "id": "criminal",
+  "name": "Criminal",
+  "abilityScores": null,
+  "feat": null,
+  "skillProficiencies": null,
+  "toolProficiency": null,
+  "equipment": null,
+  "text": "**Ability Scores:** Dexterity, Constitution, Intelligence\n**Feat:** Alert (see \"Feats\")\n**Skill Proficiencies:** Sleight of Hand and Stealth\n**Tool Proficiency:** Thieves' Tools\n**Equipment:** _Choose A or B:_ (A) 2 Daggers, Thieves' Tools, Crowbar, 2 Pouches, Traveler's Clothes, 16 GP; or (B) 50 GP",
+  "source": "SRD 5.2.1"
+ },
+ {
+  "id": "sage",
+  "name": "Sage",
+  "abilityScores": null,
+  "feat": null,
+  "skillProficiencies": null,
+  "toolProficiency": null,
+  "equipment": null,
+  "text": "**Ability Scores:** Constitution, Intelligence, Wisdom\n**Feat:** Magic Initiate (Wizard) (see \"Feats\")\n**Skill Proficiencies:** Arcana and History\n**Tool Proficiency:** Calligrapher's Supplies\n**Equipment:** _Choose A or B:_ (A) Quarterstaff, Calligrapher's Supplies, Book (history), Parchment (8 sheets), Robe, 8 GP; or (B) 50 GP",
+  "source": "SRD 5.2.1"
+ },
+ {
+  "id": "soldier",
+  "name": "Soldier",
+  "abilityScores": null,
+  "feat": null,
+  "skillProficiencies": null,
+  "toolProficiency": null,
+  "equipment": null,
+  "text": "**Ability Scores:** Strength, Dexterity, Constitution\n**Feat:** Savage Attacker (see \"Feats\")\n**Skill Proficiencies:** Athletics and Intimidation\n**Tool Proficiency:** _Choose one kind of_ Gaming Set (see \"Equipment\")\n**Equipment:** _Choose A or B:_ (A) Spear, Shortbow, 20 Arrows, Gaming Set (same as above), Healer's Kit, Quiver, Traveler's Clothes, 14 GP; or (B) 50 GP",
+  "source": "SRD 5.2.1"
+ }
+]

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Toon Anvil">
+  <rect width="512" height="512" rx="72" fill="#1c2124"/>
+  <!-- spine -->
+  <rect x="96" y="96" width="30" height="320" fill="#b84a16"/>
+  <!-- pages -->
+  <path d="M126 108h250a20 20 0 0 1 20 20v256a20 20 0 0 1-20 20H126z" fill="#d2d6d3"/>
+  <path d="M126 108h250a20 20 0 0 1 20 20v22H126z" fill="#c0c6c4"/>
+  <!-- d20 mark -->
+  <g transform="translate(261 262)">
+    <polygon points="0,-74 64,-37 64,37 0,74 -64,37 -64,-37" fill="#1c2124"/>
+    <polygon points="0,-74 64,-37 0,0 -64,-37" fill="#2f6b62"/>
+    <polygon points="0,0 64,-37 64,37" fill="#3a4247"/>
+    <polygon points="0,0 64,37 0,74" fill="#b84a16"/>
+    <polygon points="0,0 0,74 -64,37" fill="#3a4247"/>
+    <polygon points="0,0 -64,37 -64,-37" fill="#2f6b62"/>
+  </g>
+</svg>

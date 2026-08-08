@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "Hand-patched ability blocks for monsters whose HTML tables are corrupt in the",
+    "upstream SRD markdown (cell boundaries are misaligned, e.g. '<td>+10 +10</td>'",
+    "and '<td>CON 29</td>'). Values were read directly from the raw table text and",
+    "cross-checked: for every entry below, mod == floor((score - 10) / 2). The",
+    "converter re-verifies that invariant at build time and fails loudly if an",
+    "override is internally inconsistent.",
+    "",
+    "Will-o'-Wisp's STR score is absent from the source entirely - only the mod and",
+    "save (-5, -5) survive. STR 1 is the score that produces a -5 modifier.",
+    "",
+    "A tolerant heuristic parser was considered and rejected: the corruption pattern",
+    "duplicates values ('CON 29 CON 29 +9 +9'), and any rule general enough to",
+    "recover that would also silently mangle correct blocks. A wrong Ancient Red",
+    "Dragon at the table is worse than a loud failure."
+  ],
+  "ancient-red-dragon": {
+    "str": { "score": 30, "mod": 10, "save": 10 },
+    "dex": { "score": 10, "mod": 0, "save": 7 },
+    "con": { "score": 29, "mod": 9, "save": 9 },
+    "int": { "score": 18, "mod": 4, "save": 4 },
+    "wis": { "score": 15, "mod": 2, "save": 9 },
+    "cha": { "score": 27, "mod": 8, "save": 8 }
+  },
+  "remorhaz": {
+    "str": { "score": 24, "mod": 7, "save": 7 },
+    "dex": { "score": 13, "mod": 1, "save": 1 },
+    "con": { "score": 21, "mod": 5, "save": 5 },
+    "int": { "score": 4, "mod": -3, "save": -3 },
+    "wis": { "score": 10, "mod": 0, "save": 0 },
+    "cha": { "score": 5, "mod": -3, "save": -3 }
+  },
+  "will-o-wisp": {
+    "str": { "score": 1, "mod": -5, "save": -5 },
+    "dex": { "score": 28, "mod": 9, "save": 9 },
+    "con": { "score": 10, "mod": 0, "save": 0 },
+    "int": { "score": 13, "mod": 1, "save": 1 },
+    "wis": { "score": 14, "mod": 2, "save": 2 },
+    "cha": { "score": 11, "mod": 0, "save": 0 }
+  }
+}

@@ -1,0 +1,461 @@
+/**
+ * Play mode - the live character sheet.
+ *
+ * Everything clickable rolls, and every roll logs. That is the point: the
+ * Chronicle is only rich because the sheet is honest about what happened.
+ */
+
+import { getState, setState, esc, el, sign, md, toast } from '../../core/store.js';
+import { log } from '../../core/events.js';
+import { d20, fmt } from '../../core/dice.js';
+import {
+  resolveAttack, fireTriggers, applyDamage as engineApplyDamage,
+  shortRest as engineShortRest, longRest as engineLongRest,
+} from '../../core/engine.js';
+import {
+  ABILITIES, ABILITY_NAMES, SKILLS, fromCopper, CONDITIONS,
+} from '../../core/rules2024.js';
+import { saveCharacter, go } from '../../app.js';
+
+export const title = 'Play';
+
+let container = null;
+
+export async function render(root) {
+  container = root;
+  draw();
+}
+
+function draw() {
+  const { character, derived } = getState();
+  container.innerHTML = '';
+  if (!character || !derived) {
+    container.append(el('div', { class: 'empty' },
+      'No character selected. Build one first.'));
+    container.append(el('div', { class: 'btnrow' },
+      el('button', { class: 'act', onClick: () => go('build') }, 'Go to Build')));
+    return;
+  }
+
+  container.append(vitalsPanel(derived));
+  container.append(el('div', { class: 'grid two' },
+    abilitiesPanel(derived), skillsPanel(derived)));
+  container.append(attacksPanel(derived));
+  if (derived.resources.length || derived.toggles.length) {
+    container.append(resourcesPanel(derived));
+  }
+  if (derived.spellcasting) container.append(spellPanel(derived));
+  container.append(featuresPanel(derived));
+  container.append(inventoryPanel(derived));
+}
+
+/* ------------------------------------------------------------------ */
+
+function vitalsPanel(d) {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, `Level ${d.level}`));
+  panel.append(el('h3', {}, d.name || 'Unnamed'));
+
+  const stats = el('div', { class: 'grid stats' });
+  const add = (k, v, sub, onClick) => {
+    const s = el('div', { class: `stat${onClick ? ' clickable' : ''}` }, );
+    if (onClick) s.addEventListener('click', onClick);
+    s.append(el('div', { class: 'k' }, k));
+    s.append(el('div', { class: 'v' }, String(v)));
+    if (sub) s.append(el('div', { class: 'sub' }, sub));
+    stats.append(s);
+  };
+
+  add('AC', d.ac, d.acSource);
+  add('HP', `${d.hp.current}${d.hp.temp ? `+${d.hp.temp}` : ''}`, `of ${d.hp.max}`);
+  add('Initiative', sign(d.initiative), 'click to roll', () => {
+    const r = d20({ mod: d.initiative });
+    log('initiative', { total: r.total, nat: r.nat });
+    toast(`Initiative ${fmt(r)}`);
+  });
+  add('Speed', `${d.speeds.walk}`, 'feet');
+  add('Prof', sign(d.proficiencyBonus));
+  add('Passive', d.passivePerception, 'perception');
+  panel.append(stats);
+
+  // HP controls
+  const hpRow = el('div', { class: 'btnrow', style: 'margin-top:14px;align-items:center' });
+  const amount = el('input', {
+    type: 'number', value: '5', style: 'width:70px', id: 'hp-amount',
+  });
+  hpRow.append(el('span', { class: 'eyebrow' }, 'Adjust HP'));
+  hpRow.append(amount);
+  hpRow.append(el('button', {
+    class: 'act', onClick: () => adjustHp(-Math.abs(+amount.value || 0)),
+  }, 'Damage'));
+  hpRow.append(el('button', {
+    class: 'act ghost', onClick: () => adjustHp(Math.abs(+amount.value || 0)),
+  }, 'Heal'));
+  hpRow.append(el('button', {
+    class: 'act ghost', onClick: () => rest('short'),
+  }, 'Short rest'));
+  hpRow.append(el('button', {
+    class: 'act dark', onClick: () => rest('long'),
+  }, 'Long rest'));
+  panel.append(hpRow);
+
+  // Conditions
+  const condRow = el('div', { style: 'margin-top:14px' });
+  condRow.append(el('div', { class: 'eyebrow', style: 'margin-bottom:6px' }, 'Conditions'));
+  const chips = el('div', { class: 'btnrow' });
+  for (const c of CONDITIONS) {
+    const on = (d.conditions || []).includes(c);
+    chips.append(el('button', {
+      class: `chip${on ? ' bad' : ''}`,
+      style: 'cursor:pointer;border:0',
+      onClick: () => toggleCondition(c),
+    }, c));
+  }
+  condRow.append(chips);
+  panel.append(condRow);
+
+  if (d.exhaustion > 0) {
+    panel.append(el('p', { class: 'mono', style: 'color:var(--bad);margin-top:10px' },
+      `Exhaustion ${d.exhaustion} - ${d.d20Penalty} on every d20 test`));
+  }
+  if (d.concentration) {
+    panel.append(el('p', { class: 'mono', style: 'color:var(--accent-2);margin-top:6px' },
+      `Concentrating on ${d.concentration}`));
+  }
+  return panel;
+}
+
+async function adjustHp(delta) {
+  const { derived } = getState();
+  if (!delta) return;
+  const res = engineApplyDamage(
+    { hp: derived.hp, hpMax: derived.hp.max, temp: derived.hp.temp,
+      concentrating: derived.concentration },
+    delta, { name: derived.name },
+  );
+  await saveCharacter((c) => {
+    c.hp = { ...c.hp, current: res.hp, temp: res.temp };
+    return c;
+  });
+  for (const ev of res.events) await log(ev.type, ev.payload);
+  if (res.concentrationDc) {
+    toast(`Concentration save: DC ${res.concentrationDc}`, 'warn');
+  }
+  draw();
+}
+
+async function rest(kind) {
+  const { character, derived } = getState();
+  const res = kind === 'long'
+    ? engineLongRest(character, derived)
+    : engineShortRest(character, derived);
+  await saveCharacter((c) => Object.assign(c, res.patch));
+  for (const ev of res.events) await log(ev.type, ev.payload);
+  toast(`${kind === 'long' ? 'Long' : 'Short'} rest taken`, 'ok');
+  draw();
+}
+
+async function toggleCondition(cond) {
+  await saveCharacter((c) => {
+    const set = new Set(c.conditions || []);
+    if (set.has(cond)) { set.delete(cond); log('condition_cleared', { condition: cond }); }
+    else { set.add(cond); log('condition_gained', { condition: cond }); }
+    c.conditions = [...set];
+    return c;
+  });
+  draw();
+}
+
+/* ------------------------------------------------------------------ */
+
+function abilitiesPanel(d) {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Abilities'));
+  const grid = el('div', { class: 'grid stats' });
+  for (const ab of ABILITIES) {
+    const save = d.saves[ab];
+    const cell = el('div', { class: 'stat clickable' });
+    cell.addEventListener('click', () => {
+      const r = d20({ mod: d.mods[ab] });
+      log('journal', { text: `${ABILITY_NAMES[ab]} check: ${fmt(r)}` });
+      toast(`${ABILITY_NAMES[ab]} check ${fmt(r)}`);
+    });
+    cell.append(el('div', { class: 'k' }, ab.toUpperCase()));
+    cell.append(el('div', { class: 'v' }, String(d.abilities[ab])));
+    cell.append(el('div', { class: 'sub' }, `${sign(d.mods[ab])} / save ${sign(save.mod)}`));
+    grid.append(cell);
+  }
+  panel.append(grid);
+  if (Object.keys(d.substitutions).length) {
+    panel.append(el('p', { class: 'mono', style: 'margin-top:10px;color:var(--accent-2)' },
+      Object.entries(d.substitutions)
+        .map(([scope, s]) => `${s.with.toUpperCase()} replaces ${s.replace.toUpperCase()} for ${scope}`)
+        .join(' · ')));
+  }
+  return panel;
+}
+
+function skillsPanel(d) {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Skills'));
+  const list = el('div', { style: 'max-height:340px;overflow-y:auto' });
+  for (const [skill, info] of Object.entries(d.skills)) {
+    const row = el('div', {
+      style: 'display:flex;gap:8px;align-items:center;padding:3px 4px;cursor:pointer',
+      onClick: () => {
+        const r = d20({ mod: info.mod });
+        log('journal', { text: `${cap(skill)}: ${fmt(r)}` });
+        toast(`${cap(skill)} ${fmt(r)}`);
+      },
+    });
+    row.append(el('span', {
+      class: 'chip',
+      style: info.expertise ? 'background:var(--accent);color:var(--zinc)'
+        : info.proficient ? 'background:var(--accent-2);color:var(--zinc)' : '',
+    }, info.expertise ? 'E' : info.proficient ? 'P' : '-'));
+    row.append(el('span', { style: 'flex:1;font-size:14px' }, cap(skill)));
+    row.append(el('span', { class: 'mono' }, sign(info.mod)));
+    list.append(row);
+  }
+  panel.append(list);
+  return panel;
+}
+
+/* ------------------------------------------------------------------ */
+
+function attacksPanel(d) {
+  const panel = el('div', { class: 'panel rivets accent' });
+  panel.append(el('span', { class: 'lvl accent' }, 'Attacks'));
+  panel.append(el('h3', {}, 'Attacks & strikes'));
+
+  const wrap = el('div', { class: 'scroll-x' });
+  const table = el('table');
+  table.innerHTML = '<tr><th>Attack</th><th>Bonus</th><th>Damage</th>'
+    + '<th>Mastery</th><th>Source</th><th></th></tr>';
+  for (const atk of d.attacks) {
+    const tr = el('tr');
+    tr.append(el('td', {}, atk.name + (atk.magical ? ' ✦' : '')));
+    tr.append(el('td', { class: 'mono' }, sign(atk.attackBonus)));
+    tr.append(el('td', { class: 'mono' },
+      `${atk.damage}${atk.damageBonus ? sign(atk.damageBonus) : ''} `
+      + `${atk.damageTypes.join('/')}`));
+    tr.append(el('td', { class: 'mono muted' }, atk.mastery || '-'));
+    tr.append(el('td', { class: 'muted', style: 'font-size:13px' }, atk.source));
+    const cell = el('td');
+    cell.append(el('button', {
+      class: 'act small', onClick: () => rollAttack(atk, d),
+    }, 'Roll'));
+    tr.append(cell);
+    table.append(tr);
+  }
+  wrap.append(table);
+  panel.append(wrap);
+  return panel;
+}
+
+/**
+ * Both play surfaces resolve attacks through core/engine.js. They used to have
+ * private copies that had drifted apart - this one picked roll-table entries
+ * with Math.random() over the entry count instead of rolling the die.
+ */
+async function rollAttack(atk, d) {
+  const res = resolveAttack(atk, { attackerName: d.name });
+  for (const ev of res.events) await log(ev.type, ev.payload);
+  toast(`${res.crit ? 'CRIT! ' : ''}${atk.name}: ${fmt(res.roll)} to hit, `
+    + `${res.total} damage`, res.crit ? 'ok' : 'info');
+  if (res.fumble) await fireNatTriggers(d, res.roll.nat);
+}
+
+/**
+ * Homebrew nat-roll triggers. This is the hook that makes an ingested feature
+ * like Fumble Into Fortune actually fire during play rather than sit in prose.
+ */
+export async function fireNatTriggers(d, nat) {
+  const { fired, events } = fireTriggers(d, nat);
+  for (const ev of events) await log(ev.type, ev.payload);
+  for (const f of fired) {
+    if (f.unmapped) { toast(`${f.trigger.from} triggered (no table mapped)`, 'warn'); continue; }
+    toast(`${f.table.name} (${f.n}): ${f.entry?.text}`, 'ok');
+  }
+}
+
+/* ------------------------------------------------------------------ */
+
+function resourcesPanel(d) {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Resources'));
+
+  for (const r of d.resources) {
+    const row = el('div', {
+      style: 'display:flex;gap:10px;align-items:center;margin-bottom:8px',
+    });
+    row.append(el('span', { style: 'flex:1' }, r.name));
+    row.append(el('span', { class: 'mono' }, `${r.current} / ${r.max}`));
+    row.append(el('button', {
+      class: 'act ghost small', disabled: r.current <= 0,
+      onClick: () => spendResource(r, 1),
+    }, 'Spend 1'));
+    row.append(el('button', {
+      class: 'act ghost small', disabled: r.current >= r.max,
+      onClick: () => spendResource(r, -1),
+    }, '+1'));
+    panel.append(row);
+  }
+
+  for (const t of d.toggles) {
+    const row = el('div', { style: 'margin-top:12px' });
+    row.append(el('div', { class: 'eyebrow', style: 'margin-bottom:6px' },
+      `${t.name} · ${t.from}`));
+    const opts = el('div', { class: 'btnrow' });
+    const active = d.toggleState[t.key] ?? t.default;
+    for (const o of t.options || []) {
+      opts.append(el('button', {
+        class: `act ${active === o.key ? '' : 'ghost'} small`,
+        onClick: () => setToggle(t.key, o.key),
+      }, o.label));
+    }
+    row.append(opts);
+    panel.append(row);
+  }
+  return panel;
+}
+
+async function spendResource(r, amount) {
+  await saveCharacter((c) => {
+    const state = { ...(c.resourceState || {}) };
+    const cur = state[r.name] ?? r.max;
+    state[r.name] = Math.max(0, Math.min(r.max, cur - amount));
+    c.resourceState = state;
+    return c;
+  });
+  if (amount > 0) await log('resource_spent', { resource: r.name, amount });
+  draw();
+}
+
+async function setToggle(key, value) {
+  await saveCharacter((c) => {
+    c.toggles = { ...(c.toggles || {}), [key]: value };
+    return c;
+  });
+  toast(`${key}: ${value}`);
+  draw();
+}
+
+/* ------------------------------------------------------------------ */
+
+function spellPanel(d) {
+  const sc = d.spellcasting;
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Spellcasting'));
+  panel.append(el('h3', {}, `${sc.ability.toUpperCase()} · DC ${sc.saveDc} · ${sign(sc.attackBonus)} to hit`));
+
+  if (sc.slots.length) {
+    const slots = el('div', { class: 'grid stats' });
+    sc.slots.forEach((max, i) => {
+      const lvl = i + 1;
+      const used = sc.slotState[lvl] || 0;
+      const cell = el('div', { class: 'stat clickable' });
+      cell.addEventListener('click', () => useSlot(lvl, max));
+      cell.append(el('div', { class: 'k' }, `Level ${lvl}`));
+      cell.append(el('div', { class: 'v' }, `${max - used}`));
+      cell.append(el('div', { class: 'sub' }, `of ${max}`));
+      slots.append(cell);
+    });
+    panel.append(slots);
+  }
+
+  if (sc.alwaysPrepared.length) {
+    panel.append(el('div', { class: 'rule' }));
+    panel.append(el('div', { class: 'eyebrow', style: 'margin-bottom:6px' },
+      'Always prepared'));
+    const chips = el('div', { class: 'btnrow' });
+    for (const s of sc.alwaysPrepared) {
+      chips.append(el('span', { class: 'chip accent', title: `from ${s.from}` }, s.name));
+    }
+    panel.append(chips);
+  }
+  return panel;
+}
+
+async function useSlot(level, max) {
+  const { derived } = getState();
+  const used = derived.spellcasting.slotState[level] || 0;
+  if (used >= max) return toast('No slots left at that level', 'bad');
+  await saveCharacter((c) => {
+    c.slotState = { ...(c.slotState || {}), [level]: used + 1 };
+    return c;
+  });
+  await log('spell_cast', { level, slotUsed: true });
+  draw();
+}
+
+/* ------------------------------------------------------------------ */
+
+function featuresPanel(d) {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Features'));
+  panel.append(el('h3', {}, 'Features & traits'));
+  if (d.unmappedFeatures) {
+    panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
+      `${d.unmappedFeatures} of ${d.features.length} features are text-only. `
+      + 'They still play - map them in Homebrew to automate them.'));
+  }
+  for (const f of d.features) {
+    const box = el('details', {
+      style: 'border-bottom:1px solid var(--etch);padding:8px 0',
+    });
+    const sum = el('summary', { style: 'cursor:pointer;font-weight:600' });
+    sum.append(el('span', { class: 'lvl ghost', style: 'margin:0 8px 0 0' },
+      `L${f.level}`));
+    sum.append(document.createTextNode(f.name));
+    const live = (f.effects || []).filter((e) => e.type !== 'narrative_only').length;
+    if (live) sum.append(el('span', { class: 'chip ok', style: 'margin-left:8px' },
+      `${live} live`));
+    box.append(sum);
+    box.append(el('div', { html: md(f.text || ''), style: 'padding-top:8px' }));
+    panel.append(box);
+  }
+  return panel;
+}
+
+function inventoryPanel(d) {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Inventory'));
+  panel.append(el('h3', {}, fromCopper(d.copper)));
+  panel.append(el('p', { class: 'mono muted' },
+    `${d.carried} / ${d.capacity} lb · ${d.encumbrance} · `
+    + `attuned ${d.attuned}/${d.attunementLimit}`));
+
+  if (!d.inventory.length) {
+    panel.append(el('p', { class: 'muted' }, 'Nothing carried. Visit the Shop.'));
+    return panel;
+  }
+  const wrap = el('div', { class: 'scroll-x' });
+  const table = el('table');
+  table.innerHTML = '<tr><th>Item</th><th>Qty</th><th>Weight</th><th>Equipped</th></tr>';
+  for (const it of d.inventory) {
+    const tr = el('tr');
+    tr.append(el('td', {}, it.name));
+    tr.append(el('td', { class: 'mono' }, String(it.qty || 1)));
+    tr.append(el('td', { class: 'mono muted' }, it.weight || '-'));
+    const cell = el('td');
+    cell.append(el('input', {
+      type: 'checkbox', checked: Boolean(it.equipped), style: 'width:auto',
+      onChange: async () => {
+        await saveCharacter((c) => {
+          const target = c.inventory.find((x) => x.id === it.id);
+          if (target) target.equipped = !target.equipped;
+          return c;
+        });
+        draw();
+      },
+    }));
+    tr.append(cell);
+    table.append(tr);
+  }
+  wrap.append(table);
+  panel.append(wrap);
+  return panel;
+}
+
+const cap = (s) => String(s || '').replace(/^./, (m) => m.toUpperCase());

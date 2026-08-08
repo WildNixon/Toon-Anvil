@@ -1,0 +1,2253 @@
+{
+ "generated": "2026-08-08T17:08:38.553Z",
+ "seeds": 6,
+ "axes": [
+  "stDpr",
+  "wipeRate",
+  "cpa",
+  "dtpr"
+ ],
+ "stats": {
+  "stDpr": {
+   "mean": 12.222108695652171,
+   "sd": 6.426708224497948
+  },
+  "wipeRate": {
+   "mean": 0.015819402173913043,
+   "sd": 0.008706452228893944
+  },
+  "cpa": {
+   "mean": 0.7501471014492751,
+   "sd": 0.5843072883455486
+  },
+  "dtpr": {
+   "mean": 9.410085144927544,
+   "sd": 0.599495572705816
+  }
+ },
+ "diagnostics": {
+  "pairs": [
+   {
+    "a": "stDpr",
+    "b": "wipeRate",
+    "r": -0.484
+   },
+   {
+    "a": "stDpr",
+    "b": "cpa",
+    "r": 0.284
+   },
+   {
+    "a": "stDpr",
+    "b": "dtpr",
+    "r": 0.718
+   },
+   {
+    "a": "wipeRate",
+    "b": "cpa",
+    "r": -0.209
+   },
+   {
+    "a": "wipeRate",
+    "b": "dtpr",
+    "r": -0.678
+   },
+   {
+    "a": "cpa",
+    "b": "dtpr",
+    "r": 0.233
+   }
+  ],
+  "dead": [],
+  "redundant": [],
+  "distinct": 77,
+  "tied": 25,
+  "tieRate": 0.272
+ },
+ "counts": {
+  "simulated": 92,
+  "cached": 0,
+  "excluded": 15,
+  "total": 107
+ },
+ "excluded": [
+  {
+   "name": "barbarian/Path of the Inner Eye",
+   "reason": "mapped 4 effect(s), none the simulator runs (reaction_option, narrative_only)"
+  },
+  {
+   "name": "bard/College of Echoes",
+   "reason": "mapped 4 effect(s), none the simulator runs (narrative_only, reaction_option)"
+  },
+  {
+   "name": "bard/College of Lore",
+   "reason": "mapped 4 effect(s), none the simulator runs (proficiency, reaction_option, narrative_only)"
+  },
+  {
+   "name": "bard/College of Sincerity",
+   "reason": "no mapped mechanics - nothing to measure"
+  },
+  {
+   "name": "monk/Way of the Cerulean Spirit",
+   "reason": "no mapped mechanics - nothing to measure"
+  },
+  {
+   "name": "monk/Way of the Dragon",
+   "reason": "mapped 5 effect(s), none the simulator runs (narrative_only, reaction_option)"
+  },
+  {
+   "name": "monk/Way of the Tipsy Monkey",
+   "reason": "mapped 5 effect(s), none the simulator runs (narrative_only, reaction_option)"
+  },
+  {
+   "name": "monk/Way of the Wildcat",
+   "reason": "mapped 5 effect(s), none the simulator runs (narrative_only, reaction_option)"
+  },
+  {
+   "name": "rogue/Smuggler",
+   "reason": "no mapped mechanics - nothing to measure"
+  },
+  {
+   "name": "rogue/Thief",
+   "reason": "no mapped mechanics - nothing to measure"
+  },
+  {
+   "name": "sorcerer/Cold-Blooded",
+   "reason": "mapped 5 effect(s), none the simulator runs (narrative_only, reaction_option)"
+  },
+  {
+   "name": "sorcerer/Hungering",
+   "reason": "mapped 5 effect(s), none the simulator runs (narrative_only, reaction_option)"
+  },
+  {
+   "name": "wizard/Cantrip Adept",
+   "reason": "no mapped mechanics - nothing to measure"
+  },
+  {
+   "name": "wizard/School of Divining and Soothsaying",
+   "reason": "no mapped mechanics - nothing to measure"
+  },
+  {
+   "name": "wizard/School of Evocation",
+   "reason": "no mapped mechanics - nothing to measure"
+  }
+ ],
+ "vectors": [
+  {
+   "id": "path-of-booming-magnificence",
+   "name": "Path of Booming Magnificence",
+   "class": "barbarian",
+   "document": "Tome of Heroes",
+   "hash": "12tlntp",
+   "coverage": 0.8,
+   "metrics": {
+    "stDpr": 10.605,
+    "wipeRate": 0.029336666666666667,
+    "cpa": 0.6468666666666668,
+    "dtpr": 9.665666666666667,
+    "featureRate": 2.5548032936870997,
+    "dpr": 10.605,
+    "downRate": 0.06548333333333334
+   },
+   "vec": [
+    -0.25162316992825645,
+    1.5525571308935833,
+    -0.17675705376710985,
+    0.42632762171296495
+   ]
+  },
+  {
+   "id": "path-of-hellfire",
+   "name": "Path of Hellfire",
+   "class": "barbarian",
+   "document": "Tome of Heroes",
+   "hash": "1s0nfcy",
+   "coverage": 0.75,
+   "metrics": {
+    "stDpr": 15.336333333333336,
+    "wipeRate": 0.03358666666666666,
+    "cpa": 0,
+    "dtpr": 9.635333333333334,
+    "featureRate": 3.091666666666667,
+    "dpr": 15.336333333333336,
+    "downRate": 0.06973333333333333
+   },
+   "vec": [
+    0.48457538896974695,
+    2.040700853303912,
+    -1.283822941133077,
+    0.37572952772467416
+   ]
+  },
+  {
+   "id": "path-of-mistwood",
+   "name": "Path of Mistwood",
+   "class": "barbarian",
+   "document": "Tome of Heroes",
+   "hash": "sdtn42",
+   "coverage": 0.2,
+   "metrics": {
+    "stDpr": 10.605,
+    "wipeRate": 0.029336666666666667,
+    "cpa": 0.94975,
+    "dtpr": 9.665666666666667,
+    "featureRate": 2.857639524245197,
+    "dpr": 10.605,
+    "downRate": 0.06548333333333334
+   },
+   "vec": [
+    -0.25162316992825645,
+    1.5525571308935833,
+    0.34160603937680717,
+    0.42632762171296495
+   ]
+  },
+  {
+   "id": "path-of-the-berserker",
+   "name": "Path of the Berserker",
+   "class": "barbarian",
+   "document": "5e Core Rules",
+   "hash": "1p5ahmg",
+   "coverage": 0.75,
+   "metrics": {
+    "stDpr": 10.605,
+    "wipeRate": 0.029336666666666667,
+    "cpa": 0,
+    "dtpr": 9.665666666666667,
+    "featureRate": 1.9077767612076852,
+    "dpr": 10.605,
+    "downRate": 0.06548333333333334
+   },
+   "vec": [
+    -0.25162316992825645,
+    1.5525571308935833,
+    -1.283822941133077,
+    0.42632762171296495
+   ]
+  },
+  {
+   "id": "path-of-the-dragon",
+   "name": "Path of the Dragon",
+   "class": "barbarian",
+   "document": "Tome of Heroes",
+   "hash": "1pvgv5h",
+   "coverage": 0.8,
+   "metrics": {
+    "stDpr": 16.421333333333333,
+    "wipeRate": 0.02678666666666667,
+    "cpa": 0.9405666666666668,
+    "dtpr": 9.602333333333334,
+    "featureRate": 4.0145269656800435,
+    "dpr": 16.421333333333333,
+    "downRate": 0.05825
+   },
+   "vec": [
+    0.6534020980871905,
+    1.2596708974473858,
+    0.32588942328027415,
+    0.3206832496495011
+   ]
+  },
+  {
+   "id": "path-of-the-herald",
+   "name": "Path of the Herald",
+   "class": "barbarian",
+   "document": "Tome of Heroes",
+   "hash": "qaqw4e",
+   "coverage": 0.4,
+   "metrics": {
+    "stDpr": 14.639000000000001,
+    "wipeRate": 0.028485,
+    "cpa": 0.6352833333333333,
+    "dtpr": 9.839333333333334,
+    "featureRate": 3.0726933830382106,
+    "dpr": 14.639000000000001,
+    "downRate": 0.06165
+   },
+   "vec": [
+    0.3760698665507935,
+    1.454736957500768,
+    -0.19658109766382628,
+    0.716015610371205
+   ]
+  },
+  {
+   "id": "path-of-the-juggernaut",
+   "name": "Path of the Juggernaut",
+   "class": "barbarian",
+   "document": "Critical Role: Tal’Dorei Campaign Setting",
+   "hash": "eff2zn",
+   "coverage": 0.25,
+   "metrics": {
+    "stDpr": 10.605,
+    "wipeRate": 0.029336666666666667,
+    "cpa": 0.6468666666666668,
+    "dtpr": 9.665666666666667,
+    "featureRate": 2.5548032936870997,
+    "dpr": 10.605,
+    "downRate": 0.06548333333333334
+   },
+   "vec": [
+    -0.25162316992825645,
+    1.5525571308935833,
+    -0.17675705376710985,
+    0.42632762171296495
+   ]
+  },
+  {
+   "id": "path-of-thorns",
+   "name": "Path of Thorns",
+   "class": "barbarian",
+   "document": "Tome of Heroes",
+   "hash": "xck6fw",
+   "coverage": 0.8,
+   "metrics": {
+    "stDpr": 13.567666666666668,
+    "wipeRate": 0.02806166666666667,
+    "cpa": 1.0003499999999999,
+    "dtpr": 9.796333333333335,
+    "featureRate": 3.9737571613380154,
+    "dpr": 13.567666666666668,
+    "downRate": 0.05655000000000001
+   },
+   "vec": [
+    0.20936969969873048,
+    1.4061140141704844,
+    0.42820430883066335,
+    0.644288641970222
+   ]
+  },
+  {
+   "id": "college-of-investigation",
+   "name": "College of Investigation",
+   "class": "bard",
+   "document": "Tome of Heroes",
+   "hash": "2iamhp",
+   "coverage": 0.25,
+   "metrics": {
+    "stDpr": 12.0905,
+    "wipeRate": 0.005951666666666668,
+    "cpa": 1.3751666666666666,
+    "dtpr": 9.760666666666667,
+    "featureRate": 1.2098393574297188,
+    "dpr": 31.580333333333332,
+    "downRate": 0.01065
+   },
+   "vec": [
+    -0.020478399058244424,
+    -1.133381915827724,
+    1.0696761407633966,
+    0.5847941798081637
+   ]
+  },
+  {
+   "id": "college-of-shadows",
+   "name": "College of Shadows",
+   "class": "bard",
+   "document": "Tome of Heroes",
+   "hash": "1no9rxx",
+   "coverage": 0.75,
+   "metrics": {
+    "stDpr": 12.0905,
+    "wipeRate": 0.005951666666666668,
+    "cpa": 1.3751666666666666,
+    "dtpr": 9.760666666666667,
+    "featureRate": 1.2098393574297188,
+    "dpr": 31.580333333333332,
+    "downRate": 0.01065
+   },
+   "vec": [
+    -0.020478399058244424,
+    -1.133381915827724,
+    1.0696761407633966,
+    0.5847941798081637
+   ]
+  },
+  {
+   "id": "college-of-skalds",
+   "name": "College of Skalds",
+   "class": "bard",
+   "document": "Open5e Original Content",
+   "hash": "1iptifd",
+   "coverage": 0.5,
+   "metrics": {
+    "stDpr": 11.568333333333333,
+    "wipeRate": 0.007226666666666667,
+    "cpa": 0.4554666666666667,
+    "dtpr": 9.681333333333333,
+    "featureRate": 0.24675745784695202,
+    "dpr": 31.038833333333333,
+    "downRate": 0.012333333333333333
+   },
+   "vec": [
+    -0.10172787366115571,
+    -0.9869387991046253,
+    -0.5043244208316975,
+    0.45246070322340043
+   ]
+  },
+  {
+   "id": "college-of-tactics",
+   "name": "College of Tactics",
+   "class": "bard",
+   "document": "Tome of Heroes",
+   "hash": "1m9az2y",
+   "coverage": 0.75,
+   "metrics": {
+    "stDpr": 12.0905,
+    "wipeRate": 0.005951666666666668,
+    "cpa": 1.3751666666666666,
+    "dtpr": 9.760666666666667,
+    "featureRate": 1.2098393574297188,
+    "dpr": 31.580333333333332,
+    "downRate": 0.01065
+   },
+   "vec": [
+    -0.020478399058244424,
+    -1.133381915827724,
+    1.0696761407633966,
+    0.5847941798081637
+   ]
+  },
+  {
+   "id": "college-of-the-cat",
+   "name": "College of the Cat",
+   "class": "bard",
+   "document": "Tome of Heroes",
+   "hash": "1ld9jgl",
+   "coverage": 0.75,
+   "metrics": {
+    "stDpr": 12.0905,
+    "wipeRate": 0.005951666666666668,
+    "cpa": 1.26875,
+    "dtpr": 9.760666666666667,
+    "featureRate": 1.1034136546184738,
+    "dpr": 31.580333333333332,
+    "downRate": 0.01065
+   },
+   "vec": [
+    -0.020478399058244424,
+    -1.133381915827724,
+    0.8875516511511196,
+    0.5847941798081637
+   ]
+  },
+  {
+   "id": "blood-domain",
+   "name": "Blood Domain",
+   "class": "cleric",
+   "document": "Critical Role: Tal’Dorei Campaign Setting",
+   "hash": "79alnv",
+   "coverage": 0.6666666666666666,
+   "metrics": {
+    "stDpr": 7.4751666666666665,
+    "wipeRate": 0.01233,
+    "cpa": 0.24491666666666667,
+    "dtpr": 8.988333333333335,
+    "featureRate": 0.25115526802218113,
+    "dpr": 19.058166666666665,
+    "downRate": 0.0285
+   },
+   "vec": [
+    -0.7386272821427697,
+    -0.4007834743907315,
+    -0.8646656388852443,
+    -0.7035111363552485
+   ]
+  },
+  {
+   "id": "demise-domain",
+   "name": "Demise Domain",
+   "class": "cleric",
+   "document": "Open5e Original Content",
+   "hash": "du93un",
+   "coverage": 0.16666666666666666,
+   "metrics": {
+    "stDpr": 7.927666666666667,
+    "wipeRate": 0.018283333333333335,
+    "cpa": 0.09575,
+    "dtpr": 9.181833333333332,
+    "featureRate": 0.29768392370572205,
+    "dpr": 19.998833333333334,
+    "downRate": 0.034883333333333336
+   },
+   "vec": [
+    -0.6682179864048494,
+    0.2830005948052283,
+    -1.1199536861882795,
+    -0.38073977855082514
+   ]
+  },
+  {
+   "id": "hunt-domain",
+   "name": "Hunt Domain",
+   "class": "cleric",
+   "document": "Tome of Heroes",
+   "hash": "6jpgz0",
+   "coverage": 0.5,
+   "metrics": {
+    "stDpr": 7.4751666666666665,
+    "wipeRate": 0.01233,
+    "cpa": 0.17006666666666667,
+    "dtpr": 8.988333333333335,
+    "featureRate": 0.25115526802218113,
+    "dpr": 19.058166666666665,
+    "downRate": 0.0285
+   },
+   "vec": [
+    -0.7386272821427697,
+    -0.4007834743907315,
+    -0.9927660434034489,
+    -0.7035111363552485
+   ]
+  },
+  {
+   "id": "life-domain",
+   "name": "Life Domain",
+   "class": "cleric",
+   "document": "5e Core Rules",
+   "hash": "1v3t7pd",
+   "coverage": 0.3333333333333333,
+   "metrics": {
+    "stDpr": 7.608833333333334,
+    "wipeRate": 0.019560000000000004,
+    "cpa": 0.09286666666666667,
+    "dtpr": 8.945833333333333,
+    "featureRate": 0.20111482720178372,
+    "dpr": 19.410666666666668,
+    "downRate": 0.03743333333333334
+   },
+   "vec": [
+    -0.7178286614496528,
+    0.4296351404390766,
+    -1.1248883043093327,
+    -0.774404070239946
+   ]
+  },
+  {
+   "id": "mercy-domain",
+   "name": "Mercy Domain",
+   "class": "cleric",
+   "document": "Tome of Heroes",
+   "hash": "7mnne6",
+   "coverage": 0.3333333333333333,
+   "metrics": {
+    "stDpr": 7.4751666666666665,
+    "wipeRate": 0.01233,
+    "cpa": 0.24491666666666667,
+    "dtpr": 8.988333333333335,
+    "featureRate": 0.25115526802218113,
+    "dpr": 19.058166666666665,
+    "downRate": 0.0285
+   },
+   "vec": [
+    -0.7386272821427697,
+    -0.4007834743907315,
+    -0.8646656388852443,
+    -0.7035111363552485
+   ]
+  },
+  {
+   "id": "mischief-domain",
+   "name": "Mischief Domain",
+   "class": "cleric",
+   "document": "Open5e Original Content",
+   "hash": "plo11t",
+   "coverage": 0.8,
+   "metrics": {
+    "stDpr": 7.951333333333333,
+    "wipeRate": 0.011481666666666668,
+    "cpa": 1.10375,
+    "dtpr": 9.1195,
+    "featureRate": 1.3082585691281343,
+    "dpr": 19.745166666666666,
+    "downRate": 0.0319
+   },
+   "vec": [
+    -0.6645354376038238,
+    -0.49822078996204816,
+    0.6051659898885442,
+    -0.4847160815817059
+   ]
+  },
+  {
+   "id": "portal-domain",
+   "name": "Portal Domain",
+   "class": "cleric",
+   "document": "Tome of Heroes",
+   "hash": "1286d0j",
+   "coverage": 0.5714285714285714,
+   "metrics": {
+    "stDpr": 7.4751666666666665,
+    "wipeRate": 0.01233,
+    "cpa": 1.0611333333333333,
+    "dtpr": 8.988333333333335,
+    "featureRate": 1.1418669131238448,
+    "dpr": 19.058166666666665,
+    "downRate": 0.0285
+   },
+   "vec": [
+    -0.7386272821427697,
+    -0.4007834743907315,
+    0.5322306226311294,
+    -0.7035111363552485
+   ]
+  },
+  {
+   "id": "serpent-domain",
+   "name": "Serpent Domain",
+   "class": "cleric",
+   "document": "Tome of Heroes",
+   "hash": "y5bp3q",
+   "coverage": 0.8333333333333334,
+   "metrics": {
+    "stDpr": 8.1965,
+    "wipeRate": 0.01786,
+    "cpa": 1.0831166666666665,
+    "dtpr": 8.969333333333333,
+    "featureRate": 1.3458006718924973,
+    "dpr": 20.020833333333332,
+    "downRate": 0.037
+   },
+   "vec": [
+    -0.6263873440382692,
+    0.23437765147494438,
+    0.569853520328638,
+    -0.7352044479742913
+   ]
+  },
+  {
+   "id": "shadow-domain",
+   "name": "Shadow Domain",
+   "class": "cleric",
+   "document": "Tome of Heroes",
+   "hash": "u493xn",
+   "coverage": 0.5,
+   "metrics": {
+    "stDpr": 7.4751666666666665,
+    "wipeRate": 0.01233,
+    "cpa": 1.2390333333333334,
+    "dtpr": 8.988333333333335,
+    "featureRate": 1.2451478743068392,
+    "dpr": 19.058166666666665,
+    "downRate": 0.0285
+   },
+   "vec": [
+    -0.7386272821427697,
+    -0.4007834743907315,
+    0.8366937083196881,
+    -0.7035111363552485
+   ]
+  },
+  {
+   "id": "storm-domain",
+   "name": "Storm Domain",
+   "class": "cleric",
+   "document": "Open5e Original Content",
+   "hash": "aeekre",
+   "coverage": 0.3333333333333333,
+   "metrics": {
+    "stDpr": 7.927666666666667,
+    "wipeRate": 0.018283333333333335,
+    "cpa": 0.09575,
+    "dtpr": 9.181833333333332,
+    "featureRate": 0.29768392370572205,
+    "dpr": 19.998833333333334,
+    "downRate": 0.034883333333333336
+   },
+   "vec": [
+    -0.6682179864048494,
+    0.2830005948052283,
+    -1.1199536861882795,
+    -0.38073977855082514
+   ]
+  },
+  {
+   "id": "vermin-domain",
+   "name": "Vermin Domain",
+   "class": "cleric",
+   "document": "Tome of Heroes",
+   "hash": "1vxgucf",
+   "coverage": 0.6,
+   "metrics": {
+    "stDpr": 8.316166666666666,
+    "wipeRate": 0.015306666666666668,
+    "cpa": 1.0827,
+    "dtpr": 9.1825,
+    "featureRate": 1.43790546802595,
+    "dpr": 20.407,
+    "downRate": 0.034866666666666664
+   },
+   "vec": [
+    -0.6077671324950552,
+    -0.05889143979275157,
+    0.5691404252244399,
+    -0.3796277325291031
+   ]
+  },
+  {
+   "id": "wind-domain",
+   "name": "Wind Domain",
+   "class": "cleric",
+   "document": "Tome of Heroes",
+   "hash": "1hng4dw",
+   "coverage": 0.8,
+   "metrics": {
+    "stDpr": 7.883666666666666,
+    "wipeRate": 0.02041,
+    "cpa": 1.0900666666666667,
+    "dtpr": 8.93,
+    "featureRate": 1.2798833819241981,
+    "dpr": 19.865333333333336,
+    "downRate": 0.03785
+   },
+   "vec": [
+    -0.6750644151616861,
+    0.5272638849211421,
+    0.5817479466666681,
+    -0.8008151632558119
+   ]
+  },
+  {
+   "id": "circle-of-ash",
+   "name": "Circle of Ash",
+   "class": "druid",
+   "document": "Tome of Heroes",
+   "hash": "br85wa",
+   "coverage": 0.8,
+   "metrics": {
+    "stDpr": 9.339333333333332,
+    "wipeRate": 0.014883333333333337,
+    "cpa": 0.11363333333333335,
+    "dtpr": 9.4465,
+    "featureRate": 0,
+    "dpr": 21.917333333333335,
+    "downRate": 0.03191666666666667
+   },
+   "vec": [
+    -0.4485617304563473,
+    -0.10751438312303511,
+    -1.0893476443160832,
+    0.06074249207229023
+   ]
+  },
+  {
+   "id": "circle-of-bees",
+   "name": "Circle of Bees",
+   "class": "druid",
+   "document": "Tome of Heroes",
+   "hash": "7yff64",
+   "coverage": 0.8333333333333334,
+   "metrics": {
+    "stDpr": 9.3005,
+    "wipeRate": 0.016158333333333334,
+    "cpa": 1.0044666666666668,
+    "dtpr": 9.412333333333333,
+    "featureRate": 0.8981844946025516,
+    "dpr": 21.859166666666667,
+    "downRate": 0.031049999999999998
+   },
+   "vec": [
+    -0.45460422250310056,
+    0.03892873360006335,
+    0.43524968846014433,
+    0.0037501334591035973
+   ]
+  },
+  {
+   "id": "circle-of-crystals",
+   "name": "Circle of Crystals",
+   "class": "druid",
+   "document": "Tome of Heroes",
+   "hash": "1y1o7vh",
+   "coverage": 1,
+   "metrics": {
+    "stDpr": 9.304,
+    "wipeRate": 0.017433333333333332,
+    "cpa": 2.075016666666667,
+    "dtpr": 9.272166666666665,
+    "featureRate": 0.9846633117661155,
+    "dpr": 21.909499999999998,
+    "downRate": 0.03445
+   },
+   "vec": [
+    -0.4540596202156248,
+    0.18537185032316203,
+    2.2674192015792354,
+    -0.23005754260767183
+   ]
+  },
+  {
+   "id": "circle-of-sand",
+   "name": "Circle of Sand",
+   "class": "druid",
+   "document": "Tome of Heroes",
+   "hash": "1vwdkof",
+   "coverage": 1,
+   "metrics": {
+    "stDpr": 9.322666666666667,
+    "wipeRate": 0.01701,
+    "cpa": 1.8891166666666666,
+    "dtpr": 9.495166666666668,
+    "featureRate": 0.9677262800291192,
+    "dpr": 21.95183333333333,
+    "downRate": 0.034866666666666664
+   },
+   "vec": [
+    -0.4511550746824215,
+    0.13674890699287848,
+    1.9492646898900665,
+    0.1419218516579017
+   ]
+  },
+  {
+   "id": "circle-of-the-green",
+   "name": "Circle of the Green",
+   "class": "druid",
+   "document": "Tome of Heroes",
+   "hash": "1oghi60",
+   "coverage": 0.8,
+   "metrics": {
+    "stDpr": 9.220666666666666,
+    "wipeRate": 0.018283333333333335,
+    "cpa": 0.10155000000000002,
+    "dtpr": 9.560166666666666,
+    "featureRate": 0.15196907465571394,
+    "dpr": 21.448333333333334,
+    "downRate": 0.03106666666666667
+   },
+   "vec": [
+    -0.46702634134599696,
+    0.2830005948052283,
+    -1.1100274023378376,
+    0.25034633877566476
+   ]
+  },
+  {
+   "id": "circle-of-the-land",
+   "name": "Circle of the Land",
+   "class": "druid",
+   "document": "5e Core Rules",
+   "hash": "h7r2in",
+   "coverage": 0.5,
+   "metrics": {
+    "stDpr": 9.339333333333332,
+    "wipeRate": 0.014883333333333337,
+    "cpa": 0.11363333333333335,
+    "dtpr": 9.4465,
+    "featureRate": 0,
+    "dpr": 21.917333333333335,
+    "downRate": 0.03191666666666667
+   },
+   "vec": [
+    -0.4485617304563473,
+    -0.10751438312303511,
+    -1.0893476443160832,
+    0.06074249207229023
+   ]
+  },
+  {
+   "id": "circle-of-the-many",
+   "name": "Circle of the Many",
+   "class": "druid",
+   "document": "Open5e Original Content",
+   "hash": "t7nzrn",
+   "coverage": 0.2,
+   "metrics": {
+    "stDpr": 9.339333333333332,
+    "wipeRate": 0.014883333333333337,
+    "cpa": 1.1015666666666668,
+    "dtpr": 9.4465,
+    "featureRate": 0.9877541023757042,
+    "dpr": 21.917333333333335,
+    "downRate": 0.03191666666666667
+   },
+   "vec": [
+    -0.4485617304563473,
+    -0.10751438312303511,
+    0.6014293715425446,
+    0.06074249207229023
+   ]
+  },
+  {
+   "id": "circle-of-the-shapeless",
+   "name": "Circle of the Shapeless",
+   "class": "druid",
+   "document": "Tome of Heroes",
+   "hash": "13ow3lt",
+   "coverage": 0.8,
+   "metrics": {
+    "stDpr": 8.8435,
+    "wipeRate": 0.015731666666666668,
+    "cpa": 1.0860999999999998,
+    "dtpr": 9.538666666666666,
+    "featureRate": 1.0042006424511984,
+    "dpr": 20.709333333333333,
+    "downRate": 0.03146666666666667
+   },
+   "vec": [
+    -0.5257137211820607,
+    -0.010077067551718614,
+    0.5749592812746988,
+    0.21448285457517327
+   ]
+  },
+  {
+   "id": "circle-of-wind",
+   "name": "Circle of Wind",
+   "class": "druid",
+   "document": "Tome of Heroes",
+   "hash": "169rkhp",
+   "coverage": 0.7142857142857143,
+   "metrics": {
+    "stDpr": 9.801333333333332,
+    "wipeRate": 0.014455,
+    "cpa": 1.0043333333333333,
+    "dtpr": 9.699499999999999,
+    "featureRate": 0.8904041656335234,
+    "dpr": 24.299333333333333,
+    "downRate": 0.027649999999999997
+   },
+   "vec": [
+    -0.3766742285095647,
+    -0.1567116131855667,
+    0.4350214980268005,
+    0.4827639573152876
+   ]
+  },
+  {
+   "id": "arcane-warrior",
+   "name": "Arcane Warrior",
+   "class": "fighter",
+   "document": "Open5e Original Content",
+   "hash": "qtlix1",
+   "coverage": 0.6666666666666666,
+   "metrics": {
+    "stDpr": 11.418666666666667,
+    "wipeRate": 0.02806166666666667,
+    "cpa": 0.9478333333333334,
+    "dtpr": 8.7395,
+    "featureRate": 2.858011049723757,
+    "dpr": 11.418666666666667,
+    "downRate": 0.0676
+   },
+   "vec": [
+    -0.1250161048113039,
+    1.4061140141704844,
+    0.3383258018974946,
+    -1.118582313962498
+   ]
+  },
+  {
+   "id": "champion",
+   "name": "Champion",
+   "class": "fighter",
+   "document": "5e Core Rules",
+   "hash": "1o7rkb1",
+   "coverage": 0.4,
+   "metrics": {
+    "stDpr": 11.418666666666667,
+    "wipeRate": 0.02806166666666667,
+    "cpa": 0,
+    "dtpr": 8.7395,
+    "featureRate": 1.9103130755064457,
+    "dpr": 11.418666666666667,
+    "downRate": 0.0676
+   },
+   "vec": [
+    -0.1250161048113039,
+    1.4061140141704844,
+    -1.283822941133077,
+    -1.118582313962498
+   ]
+  },
+  {
+   "id": "chaplain",
+   "name": "Chaplain",
+   "class": "fighter",
+   "document": "Tome of Heroes",
+   "hash": "12htnwk",
+   "coverage": 0.5,
+   "metrics": {
+    "stDpr": 7.846833333333333,
+    "wipeRate": 0.033165,
+    "cpa": 0.36161666666666664,
+    "dtpr": 8.741833333333334,
+    "featureRate": 1.5620973514674301,
+    "dpr": 7.846833333333333,
+    "downRate": 0.06546666666666666
+   },
+   "vec": [
+    -0.6807957059013104,
+    1.992269338884378,
+    -0.6649419621013501,
+    -1.1146901528864739
+   ]
+  },
+  {
+   "id": "legionary",
+   "name": "Legionary",
+   "class": "fighter",
+   "document": "Tome of Heroes",
+   "hash": "l67gfm",
+   "coverage": 0.5,
+   "metrics": {
+    "stDpr": 11.418666666666667,
+    "wipeRate": 0.02806166666666667,
+    "cpa": 0.18486666666666665,
+    "dtpr": 8.7395,
+    "featureRate": 2.094659300184162,
+    "dpr": 11.418666666666667,
+    "downRate": 0.0676
+   },
+   "vec": [
+    -0.1250161048113039,
+    1.4061140141704844,
+    -0.9674369053023211,
+    -1.118582313962498
+   ]
+  },
+  {
+   "id": "pugilist",
+   "name": "Pugilist",
+   "class": "fighter",
+   "document": "Tome of Heroes",
+   "hash": "1tn9xn8",
+   "coverage": 0.5,
+   "metrics": {
+    "stDpr": 16.06416666666667,
+    "wipeRate": 0.029336666666666664,
+    "cpa": 0.9322333333333334,
+    "dtpr": 8.759833333333333,
+    "featureRate": 4.028655400440853,
+    "dpr": 16.06416666666667,
+    "downRate": 0.056549999999999996
+   },
+   "vec": [
+    0.5978267313224163,
+    1.5525571308935828,
+    0.31162752119630555,
+    -1.0846649103000172
+   ]
+  },
+  {
+   "id": "radiant-pikeman",
+   "name": "Radiant Pikeman",
+   "class": "fighter",
+   "document": "Tome of Heroes",
+   "hash": "1qi3tnr",
+   "coverage": 0.3333333333333333,
+   "metrics": {
+    "stDpr": 11.418666666666667,
+    "wipeRate": 0.02806166666666667,
+    "cpa": 0.802,
+    "dtpr": 8.7395,
+    "featureRate": 2.7123388581952117,
+    "dpr": 11.418666666666667,
+    "downRate": 0.0676
+   },
+   "vec": [
+    -0.1250161048113039,
+    1.4061140141704844,
+    0.08874251542804665,
+    -1.118582313962498
+   ]
+  },
+  {
+   "id": "timeblade",
+   "name": "Timeblade",
+   "class": "fighter",
+   "document": "Tome of Heroes",
+   "hash": "1s1epjw",
+   "coverage": 0.8,
+   "metrics": {
+    "stDpr": 10.370666666666667,
+    "wipeRate": 0.028913333333333336,
+    "cpa": 1.9986333333333333,
+    "dtpr": 8.791333333333332,
+    "featureRate": 2.7704344624447717,
+    "dpr": 10.370666666666667,
+    "downRate": 0.06675
+   },
+   "vec": [
+    -0.2880855897468627,
+    1.5039341875632997,
+    2.13669460707758,
+    -1.0321207357737157
+   ]
+  },
+  {
+   "id": "tunnel-watcher",
+   "name": "Tunnel Watcher",
+   "class": "fighter",
+   "document": "Tome of Heroes",
+   "hash": "artj4r",
+   "coverage": 0.2857142857142857,
+   "metrics": {
+    "stDpr": 11.418666666666667,
+    "wipeRate": 0.02806166666666667,
+    "cpa": 0.18486666666666665,
+    "dtpr": 8.7395,
+    "featureRate": 2.094659300184162,
+    "dpr": 11.418666666666667,
+    "downRate": 0.0676
+   },
+   "vec": [
+    -0.1250161048113039,
+    1.4061140141704844,
+    -0.9674369053023211,
+    -1.118582313962498
+   ]
+  },
+  {
+   "id": "way-of-concordant-motion",
+   "name": "Way of Concordant Motion",
+   "class": "monk",
+   "document": "Tome of Heroes",
+   "hash": "1parj65",
+   "coverage": 0.75,
+   "metrics": {
+    "stDpr": 9.491833333333334,
+    "wipeRate": 0.006376666666666667,
+    "cpa": 0,
+    "dtpr": 9.641333333333334,
+    "featureRate": 1.9137536752695197,
+    "dpr": 9.491833333333334,
+    "downRate": 0.01446666666666667
+   },
+   "vec": [
+    -0.4248326307877662,
+    -1.0845675435866913,
+    -1.283822941133077,
+    0.3857379419201607
+   ]
+  },
+  {
+   "id": "way-of-shadowdancing",
+   "name": "Way of Shadowdancing",
+   "class": "monk",
+   "document": "Open5e Original Content",
+   "hash": "dkdmxs",
+   "coverage": 0.25,
+   "metrics": {
+    "stDpr": 9.491833333333334,
+    "wipeRate": 0.006376666666666667,
+    "cpa": 0.8638499999999999,
+    "dtpr": 9.641333333333334,
+    "featureRate": 2.7775236850702383,
+    "dpr": 9.491833333333334,
+    "downRate": 0.01446666666666667
+   },
+   "vec": [
+    -0.4248326307877662,
+    -1.0845675435866913,
+    0.19459435269526024,
+    0.3857379419201607
+   ]
+  },
+  {
+   "id": "way-of-the-humble-elephant",
+   "name": "Way of the Humble Elephant",
+   "class": "monk",
+   "document": "Tome of Heroes",
+   "hash": "n2q6uk",
+   "coverage": 0.5,
+   "metrics": {
+    "stDpr": 9.491833333333334,
+    "wipeRate": 0.006376666666666667,
+    "cpa": 0.2443833333333334,
+    "dtpr": 9.641333333333334,
+    "featureRate": 2.1581182620058805,
+    "dpr": 9.491833333333334,
+    "downRate": 0.01446666666666667
+   },
+   "vec": [
+    -0.4248326307877662,
+    -1.0845675435866913,
+    -0.8655784006186182,
+    0.3857379419201607
+   ]
+  },
+  {
+   "id": "way-of-the-open-hand",
+   "name": "Way of the Open Hand",
+   "class": "monk",
+   "document": "5e Core Rules",
+   "hash": "10d4dsu",
+   "coverage": 0.25,
+   "metrics": {
+    "stDpr": 6.617999999999999,
+    "wipeRate": 0.009353333333333333,
+    "cpa": 0.32965000000000005,
+    "dtpr": 9.274666666666667,
+    "featureRate": 1.5891789871028625,
+    "dpr": 6.617999999999999,
+    "downRate": 0.01405
+   },
+   "vec": [
+    -0.8720029756897766,
+    -0.7426755089887114,
+    -0.7196506184954531,
+    -0.22588737002621712
+   ]
+  },
+  {
+   "id": "way-of-the-still-waters",
+   "name": "Way of the Still Waters",
+   "class": "monk",
+   "document": "Tome of Heroes",
+   "hash": "1jri6ua",
+   "coverage": 0.6,
+   "metrics": {
+    "stDpr": 9.593000000000002,
+    "wipeRate": 0.006801666666666667,
+    "cpa": 0,
+    "dtpr": 9.226833333333333,
+    "featureRate": 1.9157338308457712,
+    "dpr": 9.593000000000002,
+    "downRate": 0.011933333333333332
+   },
+   "vec": [
+    -0.40909103133549435,
+    -1.035753171345658,
+    -1.283822941133077,
+    -0.305676672084676
+   ]
+  },
+  {
+   "id": "way-of-the-unerring-arrow",
+   "name": "Way of the Unerring Arrow",
+   "class": "monk",
+   "document": "Tome of Heroes",
+   "hash": "1xmbhlt",
+   "coverage": 0.4,
+   "metrics": {
+    "stDpr": 9.491833333333334,
+    "wipeRate": 0.006376666666666667,
+    "cpa": 0.9588666666666666,
+    "dtpr": 9.641333333333334,
+    "featureRate": 2.8729173472721334,
+    "dpr": 9.491833333333334,
+    "downRate": 0.01446666666666667
+   },
+   "vec": [
+    -0.4248326307877662,
+    -1.0845675435866913,
+    0.35720856025666864,
+    0.3857379419201607
+   ]
+  },
+  {
+   "id": "oath-of-devotion",
+   "name": "Oath of Devotion",
+   "class": "paladin",
+   "document": "5e Core Rules",
+   "hash": "y3kacw",
+   "coverage": 0.5,
+   "metrics": {
+    "stDpr": 7.6320000000000014,
+    "wipeRate": 0.02381,
+    "cpa": 0.01195,
+    "dtpr": 8.821,
+    "featureRate": 0.7115551694178974,
+    "dpr": 7.6320000000000014,
+    "downRate": 0.045933333333333326
+   },
+   "vec": [
+    -0.7142239129754093,
+    0.9177788628494058,
+    -1.2633713735446663,
+    -0.982634687807144
+   ]
+  },
+  {
+   "id": "oath-of-justice",
+   "name": "Oath of Justice",
+   "class": "paladin",
+   "document": "Tome of Heroes",
+   "hash": "173rqhs",
+   "coverage": 0.6,
+   "metrics": {
+    "stDpr": 7.166833333333334,
+    "wipeRate": 0.024234999999999996,
+    "cpa": 0.29560000000000003,
+    "dtpr": 8.728166666666667,
+    "featureRate": 0.6774193548387096,
+    "dpr": 13.969,
+    "downRate": 0.059533333333333334
+   },
+   "vec": [
+    -0.7866041503251462,
+    0.9665932350904382,
+    -0.7779247504105482,
+    -1.1374870963317492
+   ]
+  },
+  {
+   "id": "oath-of-safeguarding",
+   "name": "Oath of Safeguarding",
+   "class": "paladin",
+   "document": "Tome of Heroes",
+   "hash": "uxkqy1",
+   "coverage": 0.6666666666666666,
+   "metrics": {
+    "stDpr": 5.305166666666667,
+    "wipeRate": 0.027209999999999998,
+    "cpa": 0.29019999999999996,
+    "dtpr": 8.561333333333334,
+    "featureRate": 0.6942636289666395,
+    "dpr": 9.136833333333334,
+    "downRate": 0.05313333333333333
+   },
+   "vec": [
+    -1.0762807003776578,
+    1.308293840777669,
+    -0.7871664629609598,
+    -1.41577661326735
+   ]
+  },
+  {
+   "id": "oath-of-the-elements",
+   "name": "Oath of the Elements",
+   "class": "paladin",
+   "document": "Tome of Heroes",
+   "hash": "6lhhn0",
+   "coverage": 0.625,
+   "metrics": {
+    "stDpr": 5.6226666666666665,
+    "wipeRate": 0.019135,
+    "cpa": 1.2347499999999998,
+    "dtpr": 8.6575,
+    "featureRate": 1.6620762711864407,
+    "dpr": 10.745666666666665,
+    "downRate": 0.04293333333333333
+   },
+   "vec": [
+    -1.0268774928709403,
+    0.38082076819804306,
+    0.8293630906485279,
+    -1.2553639746341405
+   ]
+  },
+  {
+   "id": "oath-of-the-guardian",
+   "name": "Oath of the Guardian",
+   "class": "paladin",
+   "document": "Tome of Heroes",
+   "hash": "icxabm",
+   "coverage": 0.6666666666666666,
+   "metrics": {
+    "stDpr": 6.797666666666667,
+    "wipeRate": 0.02211,
+    "cpa": 0.2434333333333333,
+    "dtpr": 8.736,
+    "featureRate": 0.6005132591958939,
+    "dpr": 6.797666666666667,
+    "downRate": 0.04466666666666667
+   },
+   "vec": [
+    -0.8440467249326943,
+    0.7225213738852739,
+    -0.8672042574561908,
+    -1.1244205555765299
+   ]
+  },
+  {
+   "id": "oath-of-the-hearth",
+   "name": "Oath of the Hearth",
+   "class": "paladin",
+   "document": "Tome of Heroes",
+   "hash": "w9lq1b",
+   "coverage": 0.5,
+   "metrics": {
+    "stDpr": 6.062833333333333,
+    "wipeRate": 0.018285,
+    "cpa": 0.35651666666666665,
+    "dtpr": 8.721666666666666,
+    "featureRate": 0.7368421052631579,
+    "dpr": 12.0595,
+    "downRate": 0.039950000000000006
+   },
+   "vec": [
+    -0.9583872718603151,
+    0.2831920237159771,
+    -0.6736702461767389,
+    -1.1483295450435271
+   ]
+  },
+  {
+   "id": "oath-of-the-plaguetouched",
+   "name": "Oath of the Plaguetouched",
+   "class": "paladin",
+   "document": "Tome of Heroes",
+   "hash": "x9jd62",
+   "coverage": 0.5714285714285714,
+   "metrics": {
+    "stDpr": 8.363666666666667,
+    "wipeRate": 0.021683333333333332,
+    "cpa": 1.93145,
+    "dtpr": 8.998833333333332,
+    "featureRate": 1.7498882431828342,
+    "dpr": 8.363666666666667,
+    "downRate": 0.043366666666666664
+   },
+   "vec": [
+    -0.6003761014507429,
+    0.6735155727334916,
+    2.0217151524766264,
+    -0.685996411513153
+   ]
+  },
+  {
+   "id": "oathless-betrayer",
+   "name": "Oathless Betrayer",
+   "class": "paladin",
+   "document": "Open5e Original Content",
+   "hash": "1qdnfao",
+   "coverage": 0.5,
+   "metrics": {
+    "stDpr": 7.1593333333333335,
+    "wipeRate": 0.020835000000000003,
+    "cpa": 0.29488333333333333,
+    "dtpr": 8.688333333333334,
+    "featureRate": 0.6585729499467519,
+    "dpr": 7.1593333333333335,
+    "downRate": 0.04466666666666667
+   },
+   "vec": [
+    -0.7877711552268797,
+    0.5760782571621753,
+    -0.7791512739897695,
+    -1.2039318461295583
+   ]
+  },
+  {
+   "id": "beast-trainer",
+   "name": "Beast Trainer",
+   "class": "ranger",
+   "document": "Tome of Heroes",
+   "hash": "1s0zmrt",
+   "coverage": 0.4,
+   "metrics": {
+    "stDpr": 7.142666666666667,
+    "wipeRate": 0.02211,
+    "cpa": 0.8375333333333334,
+    "dtpr": 8.6225,
+    "featureRate": 1.6541110632802412,
+    "dpr": 9.807999999999998,
+    "downRate": 0.04635
+   },
+   "vec": [
+    -0.7903644994529541,
+    0.7225213738852739,
+    0.14955526591408808,
+    -1.3137463907744769
+   ]
+  },
+  {
+   "id": "grove-warden",
+   "name": "Grove Warden",
+   "class": "ranger",
+   "document": "Tome of Heroes",
+   "hash": "13aihz6",
+   "coverage": 0.8333333333333334,
+   "metrics": {
+    "stDpr": 7.142666666666667,
+    "wipeRate": 0.02211,
+    "cpa": 1.6750333333333334,
+    "dtpr": 8.6225,
+    "featureRate": 1.6541110632802412,
+    "dpr": 9.807999999999998,
+    "downRate": 0.04635
+   },
+   "vec": [
+    -0.7903644994529541,
+    0.7225213738852739,
+    1.5828764253529173,
+    -1.3137463907744769
+   ]
+  },
+  {
+   "id": "haunted-warden",
+   "name": "Haunted Warden",
+   "class": "ranger",
+   "document": "Tome of Heroes",
+   "hash": "1syrc42",
+   "coverage": 1,
+   "metrics": {
+    "stDpr": 6.290166666666667,
+    "wipeRate": 0.019133333333333332,
+    "cpa": 1.0890333333333333,
+    "dtpr": 8.836666666666666,
+    "featureRate": 1.6704369039698381,
+    "dpr": 9.119166666666667,
+    "downRate": 0.04126666666666667
+   },
+   "vec": [
+    -0.9230140566166601,
+    0.38062933928729387,
+    0.5799794708082558,
+    -0.9565016062967086
+   ]
+  },
+  {
+   "id": "hunter",
+   "name": "Hunter",
+   "class": "ranger",
+   "document": "5e Core Rules",
+   "hash": "3x4kn1",
+   "coverage": 0.75,
+   "metrics": {
+    "stDpr": 7.142666666666667,
+    "wipeRate": 0.02211,
+    "cpa": 0,
+    "dtpr": 8.6225,
+    "featureRate": 0.8164012053379252,
+    "dpr": 9.807999999999998,
+    "downRate": 0.04635
+   },
+   "vec": [
+    -0.7903644994529541,
+    0.7225213738852739,
+    -1.283822941133077,
+    -1.3137463907744769
+   ]
+  },
+  {
+   "id": "snake-speaker",
+   "name": "Snake Speaker",
+   "class": "ranger",
+   "document": "Tome of Heroes",
+   "hash": "e0p8j0",
+   "coverage": 0.6666666666666666,
+   "metrics": {
+    "stDpr": 8.263,
+    "wipeRate": 0.022959999999999998,
+    "cpa": 0.96135,
+    "dtpr": 8.792499999999999,
+    "featureRate": 2.251118067978533,
+    "dpr": 11.098999999999998,
+    "downRate": 0.0404
+   },
+   "vec": [
+    -0.6160399005762325,
+    0.8201501183673394,
+    0.36145860707769134,
+    -1.0301746552357052
+   ]
+  },
+  {
+   "id": "spear-of-the-weald",
+   "name": "Spear of the Weald",
+   "class": "ranger",
+   "document": "Tome of Heroes",
+   "hash": "wcy5lq",
+   "coverage": 0.6666666666666666,
+   "metrics": {
+    "stDpr": 7.142666666666667,
+    "wipeRate": 0.02211,
+    "cpa": 0.9680833333333333,
+    "dtpr": 8.6225,
+    "featureRate": 1.7845458458889367,
+    "dpr": 9.807999999999998,
+    "downRate": 0.04635
+   },
+   "vec": [
+    -0.7903644994529541,
+    0.7225213738852739,
+    0.37298222396153774,
+    -1.3137463907744769
+   ]
+  },
+  {
+   "id": "wasteland-strider",
+   "name": "Wasteland Strider",
+   "class": "ranger",
+   "document": "Tome of Heroes",
+   "hash": "1ut10g1",
+   "coverage": 0.6,
+   "metrics": {
+    "stDpr": 6.859666666666667,
+    "wipeRate": 0.022535,
+    "cpa": 1.0112666666666668,
+    "dtpr": 8.716166666666666,
+    "featureRate": 1.754675946063506,
+    "dpr": 9.532833333333333,
+    "downRate": 0.04676666666666667
+   },
+   "vec": [
+    -0.8343994844116976,
+    0.7713357461263067,
+    0.44688740056066245,
+    -1.1575039247227221
+   ]
+  },
+  {
+   "id": "cat-burglar",
+   "name": "Cat Burglar",
+   "class": "rogue",
+   "document": "Tome of Heroes",
+   "hash": "111agd6",
+   "coverage": 0.4,
+   "metrics": {
+    "stDpr": 19.246166666666667,
+    "wipeRate": 0.016155,
+    "cpa": 0.23955,
+    "dtpr": 9.006333333333332,
+    "featureRate": 1.8755504055619932,
+    "dpr": 19.246166666666667,
+    "downRate": 0.027650000000000004
+   },
+   "vec": [
+    1.0929480109645422,
+    0.038545875778564935,
+    -0.87385030382732,
+    -0.6734858937687949
+   ]
+  },
+  {
+   "id": "dawn-blade",
+   "name": "Dawn Blade",
+   "class": "rogue",
+   "document": "Tome of Heroes",
+   "hash": "s174t7",
+   "coverage": 0.3333333333333333,
+   "metrics": {
+    "stDpr": 21.5025,
+    "wipeRate": 0.014883333333333333,
+    "cpa": 0.9282333333333334,
+    "dtpr": 9.347833333333332,
+    "featureRate": 3.1780722891566264,
+    "dpr": 21.5025,
+    "downRate": 0.027216666666666667
+   },
+   "vec": [
+    1.4440349522904956,
+    -0.10751438312303552,
+    0.3047818081960007,
+    -0.10384031914237385
+   ]
+  },
+  {
+   "id": "eldritch-trickster",
+   "name": "Eldritch Trickster",
+   "class": "rogue",
+   "document": "Open5e Original Content",
+   "hash": "k6b7rb",
+   "coverage": 0.4,
+   "metrics": {
+    "stDpr": 19.246166666666667,
+    "wipeRate": 0.016155,
+    "cpa": 0,
+    "dtpr": 9.006333333333332,
+    "featureRate": 1.6363847045191193,
+    "dpr": 19.246166666666667,
+    "downRate": 0.027650000000000004
+   },
+   "vec": [
+    1.0929480109645422,
+    0.038545875778564935,
+    -1.283822941133077,
+    -0.6734858937687949
+   ]
+  },
+  {
+   "id": "sapper",
+   "name": "Sapper",
+   "class": "rogue",
+   "document": "Tome of Heroes",
+   "hash": "15wig37",
+   "coverage": 0.6,
+   "metrics": {
+    "stDpr": 19.246166666666667,
+    "wipeRate": 0.016155,
+    "cpa": 0.47208333333333335,
+    "dtpr": 9.006333333333332,
+    "featureRate": 2.108922363847045,
+    "dpr": 19.246166666666667,
+    "downRate": 0.027650000000000004
+   },
+   "vec": [
+    1.0929480109645422,
+    0.038545875778564935,
+    -0.4758861880762643,
+    -0.6734858937687949
+   ]
+  },
+  {
+   "id": "soulspy",
+   "name": "Soulspy",
+   "class": "rogue",
+   "document": "Tome of Heroes",
+   "hash": "fswqd7",
+   "coverage": 0.1,
+   "metrics": {
+    "stDpr": 19.246166666666667,
+    "wipeRate": 0.016155,
+    "cpa": 0.9348666666666666,
+    "dtpr": 9.006333333333332,
+    "featureRate": 2.5710312862108924,
+    "dpr": 19.246166666666667,
+    "downRate": 0.027650000000000004
+   },
+   "vec": [
+    1.0929480109645422,
+    0.038545875778564935,
+    0.31613428225483947,
+    -0.6734858937687949
+   ]
+  },
+  {
+   "id": "underfoot",
+   "name": "Underfoot",
+   "class": "rogue",
+   "document": "Tome of Heroes",
+   "hash": "1c079t",
+   "coverage": 0.1,
+   "metrics": {
+    "stDpr": 19.246166666666667,
+    "wipeRate": 0.016155,
+    "cpa": 1.4089,
+    "dtpr": 9.006333333333332,
+    "featureRate": 2.34090382387022,
+    "dpr": 19.246166666666667,
+    "downRate": 0.027650000000000004
+   },
+   "vec": [
+    1.0929480109645422,
+    0.038545875778564935,
+    1.1274083203993008,
+    -0.6734858937687949
+   ]
+  },
+  {
+   "id": "draconic-bloodline",
+   "name": "Draconic Bloodline",
+   "class": "sorcerer",
+   "document": "5e Core Rules",
+   "hash": "1habmvp",
+   "coverage": 0.6,
+   "metrics": {
+    "stDpr": 24.47683333333333,
+    "wipeRate": 0.004251666666666667,
+    "cpa": 0.9931666666666668,
+    "dtpr": 10.011333333333333,
+    "featureRate": 0.42833052276559863,
+    "dpr": 53.69866666666667,
+    "downRate": 0.009366666666666667
+   },
+   "vec": [
+    1.906843162875734,
+    -1.328639404791856,
+    0.41591054923428294,
+    1.00292348397514
+   ]
+  },
+  {
+   "id": "resonant-body",
+   "name": "Resonant Body",
+   "class": "sorcerer",
+   "document": "Tome of Heroes",
+   "hash": "1vspcmb",
+   "coverage": 0.4,
+   "metrics": {
+    "stDpr": 24.828333333333333,
+    "wipeRate": 0.002975,
+    "cpa": 0.6112,
+    "dtpr": 10.709833333333334,
+    "featureRate": 0,
+    "dpr": 55.51866666666666,
+    "downRate": 0.008533333333333334
+   },
+   "vec": [
+    1.9615367926036438,
+    -1.475273950425704,
+    -0.23779799468649512,
+    2.1680697032329896
+   ]
+  },
+  {
+   "id": "rifthopper",
+   "name": "Rifthopper",
+   "class": "sorcerer",
+   "document": "Tome of Heroes",
+   "hash": "1jytjd9",
+   "coverage": 1,
+   "metrics": {
+    "stDpr": 24.453833333333336,
+    "wipeRate": 0.002975,
+    "cpa": 0.7568166666666668,
+    "dtpr": 10.391333333333334,
+    "featureRate": 0.19223793978962642,
+    "dpr": 53.94233333333333,
+    "downRate": 0.0072499999999999995
+   },
+   "vec": [
+    1.903264347843752,
+    -1.475273950425704,
+    0.011414482328769869,
+    1.636789716355932
+   ]
+  },
+  {
+   "id": "runechild",
+   "name": "Runechild",
+   "class": "sorcerer",
+   "document": "Critical Role: Tal’Dorei Campaign Setting",
+   "hash": "1fc5tlo",
+   "coverage": 0.6666666666666666,
+   "metrics": {
+    "stDpr": 24.453833333333336,
+    "wipeRate": 0.002975,
+    "cpa": 1.5422166666666666,
+    "dtpr": 10.391333333333334,
+    "featureRate": 0.9778745012694958,
+    "dpr": 53.94233333333333,
+    "downRate": 0.0072499999999999995
+   },
+   "vec": [
+    1.903264347843752,
+    -1.475273950425704,
+    1.3555702299386279,
+    1.636789716355932
+   ]
+  },
+  {
+   "id": "spore-sorcery",
+   "name": "Spore Sorcery",
+   "class": "sorcerer",
+   "document": "Tome of Heroes",
+   "hash": "1gyf1wa",
+   "coverage": 0.6,
+   "metrics": {
+    "stDpr": 24.453833333333336,
+    "wipeRate": 0.002975,
+    "cpa": 2.5198833333333335,
+    "dtpr": 10.391333333333334,
+    "featureRate": 0.9778745012694958,
+    "dpr": 53.94233333333333,
+    "downRate": 0.0072499999999999995
+   },
+   "vec": [
+    1.903264347843752,
+    -1.475273950425704,
+    3.028776582429807,
+    1.636789716355932
+   ]
+  },
+  {
+   "id": "wastelander",
+   "name": "Wastelander",
+   "class": "sorcerer",
+   "document": "Tome of Heroes",
+   "hash": "17wmuz5",
+   "coverage": 0.8,
+   "metrics": {
+    "stDpr": 28.10383333333333,
+    "wipeRate": 0.002975,
+    "cpa": 1.6115000000000002,
+    "dtpr": 10.922833333333335,
+    "featureRate": 1.8877026492684856,
+    "dpr": 60.0425,
+    "downRate": 0.0042833333333333334
+   },
+   "vec": [
+    2.471206733354047,
+    -1.475273950425704,
+    1.4741436838647421,
+    2.5233684071727507
+   ]
+  },
+  {
+   "id": "wyrd-magic",
+   "name": "Wyrd Magic",
+   "class": "sorcerer",
+   "document": "Open5e Original Content",
+   "hash": "sperss",
+   "coverage": 0.4,
+   "metrics": {
+    "stDpr": 24.453833333333336,
+    "wipeRate": 0.002975,
+    "cpa": 1.5422166666666666,
+    "dtpr": 10.391333333333334,
+    "featureRate": 0.9778745012694958,
+    "dpr": 53.94233333333333,
+    "downRate": 0.0072499999999999995
+   },
+   "vec": [
+    1.903264347843752,
+    -1.475273950425704,
+    1.3555702299386279,
+    1.636789716355932
+   ]
+  },
+  {
+   "id": "ancient-dragons",
+   "name": "Ancient Dragons",
+   "class": "warlock",
+   "document": "Tome of Heroes",
+   "hash": "19ows7",
+   "coverage": 0.8333333333333334,
+   "metrics": {
+    "stDpr": 7.444166666666665,
+    "wipeRate": 0.013181666666666666,
+    "cpa": 0.9780333333333334,
+    "dtpr": 9.615166666666669,
+    "featureRate": 0.9779282668673188,
+    "dpr": 7.444166666666665,
+    "downRate": 0.028066666666666667
+   },
+   "vec": [
+    -0.7434509024032684,
+    -0.3029633009979166,
+    0.3900109350497963,
+    0.34209013556762674
+   ]
+  },
+  {
+   "id": "animal-lords",
+   "name": "Animal Lords",
+   "class": "warlock",
+   "document": "Tome of Heroes",
+   "hash": "11jop6r",
+   "coverage": 0.8333333333333334,
+   "metrics": {
+    "stDpr": 7.444166666666665,
+    "wipeRate": 0.013181666666666666,
+    "cpa": 0.8825833333333333,
+    "dtpr": 9.615166666666669,
+    "featureRate": 0.8816152495610735,
+    "dpr": 7.444166666666665,
+    "downRate": 0.028066666666666667
+   },
+   "vec": [
+    -0.7434509024032684,
+    -0.3029633009979166,
+    0.22665510858002139,
+    0.34209013556762674
+   ]
+  },
+  {
+   "id": "hunter-in-darkness",
+   "name": "Hunter in Darkness",
+   "class": "warlock",
+   "document": "Tome of Heroes",
+   "hash": "d4q02b",
+   "coverage": 0.5,
+   "metrics": {
+    "stDpr": 7.444166666666665,
+    "wipeRate": 0.013181666666666666,
+    "cpa": 0.8825833333333333,
+    "dtpr": 9.615166666666669,
+    "featureRate": 0.8816152495610735,
+    "dpr": 7.444166666666665,
+    "downRate": 0.028066666666666667
+   },
+   "vec": [
+    -0.7434509024032684,
+    -0.3029633009979166,
+    0.22665510858002139,
+    0.34209013556762674
+   ]
+  },
+  {
+   "id": "old-wood",
+   "name": "Old Wood",
+   "class": "warlock",
+   "document": "Tome of Heroes",
+   "hash": "135btww",
+   "coverage": 0.42857142857142855,
+   "metrics": {
+    "stDpr": 7.444166666666665,
+    "wipeRate": 0.013181666666666666,
+    "cpa": 0.42006666666666664,
+    "dtpr": 9.615166666666669,
+    "featureRate": 0.41936292952094306,
+    "dpr": 7.444166666666665,
+    "downRate": 0.028066666666666667
+   },
+   "vec": [
+    -0.7434509024032684,
+    -0.3029633009979166,
+    -0.5649089808843955,
+    0.34209013556762674
+   ]
+  },
+  {
+   "id": "primordial",
+   "name": "Primordial",
+   "class": "warlock",
+   "document": "Tome of Heroes",
+   "hash": "1l6yn24",
+   "coverage": 1,
+   "metrics": {
+    "stDpr": 7.444166666666665,
+    "wipeRate": 0.013181666666666666,
+    "cpa": 0,
+    "dtpr": 9.615166666666669,
+    "featureRate": 0,
+    "dpr": 7.444166666666665,
+    "downRate": 0.028066666666666667
+   },
+   "vec": [
+    -0.7434509024032684,
+    -0.3029633009979166,
+    -1.283822941133077,
+    0.34209013556762674
+   ]
+  },
+  {
+   "id": "the-ancient-fey-court",
+   "name": "The Ancient Fey Court",
+   "class": "warlock",
+   "document": "Open5e Original Content",
+   "hash": "3xzq1l",
+   "coverage": 0.6,
+   "metrics": {
+    "stDpr": 7.444166666666665,
+    "wipeRate": 0.013181666666666666,
+    "cpa": 0,
+    "dtpr": 9.615166666666669,
+    "featureRate": 0,
+    "dpr": 7.444166666666665,
+    "downRate": 0.028066666666666667
+   },
+   "vec": [
+    -0.7434509024032684,
+    -0.3029633009979166,
+    -1.283822941133077,
+    0.34209013556762674
+   ]
+  },
+  {
+   "id": "the-fiend",
+   "name": "The Fiend",
+   "class": "warlock",
+   "document": "5e Core Rules",
+   "hash": "1t90a2g",
+   "coverage": 0.4,
+   "metrics": {
+    "stDpr": 7.444166666666665,
+    "wipeRate": 0.013181666666666666,
+    "cpa": 0,
+    "dtpr": 9.615166666666669,
+    "featureRate": 0,
+    "dpr": 7.444166666666665,
+    "downRate": 0.028066666666666667
+   },
+   "vec": [
+    -0.7434509024032684,
+    -0.3029633009979166,
+    -1.283822941133077,
+    0.34209013556762674
+   ]
+  },
+  {
+   "id": "the-great-elder-thing",
+   "name": "The Great Elder Thing",
+   "class": "warlock",
+   "document": "Open5e Original Content",
+   "hash": "1am1mjo",
+   "coverage": 0.6,
+   "metrics": {
+    "stDpr": 7.444166666666665,
+    "wipeRate": 0.013181666666666666,
+    "cpa": 0,
+    "dtpr": 9.615166666666669,
+    "featureRate": 0,
+    "dpr": 7.444166666666665,
+    "downRate": 0.028066666666666667
+   },
+   "vec": [
+    -0.7434509024032684,
+    -0.3029633009979166,
+    -1.283822941133077,
+    0.34209013556762674
+   ]
+  },
+  {
+   "id": "wyrdweaver",
+   "name": "Wyrdweaver",
+   "class": "warlock",
+   "document": "Tome of Heroes",
+   "hash": "53jacu",
+   "coverage": 0.8333333333333334,
+   "metrics": {
+    "stDpr": 7.444166666666665,
+    "wipeRate": 0.013181666666666666,
+    "cpa": 0,
+    "dtpr": 9.615166666666669,
+    "featureRate": 0,
+    "dpr": 7.444166666666665,
+    "downRate": 0.028066666666666667
+   },
+   "vec": [
+    -0.7434509024032684,
+    -0.3029633009979166,
+    -1.283822941133077,
+    0.34209013556762674
+   ]
+  },
+  {
+   "id": "courser-mage",
+   "name": "Courser Mage",
+   "class": "wizard",
+   "document": "Tome of Heroes",
+   "hash": "11b580s",
+   "coverage": 0.4,
+   "metrics": {
+    "stDpr": 24.776166666666665,
+    "wipeRate": 0.002975,
+    "cpa": 1.5756333333333334,
+    "dtpr": 10.671666666666667,
+    "featureRate": 1.5107425555974368,
+    "dpr": 55.403,
+    "downRate": 0.005966666666666666
+   },
+   "vec": [
+    1.9534196251760305,
+    -1.475273950425704,
+    1.4127604572953418,
+    2.1044050684894797
+   ]
+  },
+  {
+   "id": "familiar-master",
+   "name": "Familiar Master",
+   "class": "wizard",
+   "document": "Tome of Heroes",
+   "hash": "12r9ff",
+   "coverage": 0.4,
+   "metrics": {
+    "stDpr": 24.859333333333336,
+    "wipeRate": 0.004676666666666667,
+    "cpa": 1.5680500000000002,
+    "dtpr": 10.716000000000001,
+    "featureRate": 1.1155722326454034,
+    "dpr": 54.99283333333333,
+    "downRate": 0.008533333333333332
+   },
+   "vec": [
+    1.9663604128641425,
+    -1.2798250325508231,
+    1.3997821263989305,
+    2.178356128933907
+   ]
+  },
+  {
+   "id": "gravebinding",
+   "name": "Gravebinding",
+   "class": "wizard",
+   "document": "Tome of Heroes",
+   "hash": "a5ynbp",
+   "coverage": 0.6666666666666666,
+   "metrics": {
+    "stDpr": 27.111999999999995,
+    "wipeRate": 0.002125,
+    "cpa": 0.6077333333333333,
+    "dtpr": 10.578000000000001,
+    "featureRate": 0.4897360703812317,
+    "dpr": 57.30233333333333,
+    "downRate": 0.0063999999999999994
+   },
+   "vec": [
+    2.3168768184603583,
+    -1.5729026949077698,
+    -0.24373094595342593,
+    1.9481626024377252
+   ]
+  },
+  {
+   "id": "school-of-illusions-and-phantasms",
+   "name": "School of Illusions and Phantasms",
+   "class": "wizard",
+   "document": "Open5e Original Content",
+   "hash": "1iv7zsk",
+   "coverage": 0.4,
+   "metrics": {
+    "stDpr": 24.69283333333333,
+    "wipeRate": 0.0034000000000000002,
+    "cpa": 1.0200500000000001,
+    "dtpr": 10.450333333333335,
+    "featureRate": 0.4385026737967914,
+    "dpr": 54.637166666666666,
+    "downRate": 0.0081
+   },
+   "vec": [
+    1.9404529040456582,
+    -1.426459578184671,
+    0.4619194453571652,
+    1.7352057892782144
+   ]
+  },
+  {
+   "id": "school-of-liminality",
+   "name": "School of Liminality",
+   "class": "wizard",
+   "document": "Tome of Heroes",
+   "hash": "xmapqz",
+   "coverage": 0.6,
+   "metrics": {
+    "stDpr": 24.69283333333333,
+    "wipeRate": 0.0034000000000000002,
+    "cpa": 0.5818,
+    "dtpr": 10.450333333333335,
+    "featureRate": 0,
+    "dpr": 54.637166666666666,
+    "downRate": 0.0081
+   },
+   "vec": [
+    1.9404529040456582,
+    -1.426459578184671,
+    -0.28811398523873577,
+    1.7352057892782144
+   ]
+  },
+  {
+   "id": "school-of-necrotic-arts",
+   "name": "School of Necrotic Arts",
+   "class": "wizard",
+   "document": "Open5e Original Content",
+   "hash": "4s0nxn",
+   "coverage": 0.2,
+   "metrics": {
+    "stDpr": 24.69283333333333,
+    "wipeRate": 0.0034000000000000002,
+    "cpa": 0.5818,
+    "dtpr": 10.450333333333335,
+    "featureRate": 0,
+    "dpr": 54.637166666666666,
+    "downRate": 0.0081
+   },
+   "vec": [
+    1.9404529040456582,
+    -1.426459578184671,
+    -0.28811398523873577,
+    1.7352057892782144
+   ]
+  },
+  {
+   "id": "spellsmith",
+   "name": "Spellsmith",
+   "class": "wizard",
+   "document": "Tome of Heroes",
+   "hash": "1gl4b64",
+   "coverage": 0.4,
+   "metrics": {
+    "stDpr": 24.69283333333333,
+    "wipeRate": 0.0034000000000000002,
+    "cpa": 0.5818,
+    "dtpr": 10.450333333333335,
+    "featureRate": 0,
+    "dpr": 54.637166666666666,
+    "downRate": 0.0081
+   },
+   "vec": [
+    1.9404529040456582,
+    -1.426459578184671,
+    -0.28811398523873577,
+    1.7352057892782144
+   ]
+  }
+ ]
+}

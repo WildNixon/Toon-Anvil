@@ -1,0 +1,122 @@
+{
+  "_comment": [
+    "Mechanical overlay for SRD class features.",
+    "",
+    "srd_convert.py extracts class features as rules TEXT, which is correct - it",
+    "is a faithful conversion, not an interpretation. But text alone means the",
+    "engine has no idea a Sorcerer owns a pool called Sorcery Points, so no base",
+    "class resource would ever appear on a sheet.",
+    "",
+    "This file supplies the small set of effects that carry real mechanical",
+    "weight: resource pools, alternate AC formulas, and martial arts dice. It is",
+    "keyed by class id then by the EXACT feature name emitted by the converter.",
+    "Everything not listed here stays narrative text, exactly like unmapped",
+    "homebrew - the same rule applies to bundled content and custom content.",
+    "",
+    "'max' formulas resolve against the level of THAT CLASS, not total character",
+    "level, so a Sorcerer 5 / Fighter 3 gets 5 Sorcery Points and not 8."
+  ],
+
+  "barbarian": {
+    "Rage": [
+      { "type": "resource", "name": "Rage", "max": "rageUses", "recharge": "long" }
+    ],
+    "Unarmored Defense": [
+      { "type": "ac_formula", "base": 10, "ability": "dex", "secondAbility": "con",
+        "allowShield": true, "requiresNoArmor": true }
+    ]
+  },
+
+  "bard": {
+    "Bardic Inspiration": [
+      { "type": "resource", "name": "Bardic Inspiration", "max": "cha", "recharge": "short" }
+    ]
+  },
+
+  "cleric": {
+    "Channel Divinity": [
+      { "type": "resource", "name": "Channel Divinity", "max": "channelUses", "recharge": "short" }
+    ]
+  },
+
+  "druid": {
+    "Wild Shape": [
+      { "type": "resource", "name": "Wild Shape", "max": "wildShapeUses", "recharge": "short" }
+    ],
+    "Channel Nature": [
+      { "type": "resource", "name": "Channel Nature", "max": "2", "recharge": "short" }
+    ]
+  },
+
+  "fighter": {
+    "Second Wind": [
+      { "type": "resource", "name": "Second Wind", "max": "secondWindUses", "recharge": "short" }
+    ],
+    "Action Surge": [
+      { "type": "resource", "name": "Action Surge", "max": "actionSurgeUses", "recharge": "short" }
+    ]
+  },
+
+  "monk": {
+    "Monk's Focus": [
+      { "type": "resource", "name": "Focus Points", "max": "classLevel", "recharge": "short" }
+    ],
+    "Unarmored Defense": [
+      { "type": "ac_formula", "base": 10, "ability": "dex", "secondAbility": "wis",
+        "allowShield": false, "requiresNoArmor": true }
+    ],
+    "Martial Arts": [
+      { "type": "unarmed_strike", "die": "martialArtsDie", "types": ["bludgeoning"],
+        "ability": "dex", "magical": false }
+    ],
+    "Open Hand Technique": [
+      { "type": "action_option", "name": "Open Hand Technique", "action": "bonus",
+        "cost": { "resource": "Focus Points", "amount": 1 },
+        "save": { "ability": "dex", "dc": "spell" },
+        "text": "On a Flurry of Blows hit: knock Prone, push 15 feet, or deny Reactions." }
+    ]
+  },
+
+  "paladin": {
+    "Lay On Hands": [
+      { "type": "resource", "name": "Lay On Hands", "max": "layOnHands", "recharge": "long" }
+    ],
+    "Channel Divinity": [
+      { "type": "resource", "name": "Channel Divinity", "max": "channelUses", "recharge": "short" }
+    ]
+  },
+
+  "ranger": {
+    "Favored Enemy": [
+      { "type": "resource", "name": "Hunter's Mark", "max": "favoredEnemy", "recharge": "long" }
+    ]
+  },
+
+  "rogue": {
+    "Sneak Attack": [
+      { "type": "damage_rider", "dice": "sneakAttackDice", "damageType": "piercing",
+        "trigger": "on_hit", "oncePerTurn": true }
+    ]
+  },
+
+  "sorcerer": {
+    "Font of Magic": [
+      { "type": "resource", "name": "Sorcery Points", "max": "classLevel", "recharge": "long" }
+    ],
+    "Innate Sorcery": [
+      { "type": "resource", "name": "Innate Sorcery", "max": "2", "recharge": "long" }
+    ]
+  },
+
+  "warlock": {
+    "Magical Cunning": [
+      { "type": "resource", "name": "Magical Cunning", "max": "1", "recharge": "long" }
+    ]
+  },
+
+  "wizard": {
+    "Arcane Recovery": [
+      { "type": "resource", "name": "Arcane Recovery", "max": "1", "recharge": "long" }
+    ]
+  }
+}

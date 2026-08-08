@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toon Anvil — campaign emulator</title>
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../ui/design.css">
+<style>
+  main { max-width: 1100px; }
+  #log {
+    font-family: var(--mono); font-size: 12px; background: var(--paper);
+    border: 1px solid var(--etch); border-radius: 2px; padding: 12px;
+    height: 260px; overflow-y: auto; white-space: pre-wrap;
+  }
+  .bar { height: 18px; background: var(--etch); border-radius: 2px; overflow: hidden; }
+  .bar span {
+    display: block; height: 100%; width: 0; background: var(--accent);
+    transition: width .2s;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">Toon<em>Anvil</em></div>
+    <nav class="modes"><button onclick="location.href='../index.html'">← App</button></nav>
+    <div class="who"><strong>Campaign emulator</strong>headless sweep</div>
+  </header>
+  <main>
+    <div class="panel rivets accent">
+      <span class="lvl accent">Sweep</span>
+      <h3>Run every class and subclass through a campaign</h3>
+      <p class="muted">
+        Each run drives the app's real engine — the same <code>derive.js</code> and
+        <code>engine.js</code> the sheet uses — from level 1 to 20 on the 2024
+        adventuring-day cadence. Seeds are deterministic, so a run can be
+        repeated exactly.
+      </p>
+      <div class="grid three">
+        <div><label class="field" for="seeds">Seeds per combo</label>
+          <input id="seeds" type="number" value="8" min="1" max="200"></div>
+        <div><label class="field" for="maxLevel">Max level</label>
+          <input id="maxLevel" type="number" value="20" min="1" max="20"></div>
+        <div><label class="field" for="ablate">Ablations</label>
+          <select id="ablate">
+            <option value="all">All homebrew effects</option>
+            <option value="none">None (sweep only)</option>
+          </select></div>
+      </div>
+      <div class="btnrow" style="margin-top:14px">
+        <button class="act" id="run">Run sweep</button>
+        <button class="act ghost" id="quick">Quick check (2 seeds, level 5)</button>
+      </div>
+      <div class="bar" style="margin-top:14px"><span id="fill"></span></div>
+      <div class="mono muted" id="status" style="margin-top:6px">idle</div>
+    </div>
+
+    <div class="panel rivets">
+      <span class="lvl">Output</span>
+      <div id="log">Ready.</div>
+    </div>
+
+    <div class="panel rivets" id="results" hidden>
+      <span class="lvl">Results</span>
+      <div id="summary"></div>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+import { runSweep, publish, loadSources, buildMatrix } from './runner.js';
+
+const $ = (s) => document.querySelector(s);
+const log = (msg) => {
+  const el = $('#log');
+  el.textContent += `\n${msg}`;
+  el.scrollTop = el.scrollHeight;
+};
+
+/** Build the ablation list from whatever homebrew is installed. */
+async function ablationsFor(sources) {
+  const out = [];
+  for (const brew of sources.homebrew || []) {
+    for (const f of brew.features || []) {
+      for (const eff of f.effects || []) {
+        if (eff.type === 'narrative_only') continue;
+        // Only ablate effects with a measurable combat footprint.
+        if (!['ac_formula', 'unarmed_strike', 'damage_rider', 'trigger',
+              'ability_substitution', 'action_option'].includes(eff.type)) continue;
+        out.push({
+          label: `${brew.name}: ${f.name} (${eff.type})`,
+          brewId: brew.id, featureId: f.id, effectType: eff.type,
+          classId: String(brew.class || '').toLowerCase(), subclassId: brew.id,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+async function go({ seeds, maxLevel, withAblations }) {
+  $('#run').disabled = true;
+  $('#quick').disabled = true;
+  $('#log').textContent = 'Loading compendium...';
+
+  try {
+    const loaded = await loadSources();
+    const matrix = buildMatrix(loaded.sources);
+    log(`${matrix.length} class/subclass combinations`);
+    for (const c of matrix) log(`  ${c.kind === 'homebrew' ? '*' : ' '} ${c.name} (${c.classId})`);
+
+    const ablations = withAblations ? await ablationsFor(loaded.sources) : [];
+    if (ablations.length) log(`\n${ablations.length} paired ablations queued`);
+
+    log(`\nRunning ${seeds} seeds x ${matrix.length} combos to level ${maxLevel}...`);
+    const t0 = performance.now();
+
+    const payload = await runSweep({
+      seeds, maxLevel, ablations,
+      onProgress: ({ done, total, current }) => {
+        $('#fill').style.width = `${(done / total) * 100}%`;
+        $('#status').textContent = `${done}/${total} — ${current}`;
+      },
+    });
+
+    const secs = ((performance.now() - t0) / 1000).toFixed(1);
+    $('#fill').style.width = '100%';
+    $('#status').textContent = `done in ${secs}s`;
+    log(`\nComplete in ${secs}s`);
+
+    render(payload);
+    const saved = await publish(payload, `sweep-s${seeds}-l${maxLevel}`);
+    log(`\nSaved to data/sim/${saved.file} (${saved.bytes.toLocaleString()} B)`);
+  } catch (err) {
+    log(`\nFAILED: ${err.message}\n${err.stack}`);
+    $('#status').textContent = 'failed';
+  } finally {
+    $('#run').disabled = false;
+    $('#quick').disabled = false;
+  }
+}
+
+function render(p) {
+  $('#results').hidden = false;
+  const rows = Object.values(p.byCombo).sort((a, b) => b.completed - a.completed);
+  const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+
+  let html = `<h3>${rows.length} combinations · ${p.config.seeds} seeds · `
+    + `${p.config.elapsedSeconds}s</h3>`;
+
+  html += '<div class="scroll-x"><table><tr><th>Subclass</th><th>Class</th>'
+    + '<th>Completed</th><th>DPR</th><th>Taken/rd</th><th>Down rate</th>'
+    + '<th>Violations</th></tr>';
+  for (const r of rows) {
+    const pct = Math.round((r.completed / r.runs) * 100);
+    html += `<tr><td>${r.name}${r.kind === 'homebrew' ? ' <span class="chip accent">brew</span>' : ''}</td>`
+      + `<td class="muted">${r.classId}</td>`
+      + `<td class="mono">${r.completed}/${r.runs} (${pct}%)</td>`
+      + `<td class="mono">${mean(r.dpr).toFixed(1)}</td>`
+      + `<td class="mono">${mean(r.dtpr).toFixed(1)}</td>`
+      + `<td class="mono">${(mean(r.downRate) * 100).toFixed(1)}%</td>`
+      + `<td class="mono">${r.violations ? `<span class="chip bad">${r.violations}</span>` : '0'}</td></tr>`;
+  }
+  html += '</table></div>';
+
+  html += `<div class="rule"></div><div class="eyebrow">Invariants</div>`;
+  if (p.invariants.clean) {
+    html += '<p class="chip ok">All invariants held across every run</p>';
+  } else {
+    html += '<table><tr><th>Invariant</th><th>Violations</th><th>Example</th></tr>';
+    for (const [id, n] of Object.entries(p.invariants.violations)) {
+      const s = p.invariants.samples[id];
+      html += `<tr><td class="mono">${id}</td><td class="mono">${n}</td>`
+        + `<td class="muted">${s.detail} @ ${s.where.classId} L${s.where.level}</td></tr>`;
+    }
+    html += '</table>';
+  }
+
+  html += `<div class="rule"></div><div class="eyebrow">Coverage — never fired</div>`;
+  if (!p.neverFired.length) {
+    html += '<p class="chip ok">Every present effect type fired at least once</p>';
+  } else {
+    html += `<p class="chip warn">${p.neverFired.length} effect types present but never fired</p>`;
+    html += `<p class="mono muted">${p.neverFired.join(', ')}</p>`;
+  }
+
+  if (p.ablations.length) {
+    html += `<div class="rule"></div><div class="eyebrow">Ablations (paired)</div>`;
+    const byLabel = {};
+    for (const a of p.ablations) {
+      (byLabel[a.label] ||= []).push(a);
+    }
+    html += '<table><tr><th>Feature</th><th>n</th><th>ΔDPR</th><th>Δtaken</th></tr>';
+    for (const [label, arr] of Object.entries(byLabel)) {
+      const dD = mean(arr.map((a) => a.on.dpr - a.off.dpr));
+      const dT = mean(arr.map((a) => a.on.dtpr - a.off.dtpr));
+      html += `<tr><td>${label}</td><td class="mono">${arr.length}</td>`
+        + `<td class="mono">${dD >= 0 ? '+' : ''}${dD.toFixed(2)}</td>`
+        + `<td class="mono">${dT >= 0 ? '+' : ''}${dT.toFixed(2)}</td></tr>`;
+    }
+    html += '</table>';
+  }
+
+  $('#summary').innerHTML = html;
+}
+
+$('#run').addEventListener('click', () => go({
+  seeds: +$('#seeds').value, maxLevel: +$('#maxLevel').value,
+  withAblations: $('#ablate').value === 'all',
+}));
+$('#quick').addEventListener('click', () => go({
+  seeds: 2, maxLevel: 5, withAblations: false,
+}));
+</script>
+</body>
+</html>

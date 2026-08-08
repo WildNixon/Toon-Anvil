@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Way of the Kindled Blade — Fighter subclass, D&amp;D 2024</title>
+<style>
+  :root{--steel:#d6d2cb;--plate:#c6c2ba;--iron:#20211c;--slag:#43443c;
+        --ember:#c2561a;--moss:#4a6b3a;--zinc:#f1efe9;--etch:rgba(32,33,28,.2)}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--steel);color:var(--iron);
+       font-family:Georgia,serif;font-size:17px;line-height:1.62;
+       background-image:radial-gradient(circle at 80% 3%,rgba(194,86,26,.12),transparent 45%)}
+  .wrap{max-width:840px;margin:0 auto;padding:0 22px 90px}
+  h1,h2,h3{font-family:'Arial Black',Impact,sans-serif;font-weight:400;line-height:1;
+           text-transform:uppercase;margin:0;letter-spacing:-.01em}
+  p{margin:0 0 1em}
+  header{padding:52px 0 24px}
+  header h1{font-size:clamp(42px,11vw,88px)}
+  header h1 em{font-style:normal;color:var(--ember);display:block}
+  .eyebrow{font-family:Consolas,monospace;font-size:11px;letter-spacing:.24em;
+           text-transform:uppercase;color:var(--slag)}
+  .rule{height:6px;background:var(--iron);margin:22px 0 18px;position:relative}
+  .rule::after{content:"";position:absolute;right:0;top:0;height:6px;width:22%;
+               background:var(--ember)}
+  .quote{font-style:italic;font-size:20px;max-width:46ch;
+         border-left:3px solid var(--ember);padding-left:16px;margin:24px 0 0}
+  .lede{font-size:19px;max-width:62ch}
+  section{margin-top:52px}
+  .head{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+  .head h2{font-size:clamp(25px,6vw,34px)}
+  .head .bar2{flex:1;height:3px;background:var(--etch)}
+  .panel{background:var(--plate);padding:24px;margin-bottom:18px;border-radius:2px;
+         border-top:4px solid var(--iron);box-shadow:0 2px 0 rgba(32,33,28,.16);
+         position:relative}
+  .panel::before,.panel::after{content:"";position:absolute;top:12px;width:7px;
+    height:7px;border-radius:50%;background:var(--slag);opacity:.5}
+  .panel::before{left:10px}.panel::after{right:10px}
+  .panel h3{font-size:26px;color:var(--ember);margin-bottom:12px}
+  .lvl{display:inline-block;font-family:Consolas,monospace;font-size:11px;
+       font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+       background:var(--iron);color:var(--zinc);padding:3px 9px;border-radius:2px;
+       margin-bottom:10px}
+  .term{font-family:Consolas,monospace;font-size:.85em;font-weight:700}
+  .cost{font-family:Consolas,monospace;font-size:.85em;font-weight:700;color:var(--moss)}
+  table{width:100%;border-collapse:collapse;margin-bottom:1em}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--etch)}
+  th{font-family:Consolas,monospace;font-size:11px;letter-spacing:.14em;
+     text-transform:uppercase;color:var(--slag)}
+  td:first-child{font-family:Consolas,monospace;font-weight:700;width:56px}
+  footer{margin-top:52px;padding-top:20px;border-top:3px solid var(--etch);
+         font-family:Consolas,monospace;font-size:11px;letter-spacing:.1em;
+         color:var(--slag)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Fighter subclass · D&amp;D 2024 · Example v1</div>
+  <h1>Kindled<em>Blade</em></h1>
+  <div class="rule"></div>
+  <div class="subtitle">Example homebrew · shipped with Toon Anvil</div>
+  <p class="quote">"Steel remembers the forge. Mine never cooled."</p>
+</header>
+
+<p class="lede">Some smiths quench a blade in oil, some in blood. Your teacher
+quenched yours in nothing at all, and it has been giving the heat back ever
+since. The weapon is warm to the touch on the coldest morning, and warmer still
+when you have decided that something needs to end.</p>
+
+<p class="lede">Kindled Blades fight patiently. The heat builds while you work,
+and the fighters who last are the ones who know when to let it out.</p>
+
+<section>
+  <div class="head"><h2>Features</h2><div class="bar2"></div></div>
+
+  <div class="panel">
+    <span class="lvl">Level 3</span>
+    <h3>Ember Temper</h3>
+    <p>Your weapon holds a working heat that answers to you.</p>
+    <p><span class="term">KINDLED EDGE.</span> Your weapon attacks deal an extra
+      <strong>1d6 Fire damage</strong> on a hit.</p>
+    <p><span class="term">FORGE-WARMED.</span> You have Resistance to Cold damage,
+      and you can heat or cool a held object to a comfortable temperature at will.</p>
+    <p><span class="term">BANKED HEAT.</span> You gain a pool of
+      <strong>Heat</strong> equal to your Proficiency Bonus. You regain all
+      spent Heat when you finish a Short or Long Rest.</p>
+  </div>
+
+  <div class="panel">
+    <span class="lvl">Level 7</span>
+    <h3>Draw the Heat</h3>
+    <p>As a <strong>Bonus Action</strong>, spend <span class="cost">1 Heat</span>
+      to pull the warmth out of the air around a creature you can see within
+      30 feet. It makes a <strong>Constitution saving throw</strong> against your
+      Fighter save DC.</p>
+    <ul>
+      <li><strong>Failed save:</strong> it takes <strong>2d8 Cold damage</strong>
+        and its Speed is reduced by 10 feet until the end of its next turn.</li>
+      <li><strong>Successful save:</strong> half damage, no reduction.</li>
+    </ul>
+    <p><span class="term">STOKED.</span> Whenever a creature fails this save, your
+      next weapon attack before the end of your next turn scores a
+      <strong>critical hit on a roll of 19 or 20</strong>.</p>
+  </div>
+
+  <div class="panel">
+    <span class="lvl">Level 10</span>
+    <h3>Anneal</h3>
+    <p>You have learned to spend the heat on yourself instead.</p>
+    <p>As a <strong>Bonus Action</strong>, spend <span class="cost">1 Heat</span>
+      to gain <strong>Temporary Hit Points equal to 2d6 + your Fighter level</strong>.
+      While you have these, you have Advantage on saving throws against being
+      Frightened.</p>
+  </div>
+
+  <div class="panel">
+    <span class="lvl">Level 15</span>
+    <h3>Quench</h3>
+    <p>When a creature you can see within 5 feet hits you with a melee attack,
+      you can use your <strong>Reaction</strong> and spend
+      <span class="cost">1 Heat</span> to release everything at once. The attacker
+      takes <strong>3d8 Fire damage</strong> and must succeed on a Constitution
+      saving throw or be unable to take Reactions until the end of its next turn.</p>
+  </div>
+
+  <div class="panel">
+    <span class="lvl">Level 18</span>
+    <h3>The Blade Remembers</h3>
+    <p>As a <strong>Magic action</strong>, you let the forge finish its work.
+      For <strong>1 minute</strong>:</p>
+    <ul>
+      <li>Your weapon attacks deal an extra <strong>2d6 Fire damage</strong>
+        instead of 1d6.</li>
+      <li>You are immune to Fire and Cold damage.</li>
+      <li>Each creature that ends its turn within 10 feet of you takes
+        <strong>1d10 Fire damage</strong>.</li>
+    </ul>
+    <p>Once you use this feature, you can't use it again until you finish a
+      Long Rest.</p>
+  </div>
+</section>
+
+<section>
+  <div class="head"><h2>Signs of the forge (d8)</h2><div class="bar2"></div></div>
+  <div class="panel">
+    <p>Flavour. Roll one when you gain a subclass feature, or pick the one that
+      suits the character.</p>
+    <table>
+      <tr><td>1</td><td>Frost never settles on your gear, however cold the night.</td></tr>
+      <tr><td>2</td><td>Your breath doesn't fog. People notice in winter.</td></tr>
+      <tr><td>3</td><td>Snow melts in a neat circle where you stand still.</td></tr>
+      <tr><td>4</td><td>You sleep without a bedroll and wake comfortable.</td></tr>
+      <tr><td>5</td><td>Candles gutter toward you as you pass.</td></tr>
+      <tr><td>6</td><td>Your palms carry a permanent faint smell of hot iron.</td></tr>
+      <tr><td>7</td><td>You can tell, without touching, whether a forge is lit.</td></tr>
+      <tr><td>8</td><td>Your weapon hums quietly before a fight you will lose.</td></tr>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="head"><h2>Design notes</h2><div class="bar2"></div></div>
+  <div class="panel">
+    <h3>This example is deliberately a little hot</h3>
+    <p>Kindled Edge is an unconditional flat damage rider from level 3, which is
+      the strongest kind of feature to hand a Fighter: it scales with Extra
+      Attack and asks nothing in return. It is written this way on purpose so
+      that Toon Anvil's balance verdict has something real to report, and so you
+      can watch auto-balance propose a change and decide whether you agree.</p>
+    <p>Open questions worth taking to a DM: is Banked Heat too generous on a
+      short rest? Does Stoked stack awkwardly with Champion's crit range in a
+      multiclass?</p>
+  </div>
+</section>
+
+<footer>
+  Example homebrew shipped with Toon Anvil · MIT licensed, use it however you
+  like · Not official D&amp;D content
+</footer>
+</div>
+</body>
+</html>

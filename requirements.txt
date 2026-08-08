@@ -1,0 +1,26 @@
+# Toon Anvil dependencies.
+#
+# The app itself is vanilla JavaScript with no build step and no npm. Python is
+# used for the local server, PDF handling and the offline reports.
+#
+#     pip install -r requirements.txt
+#     python run.py
+
+# --- required to run -------------------------------------------------------
+# PDF reading (import) and writing (character sheets).
+pypdf>=5.0
+pdfplumber>=0.11        # layout-aware extraction; pypdf alone interleaves columns
+reportlab>=4.0          # character sheet PDFs
+
+# --- required for the analysis reports -------------------------------------
+numpy>=2.0              # bootstrap confidence intervals, vector normalisation
+matplotlib>=3.8         # offline charts; no CDN, no browser needed
+
+# --- required to render the app icons --------------------------------------
+pillow>=10.0
+
+# --- needed on machines with TLS-intercepting antivirus ---------------------
+# Some security products present a CA certificate that OpenSSL rejects, which
+# breaks the optional downloads (SRD refresh, reference corpus, fonts).
+# truststore defers to the OS certificate store instead. Harmless elsewhere.
+truststore>=0.9

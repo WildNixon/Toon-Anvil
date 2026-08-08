@@ -1,0 +1,68 @@
+{
+  "_comment": [
+    "Hand-patched spell mechanics for spells the extractor cannot read from prose.",
+    "Same pattern as monster_overrides.json: an override is a deliberate,",
+    "reviewable statement of what a spell does, not a regex guess.",
+    "",
+    "Only add an entry here when the spell is genuinely combat-relevant AND the",
+    "phrasing is too irregular to generalise. Everything patched here is marked",
+    "source='override' and confidence=1.0 in the output, and listed in the",
+    "'patched' array so the report can show exactly what was hand-fed.",
+    "",
+    "Do NOT use this file to inflate coverage. A utility spell that the sim",
+    "genuinely cannot model should stay non-executable so the coverage gate can",
+    "do its job."
+  ],
+
+  "magic-missile": {
+    "damage": "1d4",
+    "damageFlat": 1,
+    "damageType": "force",
+    "projectiles": 3,
+    "save": null,
+    "attackRoll": null,
+    "halfOnSave": false,
+    "kind": "damage",
+    "upcast": { "kind": "projectiles", "perLevel": 1 },
+    "note": "Auto-hit. Three darts, each 1d4+1 Force; +1 dart per slot above 1st."
+  },
+
+  "eldritch-blast": {
+    "damage": "1d10",
+    "damageType": "force",
+    "attackRoll": "ranged",
+    "kind": "damage",
+    "cantripScaling": [[5, "2 beams"], [11, "3 beams"], [17, "4 beams"]],
+    "beamsByLevel": [[1, 1], [5, 2], [11, 3], [17, 4]],
+    "note": "Separate attack roll per beam; beams scale with character level, not slot."
+  },
+
+  "scorching-ray": {
+    "damage": "2d6",
+    "damageType": "fire",
+    "attackRoll": "ranged",
+    "projectiles": 3,
+    "kind": "damage",
+    "upcast": { "kind": "projectiles", "perLevel": 1 },
+    "note": "Three rays, each its own attack roll; +1 ray per slot above 2nd."
+  },
+
+  "spirit-guardians": {
+    "damage": "3d8",
+    "damageType": "radiant",
+    "save": { "ability": "wis" },
+    "halfOnSave": true,
+    "area": { "size": 15, "shape": "emanation" },
+    "kind": "damage",
+    "concentration": true,
+    "upcast": { "kind": "damage", "perLevel": "1d8" },
+    "note": "Recurring aura damage; the sim applies it once per enemy turn in the aura."
+  },
+
+  "heroism": {
+    "tempHp": "mod",
+    "kind": "healing",
+    "concentration": true,
+    "note": "Temp HP equal to the spellcasting modifier at the start of each turn."
+  }
+}

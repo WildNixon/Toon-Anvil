@@ -1,0 +1,41 @@
+MIT License
+
+Copyright (c) 2026 Toon Anvil contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+The MIT licence above covers the Toon Anvil SOURCE CODE only.
+
+Bundled game content is separately licensed:
+
+  * Rules content in app/data/compendium/ is from the System Reference
+    Document 5.2.1, (c) Wizards of the Coast LLC, licensed under
+    Creative Commons Attribution 4.0 International (CC-BY-4.0).
+    See ATTRIBUTION.md.
+
+  * Bundled typefaces in app/data/fonts/ (Archivo Black, IBM Plex Mono,
+    IBM Plex Serif) are licensed under the SIL Open Font License 1.1.
+
+Homebrew you create or import remains yours. Toon Anvil stores it locally and
+transmits it nowhere.
+
+Dungeons & Dragons and D&D are trademarks of Wizards of the Coast LLC.
+Toon Anvil is unaffiliated with and unendorsed by Wizards of the Coast.

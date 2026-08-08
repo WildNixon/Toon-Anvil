@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# This file is a SAFETY CONTROL, not housekeeping.
+#
+# The working tree contains the author's play data, their own homebrew, and
+# text extracted from copyrighted playtest PDFs. None of it may reach a public
+# repository. Before publishing, run:
+#
+#     git ls-files | findstr /i "character event extracted homebrew"
+#
+# and expect no output.
+# ---------------------------------------------------------------------------
+
+# --- personal play data ----------------------------------------------------
+data/characters/
+data/campaigns/
+data/npcs/
+data/shops/
+data/events.jsonl
+data/events-*.jsonl
+
+# --- the user's own homebrew: theirs, not ours to publish -------------------
+data/homebrew/
+data/homebrew-variants/
+
+# --- anything extracted from a source document -----------------------------
+# May contain copyrighted text (Unearthed Arcana, commercial PDFs). The
+# extractor ships; its output does not.
+library/extracted/
+data/extracted/
+
+# --- whatever the user dropped in --------------------------------------------
+inbox/*
+!inbox/README.txt
+
+# --- reference corpus: fetched on demand, not redistributed -----------------
+# The corpus TEXT is a local fixture and stays out of the repo. The measured
+# VECTORS built from it do ship (see below), because without them a fresh
+# clone has no "plays most like" at all.
+library/corpus/
+data/corpus/
+library/_manifest.json
+
+# _vectors.json is DELIBERATELY tracked. It holds no rules text - only each
+# subclass's name, class, source document and four simulated numbers. That is a
+# measurement index, not the content it measures, and it is what makes
+# positioning work on first run. Attribution is in ATTRIBUTION.md.
+!library/_vectors.json
+
+# --- simulation output and generated reports -------------------------------
+data/sim/
+data/sheets/
+data/_*.txt
+
+# --- build inputs and generated copies -------------------------------------
+# srd_raw is the input to tools/srd_convert.py. The BUILT compendium in
+# app/data/compendium IS committed, so a clone works with no network.
+srd_raw/
+extension/app/
+
+# --- python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# --- editors / os ----------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
