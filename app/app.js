@@ -55,12 +55,50 @@ export async function saveCharacter(patch) {
   return next;
 }
 
+/**
+ * Bring a character's stored HP into line with its derived maximum.
+ *
+ * Max HP became derived from class, level and Constitution; before that it was
+ * stored and stuck at 10 forever. A character saved under the old scheme has a
+ * stale hp.max, and if it was at full health it must stay at full health
+ * rather than looking like it has taken 24 points of damage.
+ *
+ * This runs ONCE, when the character is loaded, because it is a write. The
+ * same check inside derive() would be wrong: after real damage the stored max
+ * is stale, so "current >= storedMax" reads as full and the character heals
+ * itself on every render.
+ */
+async function migrateHp(character) {
+  const { compendium, homebrew } = getState();
+  if (!character?.classes?.length) return character;
+  const storedMax = Number(character.hp?.max || 0);
+  const d = derive(character, {
+    classes: compendium.classes || [], species: compendium.species || [],
+    backgrounds: compendium.backgrounds || [], feats: compendium.feats || [],
+    srdEffects: compendium.srdEffects || {}, homebrew: homebrew || [],
+  });
+  if (storedMax === d.hp.max) return character;
+
+  const wasFull = character.hp?.current === undefined
+    || Number(character.hp.current) >= storedMax;
+  const next = {
+    ...character,
+    hp: {
+      ...character.hp,
+      max: d.hp.max,
+      current: wasFull ? d.hp.max : Math.min(Number(character.hp.current), d.hp.max),
+    },
+  };
+  await db.put('characters', next);
+  return next;
+}
+
 export async function selectCharacter(id) {
   if (!id) {
     setContext({ characterId: null });
     return setState({ characterId: null, character: null, derived: null });
   }
-  const character = await db.get('characters', id);
+  const character = await migrateHp(await db.get('characters', id));
   setContext({ characterId: id, campaignId: character?.campaignId || null });
   setState({ characterId: id, character, campaignId: character?.campaignId || null });
   recompute();

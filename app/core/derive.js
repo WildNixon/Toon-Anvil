@@ -283,11 +283,7 @@ export function derive(character, sources = {}) {
     shieldWorn,
     initiative: modFor('dex', 'initiative') + Number(ch.initiativeBonus || 0) + d20Penalty,
     speeds,
-    hp: {
-      max: Number(ch.hp?.max || 0),
-      current: Number(ch.hp?.current ?? ch.hp?.max ?? 0),
-      temp: Number(ch.hp?.temp || 0),
-    },
+    hp: hitPoints(ch, sources, modFor('con')),
     hitDice: ch.hitDice || {},
     deathSaves: ch.deathSaves || { successes: 0, failures: 0 },
 
@@ -411,6 +407,68 @@ function collectFeatures(ch, sources) {
 
   for (const f of ch.customFeatures || []) push(f, 'Custom', f.level);
   return out;
+}
+
+/**
+ * Maximum hit points, derived rather than stored.
+ *
+ * This used to read ch.hp.max straight back out, which was set to 10 when the
+ * character was created and never recalculated. Every character in the app had
+ * 10 HP at every level, and no screen let you edit it - while the simulator
+ * computed HP properly, so the two engines disagreed about the single most
+ * important number on the sheet.
+ *
+ * Uses the 2024 fixed-value rule and the SAME arithmetic as the simulator's
+ * makeCharacter(): maximum die at first level, the die's average (die/2 + 1)
+ * for every level after, Constitution modifier on every level. Multiclassing
+ * only gets the maximum-die bonus once, for the very first level taken.
+ *
+ * `ch.hp.override` wins if set, so a table that rolls for HP - or a DM handing
+ * out a flat total - is not fought with. current/temp stay stored, because
+ * those are play state and deriving them would undo every point of damage on
+ * the next render.
+ */
+export function hitPoints(ch, sources, conMod = 0) {
+  const stored = {
+    current: Number(ch.hp?.current ?? 0),
+    temp: Number(ch.hp?.temp || 0),
+  };
+  const override = Number(ch.hp?.override || 0);
+
+  let max = 0;
+  let first = true;
+  for (const entry of ch.classes || []) {
+    const level = Number(entry.level) || 0;
+    if (level <= 0) continue;
+    const die = (sources.classes || []).find((c) => c.id === entry.class)?.hitDie || 8;
+    const avg = Math.floor(die / 2) + 1;
+    // First level of the FIRST class takes the whole die; everything else takes
+    // the average. Con applies to every level, including levels from a second
+    // class, which is why this is summed per entry rather than per character.
+    max += (first ? die : avg) + conMod;
+    max += (level - 1) * (avg + conMod);
+    first = false;
+  }
+  // A negative Con on a low-level character must not produce 0 or less.
+  max = Math.max(1, override || max || Number(ch.hp?.max || 0));
+
+  // Current HP is play state, so it is taken as-is and only clamped to the
+  // maximum. Nothing clever here on purpose: an earlier version tried to infer
+  // "this character was at full health under its old maximum" by comparing
+  // current against the STORED max, which is stale the moment HP becomes
+  // derived - so a character on 27 of a stale max of 10 read as full and
+  // healed itself on every render. Damage could never stick.
+  //
+  // Migrating a character whose stored maximum is out of date is a WRITE, and
+  // writes belong in app.js where saving is allowed, not in a pure function.
+  return {
+    max,
+    current: ch.hp?.current === undefined
+      ? max
+      : Math.max(0, Math.min(stored.current, max)),
+    temp: stored.temp,
+    derived: !override,
+  };
 }
 
 function classSaves(ch, sources) {
