@@ -69,7 +69,8 @@
 import { runLogic, grade, publishRun, loadHistory, runMutations, Check, BARS }
   from './appgym.js';
 import { runFlows } from './uiflows.js';
-import { initDb, MemoryAdapter, db, KINDS, compendia, dataFile } from '../core/db.js';
+import { initDb, MemoryAdapter, db, KINDS, compendia, dataFile,
+  compendiumWithCustom } from '../core/db.js';
 import * as engine from '../core/engine.js';
 import * as events from '../core/events.js';
 import * as adapters from '../homebrew/adapters.js';
@@ -83,6 +84,7 @@ import * as dmRunner from '../modes/dm/runner.js';
 import * as dmParty from '../modes/dm/party.js';
 import * as dmLoot from '../modes/dm/loot.js';
 import * as dmGen from '../modes/dm/generators.js';
+import * as parseContent from '../homebrew/parse-content.js';
 
 const $ = (s) => document.querySelector(s);
 const log = (m) => { $('#log').textContent += `${m}\n`;
@@ -110,6 +112,7 @@ async function buildCtx() {
     magicItems: c['magic-items'], tables,
     mechanics: mechFile.mechanics,
     dm: { runner: dmRunner, party: dmParty, loot: dmLoot, gen: dmGen },
+    content: { ...parseContent, compendiumWithCustom },
     hb: {
       parse: adapters.parse,
       detect: adapters.detect,

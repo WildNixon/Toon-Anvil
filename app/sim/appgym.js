@@ -1259,6 +1259,180 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- custom content --------------------------------- */
+  {
+    id: 'content',
+    title: 'Custom content parsing',
+    why: 'A DM dropping a bestiary should get their monsters. A parser that '
+       + 'silently returns a half-empty statblock, or confidently parses a '
+       + 'section heading, is worse than one that refuses.',
+    scenarios: [
+      {
+        id: 'statblock_roundtrip',
+        title: 'Every bundled monster survives render and re-parse',
+        run(c, { monsters, content }) {
+          c.feature('content', 'parser', 'monsters');
+          // The strongest test available: render all 330 real monsters to
+          // statblock text, read them back, and require the numbers to match.
+          // A fixture proves the parser handles the fixture; this proves it
+          // handles the corpus.
+          const bad = { ac: 0, hp: 0, cr: 0, abilities: 0, sections: 0, notOk: 0 };
+          let first = null;
+          for (const m of monsters) {
+            const r = content.parseStatblock(content.renderStatblock(m), { name: m.name });
+            if (!r.ok) { bad.notOk += 1; first = first || `${m.name}: not ok`; }
+            if (r.record.ac !== m.ac) { bad.ac += 1; first = first || `${m.name}: AC`; }
+            if (r.record.hp !== m.hp) { bad.hp += 1; first = first || `${m.name}: HP`; }
+            if (r.record.cr !== m.cr) { bad.cr += 1; first = first || `${m.name}: CR`; }
+            for (const k of ['str', 'dex', 'con', 'int', 'wis', 'cha']) {
+              const a = m.abilities?.[k]; const b = r.record.abilities?.[k];
+              if (a && (!b || b.score !== a.score || b.mod !== a.mod)) {
+                bad.abilities += 1; first = first || `${m.name}.${k}`; break;
+              }
+            }
+            for (const sec of ['traits', 'actions', 'bonusActions',
+              'reactions', 'legendaryActions']) {
+              if ((m[sec] || []).length !== (r.record[sec] || []).length) {
+                bad.sections += 1; first = first || `${m.name}.${sec}`; break;
+              }
+            }
+          }
+          c.ok(monsters.length > 300, 'the whole bestiary was tested',
+            `${monsters.length} monsters`);
+          c.eq(bad.notOk, 0, 'every statblock parses', first || '');
+          c.eq(bad.ac, 0, 'AC survives the round trip', first || '');
+          c.eq(bad.hp, 0, 'hit points survive', first || '');
+          c.eq(bad.cr, 0, 'challenge rating survives', first || '');
+          c.eq(bad.abilities, 0, 'every ability score and modifier survives', first || '');
+          c.eq(bad.sections, 0, 'traits and actions survive with the right count',
+            first || '');
+        },
+      },
+      {
+        id: 'containers_refused',
+        title: 'A section heading is refused, not parsed',
+        run(c, { content }) {
+          c.feature('content', 'parser');
+          // The failure this guards: "Spell Descriptions" holding five spells
+          // parsed as ONE spell with 100% coverage, because the first spell's
+          // fields were sitting right there to be found.
+          const body = [
+            'Casting Time: 1 action', 'Range: 60 feet', 'Components: V, S',
+            'Duration: Instantaneous', 'A bolt of fire leaps out.',
+            'Casting Time: 1 bonus action', 'Range: Self',
+            'Components: V', 'Duration: 1 minute', 'You grow wings.',
+          ].join('\n');
+          const asContainer = content.parseContent('spell', body,
+            { name: 'Spell Descriptions' });
+          c.ok(!asContainer.ok, 'a heading does not parse as a record');
+          c.ok(asContainer.container, 'and is reported AS a container');
+          c.eq(asContainer.coverage, 0,
+            'a refused container claims no coverage at all');
+
+          for (const junk of ['ACTIONS', 'Armor Class 18', 'STR DEX CON INT WIS CHA',
+            'Components: V, S', 'Duration: Instantaneous']) {
+            const r = content.parseContent('monster', 'Armor Class 12\nHit Points 9',
+              { name: junk });
+            c.ok(r.container, `"${junk}" is refused as a fragment`);
+          }
+
+          // Multiple records in one block is refused even with a real name.
+          const multi = content.parseContent('spell', body, { name: 'Fire Bolt' });
+          c.ok(multi.container, 'two spells in one block is refused');
+        },
+      },
+      {
+        id: 'coverage_is_honest',
+        title: 'Coverage names what is missing',
+        run(c, { content }) {
+          c.feature('content', 'coverage');
+          const partial = content.parseStatblock(
+            'Armor Class 15\nHit Points 30 (4d8+12)\nSTR 10 +0 +0',
+            { name: 'Half A Monster' });
+          c.ok(partial.coverage < 1, 'an incomplete statblock does not claim 100%',
+            String(partial.coverage));
+          c.ok(partial.missing.includes('speed'), 'and says speed is missing',
+            partial.missing.join(','));
+          c.ok(partial.missing.includes('cr'), 'and challenge rating');
+
+          const full = content.parseStatblock(
+            ['Armor Class 15', 'Hit Points 30 (4d8+12)', 'Speed 30 ft.',
+              'STR 10 +0 +0', 'DEX 12 +1 +1', 'CON 14 +2 +2',
+              'INT 8 -1 -1', 'WIS 10 +0 +0', 'CHA 8 -1 -1',
+              'Challenge 2 (XP 450; PB +2)'].join('\n'),
+            { name: 'Whole Monster' });
+          c.eq(full.coverage, 1, 'a complete statblock reports 100%');
+          c.eq(full.missing.length, 0, 'with nothing missing');
+        },
+      },
+      {
+        id: 'spells_and_items',
+        title: 'Spells and magic items parse their own fields',
+        run(c, { content }) {
+          c.feature('content', 'parser', 'spells');
+          const spell = content.parseSpell([
+            'Guiding Hand', '2nd-level divination',
+            'Casting Time: 1 action', 'Range: Self',
+            'Components: V, S, M (a compass)',
+            'Duration: Concentration, up to 1 hour',
+            'You know the direction of a place you name.',
+          ].join('\n'), { name: 'Guiding Hand' });
+          c.ok(spell.ok, 'the spell parses');
+          c.eq(spell.record.level, 2, 'its level is read');
+          c.eq(spell.record.school, 'divination', 'its school is read');
+          c.ok(spell.record.concentration, 'concentration is detected');
+          c.eq(spell.coverage, 1, 'with full coverage');
+
+          const cantrip = content.parseSpell(
+            'Spark\nEvocation cantrip\nCasting Time: 1 action\nRange: 30 feet\n'
+            + 'Components: V\nDuration: Instantaneous\nA spark leaps.',
+            { name: 'Spark' });
+          // School-first phrasing broke the SRD converter once already.
+          c.eq(cantrip.record.level, 0, 'a cantrip reads as level 0');
+          c.eq(cantrip.record.school, 'evocation', 'school-first phrasing is handled');
+
+          const item = content.parseMagicItem([
+            'Glamerweave', 'Wondrous item, common',
+            'This cloth garment is embroidered with moving images.',
+          ].join('\n'), { name: 'Glamerweave' });
+          c.ok(item.ok, 'the item parses');
+          c.eq(item.record.rarity, 'Common', 'rarity is read');
+          c.ok(!item.record.attunement, 'attunement is absent when not stated');
+
+          const attuned = content.parseMagicItem(
+            'Ring of Sight\nRing, rare (requires attunement by a druid)\nYou see far.',
+            { name: 'Ring of Sight' });
+          c.ok(attuned.record.attunement, 'attunement is detected');
+          c.ok(/druid/i.test(attuned.record.attunementNote || ''),
+            'and by whom', attuned.record.attunementNote || '');
+        },
+      },
+      {
+        id: 'custom_never_shadows_srd',
+        title: 'Custom content adds to the compendium without replacing it',
+        async run(c, { db, content, monsters }) {
+          c.feature('content', 'storage');
+          // A homebrew goblin must not quietly become THE goblin that the
+          // encounter builder, the simulator and every saved encounter mean.
+          const clash = monsters[0];
+          await db.put('custom-monsters', {
+            id: clash.id, name: `${clash.name} (mine)`, ac: 99, hp: 1,
+            abilities: {}, cr: 0, custom: true,
+          });
+          const merged = await content.compendiumWithCustom('monsters');
+          const original = merged.filter((m) => m.id === clash.id);
+          c.eq(original.length, 1, 'the SRD record keeps its id, uniquely');
+          c.eq(original[0].ac, clash.ac, 'and its own numbers');
+          const mine = merged.find((m) => m.name === `${clash.name} (mine)`);
+          c.ok(!!mine, 'the custom record is still present');
+          c.ok(mine.id !== clash.id, 'under a different id', mine.id);
+          c.ok(mine.custom === true, 'and badged as custom');
+          await db.del('custom-monsters', mine.id.replace(/-custom$/, ''));
+        },
+      },
+    ],
+  },
+
   /* ---------------- cross-engine agreement ------------------------- */
   {
     id: 'agreement',

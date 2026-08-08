@@ -304,6 +304,35 @@ function dropPanel() {
           box.append(el('p', { class: 'muted', style: 'font-size:12px' },
             `Showing 80 of ${subs.length} - use the filter to narrow.`));
         }
+
+        // Everything that is NOT a subclass. The splitter has always written
+        // these out; nothing ever surfaced them, so a DM dropping a bestiary
+        // got their subclasses and silently lost their monsters.
+        const KIND_LABEL = {
+          monster: 'Monsters', magic_item: 'Magic items', spell: 'Spells',
+          feat: 'Feats', species: 'Species',
+        };
+        for (const [kind, rows] of Object.entries(doc.other || {})) {
+          if (!rows.length) continue;
+          box.append(el('h3', { style: 'margin:14px 0 4px;font-size:14px' },
+            `${KIND_LABEL[kind] || kind} (${rows.length})`));
+          for (const [i, r] of rows.entries()) {
+            const row = el('div', { style: ROW });
+            row.append(el('span', { class: 'chip' }, kind.replace('_', ' ')));
+            row.append(el('span', { style: 'flex:1;font-size:13px' }, r.title));
+            row.append(el('span', { class: 'muted', style: 'font-size:11px' },
+              `${r.chars} chars · p${r.page ?? '?'}`));
+            row.append(el('button', {
+              class: 'act small',
+              onClick: () => ingestDropFile({
+                name: r.title, kind: 'content', contentKind: kind, index: i,
+                url: `/library/extracted/${doc.document}/${kind}.json`,
+              }),
+            }, 'Parse'));
+            box.append(row);
+          }
+        }
+
         panel.append(box);
       }
     }
@@ -332,6 +361,42 @@ async function ingestDropFile(f) {
   try {
     const res = await fetch(`${serverBase()}${f.url}`);
     let brew;
+
+    if (f.kind === 'content') {
+      // Monsters, magic items and spells. These do NOT go through the subclass
+      // review panel - they are not subclasses - so they are parsed, reported
+      // on, and saved straight to their own store.
+      const { parseContent } = await import('./parse-content.js');
+      const rows = await res.json();
+      const block = rows[f.index];
+      if (!block) throw new Error(`entry ${f.index} is not in that file`);
+
+      const parsed = parseContent(f.contentKind, block.text, {
+        name: block.title,
+        source: { document: f.url.split('/')[3], page: block.page },
+      });
+
+      if (parsed.container) {
+        // A section heading holding several records. Saying so beats saving
+        // the first one under the section's name.
+        toast(parsed.warnings[0], 'warn');
+        return;
+      }
+      if (!parsed.ok) {
+        toast(`${block.title}: could not parse — missing `
+          + `${parsed.missing.join(', ')}`, 'bad');
+        return;
+      }
+
+      const store = { monster: 'custom-monsters', magic_item: 'custom-items',
+        spell: 'custom-spells' }[f.contentKind];
+      await db.put(store, parsed.record);
+      const pct = Math.round(parsed.coverage * 100);
+      toast(`Saved ${parsed.record.name} — ${pct}% of its fields parsed`
+        + (parsed.missing.length ? ` (missing ${parsed.missing.join(', ')})` : ''),
+      parsed.coverage === 1 ? 'ok' : 'warn');
+      return;
+    }
 
     if (f.kind === 'subclass') {
       // One entry out of a document's subclasses.json. Already in our own

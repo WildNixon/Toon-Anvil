@@ -10,7 +10,7 @@
  */
 
 import { getState, setState, el, esc, md, sign, toast } from '../../core/store.js';
-import { compendium, dataFile, db } from '../../core/db.js';
+import { compendium, compendiumWithCustom, dataFile, db } from '../../core/db.js';
 import {
   encounterBudget, CR_XP, XP_BUDGET, ABILITIES,
 } from '../../core/rules2024.js';
@@ -38,8 +38,11 @@ let improv = { seed: 1, level: 3, terrain: 'forest', result: null };
 export async function render(root) {
   container = root;
   if (!monsters.length) {
+    // Custom content is appended, so a DM's own monsters show up in the
+    // bestiary, the encounter runner and the random tables alongside the SRD.
     [monsters, glossary, magicItems] = await Promise.all([
-      compendium('monsters'), compendium('glossary'), compendium('magic-items'),
+      compendiumWithCustom('monsters'), compendium('glossary'),
+      compendiumWithCustom('magic-items'),
     ]);
   }
   if (!tables) tables = await dataFile('dm-tables.json', null);
@@ -324,7 +327,20 @@ function statBlock(m) {
     style: 'background:var(--paper);padding:18px;border-top:4px solid var(--accent);'
       + 'border-radius:2px',
   });
-  box.append(el('h3', { style: 'margin-bottom:2px' }, m.name));
+  const heading = el('div', {
+    style: 'display:flex;gap:8px;align-items:baseline;margin-bottom:2px',
+  });
+  heading.append(el('h3', { style: 'margin:0' }, m.name));
+  // A DM must always be able to tell their own content from the SRD's.
+  if (m.custom) {
+    heading.append(el('span', {
+      class: 'chip', style: 'background:rgba(154,106,18,.25)',
+      title: m.source?.document
+        ? `Ingested from ${m.source.document}`
+        : 'Added by you, not from the SRD',
+    }, 'custom'));
+  }
+  box.append(heading);
   box.append(el('div', { class: 'muted', style: 'font-style:italic;margin-bottom:10px' },
     `${m.size} ${m.type}${m.alignment ? `, ${m.alignment}` : ''}`));
 

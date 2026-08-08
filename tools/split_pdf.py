@@ -284,14 +284,64 @@ def blocks_from(pages: list[str]) -> list[dict]:
 # --------------------------------------------------------------------------
 
 
+# Titles that are a section heading or an extraction fragment, never a record.
+#
+# Real output contained "STR DEX CON INT WIS CHA" and "Armor Class 18" filed as
+# monsters, and "Spell Descriptions" and "ACTIONS" filed as spells. Each of
+# those then PARSED, because the fields of the first real record inside the
+# section were sitting right there - producing a confident, fully-covered,
+# entirely wrong entry. Rejecting the container is the only honest fix; the
+# records inside it are picked up as their own blocks.
+HEADING_TITLE = re.compile(
+    r"^\s*(?:"
+    r"(?:spell|tattoo|item|monster|creature|feat|trait|action)s?\s+"
+    r"(?:descriptions?|list|table|options?)"
+    r"|new\s+(?:spell|item|monster|feat|species)s?"
+    r"|actions?|reactions?|bonus actions?|legendary actions?|traits?"
+    # A statblock or spell LABEL captured as a title - "Components: V, S",
+    # "Prerequisite: 10th-level artificer", "Armor Class 18".
+    r"|(?:armor class|hit points|speed|challenge|casting time|components?"
+    r"|duration|range|prerequisite|target|classes|saving throw|hit)\b.*"
+    r"|(?:str|dex|con|int|wis|cha)(?:\s+(?:str|dex|con|int|wis|cha)){2,}"
+    # A phrase left hanging on a conjunction is the middle of a sentence.
+    r"|.*\b(?:and|or|of|the|with|for|to|by|in|that|which)\s*"
+    r")\s*$",
+    re.I,
+)
+
+RUNS_INTO_PROSE = re.compile(r"\.\s+[A-Z]")
+
+
+def is_heading_title(title: str) -> bool:
+    """A container or a fragment, rather than the name of a thing."""
+    t = (title or "").strip()
+    if not t or len(t) < 3:
+        return True
+    # "Healing Touch (1/Day). The celestial touches..." is a captured line, not
+    # a name. So is anything long enough to be a sentence.
+    if len(t) > 60 or RUNS_INTO_PROSE.search(t):
+        return True
+    return bool(HEADING_TITLE.match(t))
+
+
 def classify(block: dict) -> tuple[str, float, str]:
     """Return (kind, confidence, evidence)."""
     t = block["text"]
     title = block["title"]
     head = t[:600]
 
+    # A block whose TITLE is a heading is a container, whatever its body looks
+    # like. Checked first so the strong body signals below cannot override it.
+    if is_heading_title(title):
+        return "unclassified", 0.0, f"heading or fragment title: {title[:40]!r}"
+
     if re.search(r"Casting Time:", head, re.I) and re.search(
             r"\bRange:|\bDuration:", head, re.I):
+        # More than one "Casting Time" means this is a run of spells, not a
+        # spell. Splitting them is a separate job; claiming to be one of them
+        # is worse than admitting we cannot tell.
+        if len(re.findall(r"Casting Time:", t, re.I)) > 1:
+            return "unclassified", 0.0, "several spells in one block"
         return "spell", 0.95, "Casting Time + Range/Duration"
 
     if re.search(r"requires attunement", t, re.I):
@@ -302,9 +352,15 @@ def classify(block: dict) -> tuple[str, float, str]:
 
     if (re.search(r"Armor Class\s*\d+", head, re.I)
             and re.search(r"Hit Points\s*\d+", head, re.I)):
+        # Same again: two AC lines means several statblocks ran together.
+        if len(re.findall(r"Armor Class\s*\d+", t, re.I)) > 1:
+            return "unclassified", 0.0, "several statblocks in one block"
         return "monster", 0.9, "AC + Hit Points"
-    if re.search(r"\bSTR\b.{0,30}\bDEX\b.{0,30}\bCON\b", t, re.S):
-        return "monster", 0.7, "ability score run"
+    # An ability run ALONE is not a monster - it is most often the header row
+    # of a table. Require a second statblock signal before believing it.
+    if re.search(r"\bSTR\b.{0,30}\bDEX\b.{0,30}\bCON\b", t, re.S) and (
+            re.search(r"Armor Class|Hit Points|Challenge\b", t, re.I)):
+        return "monster", 0.7, "ability run + a statblock label"
 
     if re.search(r"Prerequisite:", head, re.I):
         return "feat", 0.85, "Prerequisite:"

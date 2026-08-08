@@ -13,7 +13,24 @@
  * touch IndexedDB or fetch('/api/...') directly.
  */
 
-export const KINDS = ['characters', 'campaigns', 'homebrew', 'npcs', 'shops'];
+/**
+ * Record kinds.
+ *
+ * The `custom-*` kinds hold content ingested from a dropped PDF or written by
+ * hand - monsters, magic items and spells that sit alongside the SRD rather
+ * than inside it. Kept as separate stores rather than mixed into the
+ * compendium files so that the bundled SRD data stays exactly as shipped and
+ * can be rebuilt at any time without taking somebody's homebrew with it.
+ */
+export const KINDS = ['characters', 'campaigns', 'homebrew', 'npcs', 'shops',
+  'custom-monsters', 'custom-items', 'custom-spells'];
+
+/** Which compendium each custom store extends. */
+export const CUSTOM_KINDS = {
+  'custom-monsters': 'monsters',
+  'custom-items': 'magic-items',
+  'custom-spells': 'spells',
+};
 
 const DB_NAME = 'toon-anvil';
 const DB_VERSION = 1;
@@ -320,6 +337,45 @@ export async function compendium(name) {
   });
   cache.set(name, p);
   return p;
+}
+
+/**
+ * The compendium plus anything the user has added.
+ *
+ * Custom records carry `custom: true` and are appended rather than merged, so
+ * the SRD list is always the prefix and a screen can tell the two apart
+ * without keeping a second list. A custom record whose id collides with an SRD
+ * one is renamed rather than shadowing it - somebody's homebrew goblin must
+ * not quietly replace the goblin everything else refers to.
+ */
+export async function compendiumWithCustom(name) {
+  const base = await compendium(name);
+  const store = Object.entries(CUSTOM_KINDS).find(([, v]) => v === name)?.[0];
+  if (!store || !Array.isArray(base)) return base;
+
+  let custom = [];
+  try {
+    custom = await db.list(store);
+  } catch { return base; }
+  if (!custom.length) return base;
+
+  const taken = new Set(base.map((r) => r.id));
+  const merged = custom.map((r) => {
+    if (!taken.has(r.id)) { taken.add(r.id); return { ...r, custom: true }; }
+    const id = `${r.id}-custom`;
+    taken.add(id);
+    return { ...r, id, custom: true, shadowed: r.id };
+  });
+  return [...base, ...merged];
+}
+
+/** How much custom content exists, for badges and empty states. */
+export async function customCounts() {
+  const out = {};
+  for (const store of Object.keys(CUSTOM_KINDS)) {
+    try { out[store] = (await db.list(store)).length; } catch { out[store] = 0; }
+  }
+  return out;
 }
 
 /** Load a non-compendium data file (srd-effects, spell-mechanics). */

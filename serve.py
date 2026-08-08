@@ -33,7 +33,11 @@ ROOT = Path(__file__).resolve().parent
 APP = ROOT / "app"
 DATA = ROOT / "data"
 
-KINDS = {"characters", "campaigns", "homebrew", "npcs", "shops"}
+KINDS = {"characters", "campaigns", "homebrew", "npcs", "shops",
+         # Content ingested from a dropped PDF or written by hand. Kept apart
+         # from app/data/compendium so the bundled SRD can be rebuilt without
+         # taking somebody's homebrew with it.
+         "custom-monsters", "custom-items", "custom-spells"}
 EVENT_LOG = DATA / "events.jsonl"
 MAX_LOG_BYTES = 100 * 1024 * 1024
 
@@ -463,12 +467,35 @@ class Handler(SimpleHTTPRequestHandler):
                             contents[f.stem] = len(items) if isinstance(items, list) else 1
                         except json.JSONDecodeError:
                             contents[f.stem] = 0
+                    # Monsters, items and spells alongside subclasses. Only a
+                    # title and a size go in the listing; the text is fetched
+                    # when something is actually opened, so a 258-page archive
+                    # does not arrive with every page listing.
+                    other = {}
+                    for kind in ("monster", "magic_item", "spell", "feat", "species"):
+                        f = d / f"{kind}.json"
+                        if not f.exists():
+                            continue
+                        try:
+                            rows = json.loads(f.read_text(encoding="utf-8"))
+                        except json.JSONDecodeError:
+                            continue
+                        if isinstance(rows, list) and rows:
+                            other[kind] = [
+                                {"title": r.get("title") or "(untitled)",
+                                 "chars": len(r.get("text") or ""),
+                                 "confidence": r.get("confidence"),
+                                 "page": r.get("page")}
+                                for r in rows
+                            ]
+
                     documents.append({
                         "document": d.name,
                         "source": report.get("file", d.name),
                         "pages": report.get("pages"),
                         "contents": contents,
                         "subclasses": report.get("subclasses", []),
+                        "other": other,
                         "url": f"/library/extracted/{d.name}",
                     })
 

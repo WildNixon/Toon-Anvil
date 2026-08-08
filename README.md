@@ -22,11 +22,13 @@ itself, starts a local server and opens the app.
 
 ## What it does
 
-**Ingest.** Drop a subclass into `inbox/` — PDF, Markdown, HTML, JSON, or plain
+**Ingest.** Drop homebrew into `inbox/` — PDF, Markdown, HTML, JSON, or plain
 text. PDFs are split automatically into subclasses, spells, items and feats, one
 folder per document. The parser classifies blocks by what they *say*, not by
 where they sit in the file, so it survives homebrew that doesn't follow a
-template.
+template. Subclasses, monsters, magic items and spells are all extracted;
+monsters and items you parse are saved alongside the SRD and badged **custom**
+everywhere they appear, so you always know what came from the book.
 
 **Map.** Prose becomes mechanics. "you deal an extra 1d6 Fire damage" becomes a
 damage rider the engine can execute. Everything it *can't* map is listed rather
@@ -106,7 +108,15 @@ reports each one where it matters.
    rolls, but there's no field for it yet.
 7. **The bestiary starts empty.** It's search-driven — type a monster name.
    All 330 are there; none are listed until you ask.
-8. **PDF grouping is only as good as the document.** Where a PDF says "3rd
+8. **Custom monsters, items and spells parse; the classifier is the weak
+   link.** The statblock parser round-trips all 330 bundled monsters exactly —
+   AC, HP, CR, every ability score, every action. What is unreliable is
+   deciding *which blocks of a PDF are statblocks*: on a subclass document it
+   finds almost none, and what it does find needs your eye. Every parse
+   reports its coverage and names what it could not read, and a block that is
+   really a section heading is refused outright rather than parsed
+   confidently from the first record inside it.
+9. **PDF grouping is only as good as the document.** Where a PDF says "3rd
    level Toymaker feature", features are grouped under *Toymaker* and marked
    **named**. Where it just says "At 3rd level" — which is how Wizards' own
    Unearthed Arcana is written — grouping is inferred from level order and
