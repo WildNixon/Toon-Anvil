@@ -1052,6 +1052,213 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- DM tools --------------------------------------- */
+  {
+    id: 'dmtools',
+    title: 'DM tools',
+    why: 'These run a live session with no network. A loot table that can '
+       + 'produce an illegal result, or a generator that is not reproducible '
+       + 'from its seed, fails at the table where it cannot be debugged.',
+    scenarios: [
+      {
+        id: 'hoards_are_legal',
+        title: 'Hoards are legal and scale at every CR band',
+        run(c, { tables, magicItems, dm }) {
+          c.feature('dm', 'loot');
+          if (!tables) { c.ok(false, 'dm-tables.json loaded'); return; }
+          let last = -1;
+          for (const cr of [0, 2, 5, 9, 11, 15, 17, 24]) {
+            const h = dm.loot.rollHoard({ tables, magicItems, cr, seed: 3 });
+            c.ok(h.totalGp >= 0 && Number.isFinite(h.totalGp),
+              `CR ${cr}: total is a finite non-negative number`, String(h.totalGp));
+            c.ok(h.coins.every((x) => x.amount > 0),
+              `CR ${cr}: no zero-coin entries`);
+            c.ok(h.items.every((i) => i.name && i.rarity),
+              `CR ${cr}: every magic item is a real item`);
+            // Art objects are single pieces; two of one in a hoard is a bug.
+            const art = h.valuables.filter((v) => v.kind === 'art').map((v) => v.name);
+            c.eq(art.length, new Set(art).size, `CR ${cr}: no duplicated art object`);
+            const ids = h.items.map((i) => i.id);
+            c.eq(ids.length, new Set(ids).size, `CR ${cr}: no duplicated magic item`);
+            last = h.totalGp;
+          }
+          c.ok(last > 0, 'the top band is worth something');
+        },
+      },
+      {
+        id: 'hoard_value_climbs',
+        title: 'A higher CR is worth more, on average',
+        run(c, { tables, magicItems, dm }) {
+          c.feature('dm', 'loot');
+          if (!tables) { c.ok(false, 'dm-tables.json loaded'); return; }
+          const mean = (cr) => {
+            let sum = 0;
+            for (let s = 0; s < 25; s += 1) {
+              sum += dm.loot.rollHoard({ tables, magicItems, cr, seed: s }).totalGp;
+            }
+            return sum / 25;
+          };
+          // Averaged over 25 seeds: a single roll can invert by luck, and a
+          // test that fails on luck is a test people learn to ignore.
+          const low = mean(2); const mid = mean(9); const high = mean(18);
+          c.ok(mid > low, 'CR 9 beats CR 2', `${mid.toFixed(0)} vs ${low.toFixed(0)}`);
+          c.ok(high > mid, 'CR 18 beats CR 9', `${high.toFixed(0)} vs ${mid.toFixed(0)}`);
+        },
+      },
+      {
+        id: 'individual_is_smaller',
+        title: 'One creature carries far less than a hoard',
+        run(c, { tables, magicItems, dm }) {
+          c.feature('dm', 'loot');
+          if (!tables) { c.ok(false, 'dm-tables.json loaded'); return; }
+          const hoard = dm.loot.rollHoard({ tables, magicItems, cr: 8, seed: 4 });
+          const one = dm.loot.rollHoard({
+            tables, magicItems, cr: 8, seed: 4, individual: true });
+          c.ok(one.totalGp < hoard.totalGp, 'a single creature is worth less',
+            `${one.totalGp} vs ${hoard.totalGp}`);
+          c.eq(one.items.length, 0, 'a single creature carries no magic item');
+          c.ok(one.totalGp > 0, 'but is not worth literally nothing');
+        },
+      },
+      {
+        id: 'generators_reproduce',
+        title: 'Every generator is reproducible from its seed',
+        run(c, { tables, monsters, dm }) {
+          c.feature('dm', 'generators');
+          if (!tables) { c.ok(false, 'dm-tables.json loaded'); return; }
+          const a = dm.gen.rollAll(tables, monsters, { seed: 77, level: 5, terrain: 'forest' });
+          const b = dm.gen.rollAll(tables, monsters, { seed: 77, level: 5, terrain: 'forest' });
+          c.same(a, b, 'the same seed gives the same everything');
+          const d = dm.gen.rollAll(tables, monsters, { seed: 78, level: 5, terrain: 'forest' });
+          c.ok(JSON.stringify(d) !== JSON.stringify(a), 'a different seed differs');
+        },
+      },
+      {
+        id: 'generators_are_independent',
+        title: 'Terrains do not share one stream',
+        run(c, { tables, monsters, dm }) {
+          c.feature('dm', 'generators');
+          if (!tables) { c.ok(false, 'dm-tables.json loaded'); return; }
+          // Regression pin. seededRng(seed, label) does NOT mix the label in,
+          // so every terrain once returned the same distance and the same
+          // "wants to talk first" from one seed.
+          const encs = dm.gen.TERRAINS.map((t) =>
+            dm.gen.encounter(tables, monsters, { seed: 5, terrain: t, level: 6 }));
+          const distances = new Set(encs.map((e) => e.distance));
+          const doings = new Set(encs.map((e) => e.doing));
+          c.ok(distances.size > 2, 'terrains differ on distance',
+            `${distances.size} distinct across ${encs.length}`);
+          c.ok(doings.size > 2, 'terrains differ on what it is doing',
+            `${doings.size} distinct`);
+        },
+      },
+      {
+        id: 'terrain_is_plausible',
+        title: 'Terrain exclusions keep crocodiles out of the arctic',
+        run(c, { tables, monsters, dm }) {
+          c.feature('dm', 'generators');
+          if (!tables) { c.ok(false, 'dm-tables.json loaded'); return; }
+          const names = [];
+          for (let s = 0; s < 60; s += 1) {
+            const e = dm.gen.encounter(tables, monsters,
+              { seed: s, terrain: 'arctic', level: 8 });
+            if (e.monsters[0]) names.push(e.monsters[0].name.toLowerCase());
+          }
+          c.ok(names.length > 20, 'the arctic produces encounters at all',
+            `${names.length} of 60 seeds`);
+          for (const banned of ['crocodile', 'camel', 'scorpion']) {
+            c.ok(!names.some((n) => n.includes(banned)),
+              `no ${banned} in the arctic`);
+          }
+        },
+      },
+      {
+        id: 'encounter_runner',
+        title: 'The runner tracks initiative, damage and rounds',
+        run(c, { monsters, dm, sources }) {
+          c.feature('dm', 'runner', 'combat');
+          const R = dm.runner;
+          R.reset();
+          const goblin = monsters.find((m) => /^Goblin Warrior$/.test(m.name));
+          const air = monsters.find((m) => /^Air Elemental$/.test(m.name));
+          c.ok(!!goblin && !!air, 'the test monsters exist in the bestiary');
+          if (!goblin || !air) return;
+
+          R.addMonsters(goblin, 3);
+          R.addMonsters(air, 1);
+          c.eq(R.state.combatants.length, 4, 'four combatants were added');
+
+          const names = R.state.combatants.map((x) => x.name);
+          c.eq(names.length, new Set(names).size, 'every combatant has a distinct name');
+          c.ok(names.includes('Goblin Warrior 1'),
+            'multiples are numbered from one', names.join(', '));
+
+          R.rollInitiative();
+          c.ok(R.state.started && R.state.round === 1, 'the fight starts on round 1');
+          const inits = R.state.combatants.map((x) => x.init);
+          c.ok(inits.every((n, i) => i === 0 || inits[i - 1] >= n),
+            'initiative is sorted descending', inits.join(','));
+
+          // Resistance must be applied - it is what a hand-run fight forgets.
+          const elem = R.state.combatants.find((x) => /Air Elemental/.test(x.name));
+          c.ok(elem.resistances.includes('slashing'),
+            'monster defences are parsed from the statblock',
+            JSON.stringify(elem.resistances));
+          const hp0 = elem.hp;
+          const hit = R.applyTo(elem.id, -10, 'slashing');
+          c.eq(hit.landed, 5, 'resistance halves the damage that lands');
+          c.eq(hit.mitigation, 'resistant', 'and says so');
+          c.eq(elem.hp, hp0 - 5, 'HP moves by the mitigated amount');
+
+          // Unresisted damage is untouched.
+          const gob = R.state.combatants.find((x) => /Goblin/.test(x.name));
+          const g0 = gob.hp;
+          R.applyTo(gob.id, -4, 'slashing');
+          c.eq(gob.hp, g0 - 4, 'a creature without resistance takes it all');
+
+          // Overkill floors at zero rather than going negative.
+          R.applyTo(gob.id, -999, 'slashing');
+          c.eq(gob.hp, 0, 'overkill floors at 0');
+
+          const n = R.state.combatants.length;
+          for (let i = 0; i < n; i += 1) R.nextTurn();
+          c.eq(R.state.round, 2, 'a full cycle of turns advances the round');
+          R.prevTurn();
+          c.eq(R.state.round, 1, 'stepping back returns to the previous round');
+
+          R.toggleCondition(gob.id, 'Prone');
+          c.ok(gob.conditions.includes('Prone'), 'conditions apply');
+          R.toggleCondition(gob.id, 'Prone');
+          c.ok(!gob.conditions.includes('Prone'), 'and toggle off');
+
+          R.reset();
+          c.eq(R.state.combatants.length, 0, 'clearing empties the fight');
+        },
+      },
+      {
+        id: 'party_dashboard',
+        title: 'The party view agrees with each character sheet',
+        run(c, { sources, dm }) {
+          c.feature('dm', 'party');
+          const ch = makeChar({ id: 'gym-party', name: 'Scout',
+            classes: [{ class: 'ranger', level: 5, subclass: null }],
+            skills: ['perception', 'insight'] });
+          const row = dm.party.partyRow(ch, sources);
+          const d = derive(ch, sources);
+          c.eq(row.ac, d.ac, 'AC matches the sheet');
+          c.eq(row.hp.max, d.hp.max, 'max HP matches the sheet');
+          c.eq(row.level, d.level, 'level matches the sheet');
+          // The DM's passive Perception must be the player's passive
+          // Perception - two routes to one number is how they drift apart.
+          c.eq(row.perception, d.passivePerception,
+            'passive Perception matches derive()');
+          c.ok(row.perception >= 10, 'passive scores are at least 10');
+          c.ok(Number.isFinite(row.saves.dex), 'saves are finite numbers');
+        },
+      },
+    ],
+  },
+
   /* ---------------- cross-engine agreement ------------------------- */
   {
     id: 'agreement',
@@ -1292,6 +1499,38 @@ export const MUTATIONS = [
         const i = rng.int(t.entries.length);
         return { entry: t.entries[i], n: i + 1, short: false };
       } } }),
+  },
+  {
+    id: 'loot_ignores_cr',
+    what: 'rollHoard() returns the same trivial hoard at every CR',
+    patch: (ctx) => ({ dm: { ...ctx.dm,
+      loot: { ...ctx.dm.loot,
+        rollHoard: () => ({ cr: 0, seed: 0, band: '0-4', individual: false,
+          coins: [{ unit: 'gp', amount: 1 }], valuables: [], items: [],
+          totalGp: 1 }) } } }),
+  },
+  {
+    id: 'generators_not_reproducible',
+    what: 'generators ignore their seed',
+    // The whole promise of a seeded generator is that a DM can write the
+    // number down and get the result back. Silently losing that is invisible
+    // at the table until the moment it matters.
+    patch: (ctx) => ({ dm: { ...ctx.dm,
+      gen: { ...ctx.dm.gen,
+        rollAll: (t, m, o) => ctx.dm.gen.rollAll(t, m,
+          { ...o, seed: Math.floor(Math.random() * 1e9) }) } } }),
+  },
+  {
+    id: 'runner_drops_resistance',
+    what: 'the encounter runner stops applying resistance',
+    patch: (ctx) => ({ dm: { ...ctx.dm,
+      runner: { ...ctx.dm.runner,
+        applyTo: (id, delta) => {
+          const c = ctx.dm.runner.state.combatants.find((x) => x.id === id);
+          if (!c) return null;
+          c.hp = Math.max(0, c.hp + delta);
+          return { landed: Math.abs(delta), mitigation: null, downed: c.hp === 0 };
+        } } } }),
   },
   {
     id: 'unbounded_encounters',

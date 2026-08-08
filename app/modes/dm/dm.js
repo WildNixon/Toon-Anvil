@@ -1,40 +1,89 @@
 /**
- * DM mode - monster library, encounter builder, rules reference.
+ * DM mode - everything to run a session, offline.
  *
- * Encounters built here push straight into the Combat tracker, so the DM side
- * and the player side share one initiative order rather than two.
+ * Seven tools behind one row of tabs: a live encounter runner, the party's
+ * numbers at a glance, treasure, improvisation, the encounter budgeter, the
+ * bestiary and the rules reference.
+ *
+ * All of it works with no network. That is the point: the screen a DM keeps
+ * open at the table must not depend on anything being reachable.
  */
 
 import { getState, setState, el, esc, md, sign, toast } from '../../core/store.js';
-import { compendium } from '../../core/db.js';
+import { compendium, dataFile, db } from '../../core/db.js';
 import {
   encounterBudget, CR_XP, XP_BUDGET, ABILITIES,
 } from '../../core/rules2024.js';
-import { go } from '../../app.js';
+import { go, saveCharacter } from '../../app.js';
+import { runnerPanel } from './runner.js';
+import { partyPanel } from './party.js';
+import { lootPanel, improvPanel } from './panels.js';
+import { addMonsters } from './runner.js';
 
 export const title = 'DM';
 
 let container = null;
 let monsters = [];
 let glossary = [];
-let tab = 'encounter';
+let magicItems = [];
+let tables = null;
+let tab = 'runner';
 let build = { partyLevels: [3, 3, 3, 3], difficulty: 'moderate', picks: [] };
 let search = '';
+// Loot and generator state: scratch, kept across tab switches so a DM does not
+// lose a hoard they liked by glancing at the bestiary.
+let loot = { cr: 5, seed: 1, individual: false, result: null };
+let improv = { seed: 1, level: 3, terrain: 'forest', result: null };
 
 export async function render(root) {
   container = root;
   if (!monsters.length) {
-    [monsters, glossary] = await Promise.all([
-      compendium('monsters'), compendium('glossary'),
+    [monsters, glossary, magicItems] = await Promise.all([
+      compendium('monsters'), compendium('glossary'), compendium('magic-items'),
     ]);
   }
+  if (!tables) tables = await dataFile('dm-tables.json', null);
   draw();
+}
+
+/** Sources for derive(), assembled the same way the shell does it. */
+function sources() {
+  const { compendium: c, homebrew } = getState();
+  return {
+    classes: c.classes || [], species: c.species || [],
+    backgrounds: c.backgrounds || [], feats: c.feats || [],
+    srdEffects: c.srdEffects || {}, equipment: c.equipment,
+    homebrew: homebrew || [],
+  };
 }
 
 function draw() {
   container.innerHTML = '';
   container.append(tabsPanel());
-  if (tab === 'encounter') {
+  if (tab === 'runner') {
+    container.append(runnerPanel({
+      characters: getState().characters || [],
+      sources: sources(), monsters, redraw: draw,
+    }));
+  } else if (tab === 'party') {
+    container.append(partyPanel(getState().characters || [], sources()));
+  } else if (tab === 'loot') {
+    container.append(lootPanel({
+      tables, magicItems, loot, redraw: draw, saveCharacter,
+    }));
+  } else if (tab === 'improv') {
+    container.append(improvPanel({
+      tables, monsters, improv, redraw: draw,
+      sendToFight: (entry) => {
+        const m = monsters.find((x) => x.id === entry.id);
+        if (!m) return;
+        addMonsters(m, entry.count);
+        tab = 'runner';
+        draw();
+        toast(`${entry.count} x ${m.name} added to the fight`, 'ok');
+      },
+    }));
+  } else if (tab === 'encounter') {
     container.append(budgetPanel());
     container.append(pickerPanel());
   } else if (tab === 'bestiary') {
@@ -50,6 +99,7 @@ function tabsPanel() {
   panel.append(el('h3', {}, `${monsters.length} monsters · ${glossary.length} rules entries`));
   const row = el('div', { class: 'btnrow' });
   for (const [k, label] of Object.entries({
+    runner: 'Run a fight', party: 'Party', loot: 'Treasure', improv: 'Improvise',
     encounter: 'Encounter builder', bestiary: 'Bestiary', reference: 'Rules reference',
   })) {
     row.append(el('button', {

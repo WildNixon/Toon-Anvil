@@ -72,7 +72,7 @@ Everything below was exercised by hand before release — not "it renders", but
 | **Shop** | Generates stock at SRD prices with per-shop variance. |
 | **Roleplay** | Structured beats — promises, secrets, choices, people met — recorded through an in-app form. |
 | **Chronicle** | Event log with export to Markdown, printable HTML and raw JSON, plus open-thread tracking. |
-| **DM** | Encounter builder with XP budgeting, bestiary search, rules reference. |
+| **DM** | Seven tools: live encounter runner, party dashboard, treasure, improv generators, XP budgeter, bestiary, rules reference. All offline. |
 | **Sandbox** | Throwaway in-memory session with an export path back out. |
 
 **Not finished — known and deliberate**
@@ -135,6 +135,29 @@ nothing to break when an upstream URL moves. If a dependency is missing,
 `python run.py --check` tells you exactly which and what to do.
 
 ---
+
+## Running a session
+
+The **DM** screen is built to stay open at the table, and works with no network
+at all.
+
+| Tool | What it does |
+|---|---|
+| **Run a fight** | One initiative list with the party and the monsters together. HP, conditions, rounds and turns. Damage goes through the same engine as everything else, so **resistances are applied for you** — the thing a hand-run fight most often forgets. |
+| **Party** | Every character's AC, passive Perception / Investigation / Insight, saves and senses on one screen. Derived, so it can never disagree with a player's own sheet. |
+| **Treasure** | Hoards by CR band with coins, gems, art and magic items drawn from the 258 bundled. Seeded — write the seed down and you get the same hoard back. One click hands it to a character. |
+| **Improvise** | An NPC with a want and a secret, a tavern, a rumour, a trap scaled to tier, and a random encounter by terrain. Also seeded, and the encounter can be sent straight into the fight. |
+
+**Every generated result says where it came from.** Monsters, coin bands, gems
+and magic items are SRD and marked `SRD`. Names, traits, rumours, art objects
+and terrain weightings were written for this tool and are marked `authored` —
+they are not official content, and a DM reading one aloud deserves to know
+which they are quoting.
+
+One honest limitation: the bestiary carries no environment data, so terrain is
+an authored weighting over creature *type*, plus a hand-written exclusion list
+(no crocodiles in the arctic). It lives in `app/data/dm-tables.json` as data
+rather than code, so you can disagree with it and edit it.
 
 ## Try things without saving them
 

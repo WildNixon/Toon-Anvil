@@ -79,6 +79,10 @@ import { emitHtml } from '../homebrew/emit-html.js';
 import * as exec from './executable.js';
 import * as enc from './encounter.js';
 import * as sim from './campaign.js';
+import * as dmRunner from '../modes/dm/runner.js';
+import * as dmParty from '../modes/dm/party.js';
+import * as dmLoot from '../modes/dm/loot.js';
+import * as dmGen from '../modes/dm/generators.js';
 
 const $ = (s) => document.querySelector(s);
 const log = (m) => { $('#log').textContent += `${m}\n`;
@@ -92,9 +96,10 @@ async function buildCtx() {
   await initDb({ inject: new MemoryAdapter() });
   log('loading compendium…');
   const c = await compendia('classes', 'species', 'backgrounds', 'feats',
-                            'spells', 'monsters', 'equipment');
+                            'spells', 'monsters', 'equipment', 'magic-items');
   const srdEffects = await dataFile('srd-effects.json', {});
   const mechFile = await dataFile('spell-mechanics.json', { mechanics: {} });
+  const tables = await dataFile('dm-tables.json', null);
   const sources = {
     classes: c.classes, species: c.species, backgrounds: c.backgrounds,
     feats: c.feats, equipment: c.equipment, srdEffects, homebrew: [],
@@ -102,7 +107,9 @@ async function buildCtx() {
   return {
     sources, db, KINDS, engine, events, exec, sim, enc,
     monsters: c.monsters, spells: c.spells, equipment: c.equipment,
+    magicItems: c['magic-items'], tables,
     mechanics: mechFile.mechanics,
+    dm: { runner: dmRunner, party: dmParty, loot: dmLoot, gen: dmGen },
     hb: {
       parse: adapters.parse,
       detect: adapters.detect,

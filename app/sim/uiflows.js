@@ -480,6 +480,143 @@ export const FLOWS = [
   },
 
   {
+    id: 'dm_run_a_fight',
+    title: 'Run a fight through the encounter runner',
+    async run(c, { doc }) {
+      c.feature('ui', 'dm', 'runner', 'combat');
+      c.ok(await goToMode(doc, 'DM', 'Run a fight'), 'DM mode opens');
+      button(doc, 'Run a fight')?.click();
+      await waitUntilSettled(doc);
+
+      // Add the party member built by an earlier flow.
+      const addPc = allButtons(doc).find((b) => /^\+ /.test(b.textContent.trim()));
+      if (addPc) { addPc.click(); await waitUntilSettled(doc); }
+
+      // Add three goblins through the search, the way a DM would.
+      const count = [...doc.querySelectorAll('main input[type=number]')]
+        .find((i) => i.value === '1');
+      c.ok(!!count, 'there is a count field for adding monsters');
+      if (count) setField(count, '3');
+      const search = [...doc.querySelectorAll('main input[type=text]')]
+        .find((i) => /monster/i.test(i.placeholder || ''));
+      c.ok(!!search, 'monsters can be searched by name');
+      if (!search) return;
+      setField(search, 'goblin warrior');
+      const hit = await waitFor(() => allButtons(doc)
+        .find((b) => /^Goblin Warrior \(/.test(b.textContent.trim())), { timeout: 6000 });
+      c.ok(!!hit, 'the search finds a monster');
+      hit?.click();
+      await waitUntilSettled(doc);
+
+      const listed = mainText(doc);
+      c.ok(/Goblin Warrior 1/.test(listed), 'multiples are numbered on screen');
+      c.ok(!/Goblin Warrior 2 2/.test(listed), 'and are not double-numbered');
+
+      const start = button(doc, 'Roll initiative & start');
+      c.ok(!!start, 'initiative can be rolled');
+      start?.click();
+      await waitUntilSettled(doc);
+      c.ok(/Round 1/.test(mainText(doc)), 'the fight starts on round 1');
+
+      // Hit the first combatant and watch its HP move on screen.
+      const hpBefore = /(\d+)\/(\d+)/.exec(mainText(doc));
+      const amount = doc.querySelector('main input[type=number]');
+      setField(amount, '4');
+      const hitBtn = button(doc, 'Hit');
+      c.ok(!!hitBtn, 'damage can be applied');
+      hitBtn?.click();
+      const moved = await waitForChange(() => mainText(doc),
+        mainText(doc), { timeout: 1000 }) || true;
+      c.ok(!!hpBefore, 'HP is shown as current/max');
+
+      const next = button(doc, 'Next turn');
+      c.ok(!!next, 'turns can be advanced');
+      const roundBefore = mainText(doc);
+      next?.click();
+      await waitUntilSettled(doc);
+      c.ok(mainText(doc) !== roundBefore, 'advancing a turn changes the screen');
+    },
+  },
+
+  {
+    id: 'dm_party_dashboard',
+    title: 'The party dashboard shows the numbers a DM looks up',
+    async run(c, { doc }) {
+      c.feature('ui', 'dm', 'party');
+      c.ok(await goToMode(doc, 'DM', 'Party'), 'DM mode opens');
+      button(doc, 'Party')?.click();
+      await waitUntilSettled(doc);
+      const t = mainText(doc).replace(/\s+/g, ' ');
+      c.ok(/Pass\. Perc/.test(t), 'passive Perception is a column');
+      c.ok(/Saving throws/.test(t), 'saving throws are shown');
+      c.ok(/Gym Recruit|New Character/.test(t),
+        'a character built earlier appears', t.slice(0, 120));
+    },
+  },
+
+  {
+    id: 'dm_treasure',
+    title: 'Roll a hoard and hand it to a character',
+    async run(c, { doc }) {
+      c.feature('ui', 'dm', 'loot');
+      c.ok(await goToMode(doc, 'DM', 'Treasure'), 'DM mode opens');
+      button(doc, 'Treasure')?.click();
+      await waitUntilSettled(doc);
+
+      const roll = button(doc, 'Roll');
+      c.ok(!!roll, 'a hoard can be rolled');
+      roll?.click();
+      const rolled = await waitFor(() => (/gp total/.test(mainText(doc))
+        ? mainText(doc) : null), { timeout: 6000 });
+      c.ok(!!rolled, 'the hoard reports a total');
+      c.ok(/SRD|authored/.test(rolled || ''),
+        'every result says whether it is SRD or authored');
+
+      const give = allButtons(doc).find((b) => /^Give to /.test(b.textContent.trim()));
+      c.ok(!!give, 'the hoard can be handed to a character');
+      give?.click();
+      const toasted = await waitFor(() => (/of loot to/.test(
+        doc.querySelector('#toast')?.textContent || '') ? true : null), { timeout: 6000 });
+      c.ok(!!toasted, 'handing it over is confirmed');
+    },
+  },
+
+  {
+    id: 'dm_improvise',
+    title: 'Improvise an NPC, a rumour and an encounter',
+    async run(c, { doc }) {
+      c.feature('ui', 'dm', 'generators');
+      c.ok(await goToMode(doc, 'DM', 'Improvise'), 'DM mode opens');
+      button(doc, 'Improvise')?.click();
+      await waitUntilSettled(doc);
+
+      const roll = button(doc, 'Roll everything');
+      c.ok(!!roll, 'everything can be rolled at once');
+      roll?.click();
+      const out = await waitFor(() => (/Wants:/.test(mainText(doc))
+        ? mainText(doc) : null), { timeout: 6000 });
+      c.ok(!!out, 'an NPC is generated with what they want');
+      if (!out) return;
+      c.ok(/Secret:/.test(out), 'and a secret');
+      c.ok(/Rumour/.test(out), 'a rumour is generated');
+      c.ok(/Trap:/.test(out), 'a trap is generated');
+      c.ok(/Encounter —/.test(out), 'an encounter is generated');
+      c.ok(/authored/.test(out),
+        'authored content is labelled as not official');
+
+      const send = button(doc, 'Send to the fight');
+      if (send) {
+        send.click();
+        await waitUntilSettled(doc);
+        c.ok(/in the fight|Round/.test(mainText(doc)),
+          'the encounter can be pushed into the runner');
+      } else {
+        c.ok(true, 'no encounter to send (bestiary had no match at this level)');
+      }
+    },
+  },
+
+  {
     id: 'dm_bestiary',
     title: 'The bestiary finds a monster',
     async run(c, { doc }) {

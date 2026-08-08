@@ -1,0 +1,203 @@
+{
+  "_comment": [
+    "Tables for the DM generators.",
+    "",
+    "PROVENANCE MATTERS HERE. Two different things live in this file:",
+    "",
+    "  srd     Derived from the System Reference Document 5.2.1 (CC-BY-4.0).",
+    "          Treasure values and rarity-by-tier follow the SRD's own bands.",
+    "  authored  Written for this tool. Names, traits, rumours, terrain",
+    "          weightings. These are my judgement, not anybody's official",
+    "          content, and the app labels them so.",
+    "",
+    "Monsters in the compendium carry a `type` but no environment tag, so the",
+    "terrain table below maps creature TYPE to terrain by hand. It is a data",
+    "file rather than code precisely so a DM who disagrees can edit it."
+  ],
+
+  "treasure": {
+    "_source": "srd",
+    "_note": "Coin ranges per CR band, as a single hoard. Individual-creature loot is roughly a twentieth of this.",
+    "bands": [
+      { "id": "0-4",   "minCr": 0,  "maxCr": 4,
+        "coins": { "cp": "6d6*100", "sp": "3d6*100", "gp": "2d6*10" },
+        "magicItems": { "count": "1d6-4", "rarities": ["Common", "Uncommon"] } },
+      { "id": "5-10",  "minCr": 5,  "maxCr": 10,
+        "coins": { "cp": "2d6*100", "sp": "2d6*1000", "gp": "6d6*100", "pp": "3d6*10" },
+        "magicItems": { "count": "1d4-1", "rarities": ["Uncommon", "Rare"] } },
+      { "id": "11-16", "minCr": 11, "maxCr": 16,
+        "coins": { "gp": "4d6*1000", "pp": "5d6*100" },
+        "magicItems": { "count": "1d4", "rarities": ["Rare", "Very Rare"] } },
+      { "id": "17+",   "minCr": 17, "maxCr": 99,
+        "coins": { "gp": "12d6*1000", "pp": "8d6*1000" },
+        "magicItems": { "count": "1d4+1", "rarities": ["Very Rare", "Legendary"] } }
+    ],
+    "art": {
+      "_source": "authored",
+      "_note": "Flavour for the non-magical half of a hoard, valued in gp.",
+      "entries": [
+        { "name": "silver ewer, dented", "gp": 25 },
+        { "name": "carved bone dice, a set of five", "gp": 25 },
+        { "name": "gold locket with a painted portrait", "gp": 250 },
+        { "name": "embroidered silk robe", "gp": 250 },
+        { "name": "ceremonial electrum dagger", "gp": 250 },
+        { "name": "jewelled anklet", "gp": 750 },
+        { "name": "bronze crown, green with age", "gp": 750 },
+        { "name": "gold birdcage with electrum filigree", "gp": 2500 },
+        { "name": "obsidian statuette of a drowned saint", "gp": 2500 },
+        { "name": "jewelled gold crown", "gp": 7500 }
+      ]
+    },
+    "gems": {
+      "_source": "srd",
+      "entries": [
+        { "name": "azurite", "gp": 10 }, { "name": "hematite", "gp": 10 },
+        { "name": "malachite", "gp": 10 }, { "name": "obsidian", "gp": 10 },
+        { "name": "bloodstone", "gp": 50 }, { "name": "carnelian", "gp": 50 },
+        { "name": "jasper", "gp": 50 }, { "name": "onyx", "gp": 50 },
+        { "name": "amber", "gp": 100 }, { "name": "garnet", "gp": 100 },
+        { "name": "jade", "gp": 100 }, { "name": "pearl", "gp": 100 },
+        { "name": "topaz", "gp": 500 }, { "name": "opal", "gp": 1000 },
+        { "name": "sapphire", "gp": 1000 }, { "name": "emerald", "gp": 5000 },
+        { "name": "diamond", "gp": 5000 }, { "name": "ruby", "gp": 5000 }
+      ]
+    }
+  },
+
+  "npc": {
+    "_source": "authored",
+    "given": [
+      "Alder", "Bex", "Cass", "Doryn", "Elsbet", "Fenn", "Greta", "Hask",
+      "Ilse", "Jarrow", "Kelda", "Lom", "Mireth", "Nessa", "Orrin", "Pell",
+      "Quill", "Rhoda", "Sabra", "Tarn", "Ulric", "Vesna", "Wend", "Yarrow",
+      "Ada", "Bram", "Corvin", "Dela", "Emrys", "Fay", "Gowen", "Hesper"
+    ],
+    "family": [
+      "Ashdown", "Barrow", "Cinderhook", "Deepwell", "Ellisgate", "Fenwick",
+      "Grimsby", "Hollowell", "Ironbend", "Jessup", "Kettleforge", "Lambwright",
+      "Marchbank", "Netherby", "Oxhead", "Pikestaff", "Quarry", "Rushmoor",
+      "Saltmere", "Thackeray", "Underhill", "Vance", "Wickersham", "Yarrowby"
+    ],
+    "trait": [
+      "never finishes a sentence", "counts things under their breath",
+      "smells faintly of woodsmoke", "will not sit with their back to a door",
+      "laughs a beat too late", "carries someone else's coat",
+      "apologises before disagreeing", "keeps checking a stopped watch",
+      "speaks to animals as equals", "has ink on their fingers, always",
+      "remembers every name and no faces", "flinches at raised voices",
+      "hums when lying", "gives everything a nickname"
+    ],
+    "want": [
+      "a debt forgiven", "their sibling found", "one night of real sleep",
+      "the harbour reopened", "to be taken seriously, just once",
+      "a letter delivered without being read", "their old job back",
+      "somebody punished", "passage out before the frost",
+      "proof they were right", "a child kept out of it",
+      "the shrine rebuilt", "a name cleared", "to stop being afraid of the water"
+    ],
+    "secret": [
+      "they already sold the thing you came for",
+      "they cannot read",
+      "the body was never found because they moved it",
+      "they are being paid to watch you",
+      "the debt is theirs, not their brother's",
+      "they have been writing to the enemy",
+      "they set the first fire",
+      "they are not who the papers say they are",
+      "they know exactly where it is and will not say",
+      "they have three days of medicine left"
+    ]
+  },
+
+  "tavern": {
+    "_source": "authored",
+    "first": ["The Drowned", "The Copper", "The Salt", "The Lame", "The Gilded",
+      "The Broken", "The Quiet", "The Last", "The Crooked", "The Hungry"],
+    "second": ["Lantern", "Hound", "Anchor", "Kettle", "Magpie", "Wheel",
+      "Cormorant", "Bell", "Fiddle", "Mare"],
+    "detail": [
+      "the ceiling is too low by half a foot and everyone stoops",
+      "a dog sleeps on the warm hearthstone and will not be moved",
+      "the landlord keeps a ledger of who is barred, and it is long",
+      "there is a fiddle on the wall nobody is allowed to touch",
+      "the ale is poor and the stew is extraordinary",
+      "every table is a different height",
+      "someone has been carving a whole story into the bar over years",
+      "it is far too clean, and nobody explains why"
+    ]
+  },
+
+  "rumour": {
+    "_source": "authored",
+    "entries": [
+      "the tax collector has not been seen in nine days",
+      "something has been taking the sheep, and it takes only the black ones",
+      "the old well is sweet again, which it has not been since the war",
+      "there is a light in the tower and the tower has no stairs",
+      "a ship came in with nobody aboard and the table still laid",
+      "the miller's new wife casts two shadows in candlelight",
+      "the road south is fine, whatever the guards tell you",
+      "somebody has been paying good coin for very old bones",
+      "the priest has stopped taking confession",
+      "three children swear the statue moved, and they were not together"
+    ]
+  },
+
+  "trap": {
+    "_source": "authored",
+    "_note": "Save DCs and damage scale with tier; the generator picks a band.",
+    "entries": [
+      { "name": "Collapsing floor", "trigger": "weight past the midpoint",
+        "save": "dex", "effect": "fall and be buried", "damage": "bludgeoning" },
+      { "name": "Scything blade", "trigger": "a tripwire at ankle height",
+        "save": "dex", "effect": "a deep cut across the shins", "damage": "slashing" },
+      { "name": "Poison needle", "trigger": "the lock, not the lid",
+        "save": "con", "effect": "the hand goes numb, then the arm", "damage": "poison" },
+      { "name": "Alarm glyph", "trigger": "crossing the threshold unspoken",
+        "save": "none", "effect": "something distant knows you are here", "damage": null },
+      { "name": "Flooding chamber", "trigger": "the door closing behind you",
+        "save": "str", "effect": "cold water to the waist and rising", "damage": "cold" },
+      { "name": "Fire jet", "trigger": "a pressure plate under the treasure",
+        "save": "dex", "effect": "a column of flame from the wall", "damage": "fire" }
+    ]
+  },
+
+  "terrain": {
+    "_source": "authored",
+    "_note": [
+      "Creature TYPE weighted by terrain, because the compendium has no",
+      "environment field. Weights are relative, not probabilities. Absent",
+      "means never. Edit freely - this is opinion, not rules."
+    ],
+    "forest": { "beast": 6, "fey": 4, "plant": 3, "humanoid": 3, "monstrosity": 2, "dragon": 1 },
+    "mountain": { "beast": 3, "giant": 4, "dragon": 3, "elemental": 2, "monstrosity": 2, "humanoid": 2 },
+    "swamp": { "beast": 3, "undead": 4, "ooze": 3, "plant": 2, "monstrosity": 3, "humanoid": 2 },
+    "coast": { "beast": 4, "monstrosity": 3, "humanoid": 3, "elemental": 2, "dragon": 1 },
+    "underdark": { "aberration": 5, "monstrosity": 4, "undead": 3, "ooze": 3, "humanoid": 2, "beast": 2 },
+    "urban": { "humanoid": 7, "undead": 2, "fiend": 2, "beast": 2, "construct": 2 },
+    "desert": { "beast": 3, "monstrosity": 3, "elemental": 3, "undead": 3, "humanoid": 2, "dragon": 2 },
+    "arctic": { "beast": 4, "giant": 3, "elemental": 2, "monstrosity": 2, "humanoid": 2, "dragon": 1 },
+    "grave": { "undead": 8, "fiend": 3, "aberration": 2, "humanoid": 1 },
+    "planar": { "celestial": 4, "fiend": 4, "elemental": 4, "aberration": 3, "construct": 2 },
+
+    "_exclude": {
+      "_note": [
+        "Weighting by creature TYPE alone puts a giant crocodile in the arctic,",
+        "which is legal and instantly wrong to anyone reading it out. These are",
+        "name fragments excluded per terrain. Crude, authored, and editable -",
+        "the alternative is tagging 330 monsters by hand."
+      ],
+      "arctic": ["crocodile", "camel", "scorpion", "jungle", "ape", "lizard",
+        "snake", "hyena", "lion", "octopus", "shark", "crab"],
+      "desert": ["polar", "seal", "walrus", "octopus", "shark", "crab", "frog",
+        "toad", "crocodile"],
+      "underdark": ["camel", "elephant", "whale", "shark", "eagle", "hawk",
+        "horse", "seal"],
+      "urban": ["whale", "shark", "elephant", "dinosaur", "roc"],
+      "mountain": ["shark", "whale", "octopus", "crocodile", "crab"],
+      "swamp": ["camel", "polar", "eagle"],
+      "coast": ["camel", "polar"],
+      "grave": ["whale", "shark", "elephant"]
+    }
+  }
+}
