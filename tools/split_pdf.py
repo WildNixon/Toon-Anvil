@@ -342,40 +342,86 @@ SUBCLASS_HINT = re.compile(
     r"order|tradition|discipline|creed|bloodline|origin)\b", re.I)
 
 
+# "3rd level Toymaker feature" / "15th-level Wyrmforger feature".
+#
+# This is the single best signal a community-authored PDF gives us, and it was
+# being thrown away. Grouping by level ordering alone named subclasses after
+# their FIRST FEATURE - a document full of "CLOCKWORK COMPANIONS" and "ARMOR
+# REPLICATION" rather than Toymaker and Wyrmforger - and split one subclass
+# into several whenever the level run was interrupted. In one real archive this
+# phrasing names 103 of 117 features.
+SUBCLASS_IN_TEXT = re.compile(
+    r"\b\d+\s*(?:st|nd|rd|th)[-\s]+level\s+"
+    r"([A-Z][A-Za-z'’\-]*(?:\s+[A-Z][A-Za-z'’\-]*){0,3}?)\s+feature",
+    re.I,
+)
+
+
+def subclass_named_in(text: str) -> str | None:
+    """The subclass this feature says it belongs to, if it says so at all."""
+    m = SUBCLASS_IN_TEXT.search(text[:300])
+    if not m:
+        return None
+    name = " ".join(m.group(1).split()).strip(" -'’")
+    # "3rd level Optional feature" and friends name a category, not a subclass.
+    if name.lower() in {"optional", "class", "subclass", "bonus", "additional"}:
+        return None
+    return name if 2 <= len(name) <= 40 else None
+
+
 def assemble_subclasses(features: list[dict], doc_title: str) -> list[dict]:
     """Group level-gated feature blocks into subclasses.
 
+    Two signals, in order of trustworthiness:
 
-    A new subclass starts where the level sequence resets - features run 3, 6,
+    1. The text says which subclass it belongs to - "3rd level Toymaker
+       feature". Explicit, so features are grouped by that name no matter how
+       far apart they sit or how their levels run.
+    2. Nothing says. Fall back to level ordering: a new subclass starts where
+       the level sequence resets. Imperfect, and stated as such - WotC's own
+       Unearthed Arcana writes "At 3rd level" with no subclass name, so this
+       path still carries the whole document's uncertainty.
 
-    10, 14 and then start again at 3. Imperfect, and stated as such: a document
-    that interleaves subclasses will mis-group, which is why each result
-    carries its page range so a human can check.
+    Every result keeps its page range and records which signal named it, so a
+    human can check the guesses and ignore the certainties.
     """
-    groups: list[dict] = []
-    current: dict | None = None
-    last_level = 99
+    named: dict[str, dict] = {}
+    unnamed: list[dict] = []
 
     for f in features:
         lvl = level_of(f["title"] + " " + f["text"][:300])
-        starts_new = lvl <= last_level or current is None
-        if starts_new:
+        entry = {"name": f["title"], "level": lvl, "text": f["text"], "page": f["page"]}
+        sub = subclass_named_in(f["text"]) or subclass_named_in(f["title"])
+        if sub:
+            g = named.setdefault(sub, {
+                "name": sub, "features": [], "firstPage": f["page"],
+                "candidateNames": [sub], "nameSource": "text",
+            })
+            g["features"].append(entry)
+            g["firstPage"] = min(g["firstPage"], f["page"])
+            g["lastPage"] = max(g.get("lastPage", f["page"]), f["page"])
+        else:
+            unnamed.append(entry)
+
+    groups: list[dict] = list(named.values())
+
+    # Level-reset grouping, for whatever the text never claimed.
+    current: dict | None = None
+    last_level = 99
+    for entry in unnamed:
+        lvl = entry["level"]
+        if lvl <= last_level or current is None:
             if current and current["features"]:
                 groups.append(current)
             current = {
-                "name": None, "features": [], "firstPage": f["page"],
-                "candidateNames": [],
-
+                "name": None, "features": [], "firstPage": entry["page"],
+                "candidateNames": [], "nameSource": "inferred",
             }
-        current["features"].append({
-            "name": f["title"], "level": lvl, "text": f["text"], "page": f["page"],
-
-        })
-        current["lastPage"] = f["page"]
-        if SUBCLASS_HINT.search(f["title"]):
-            current["candidateNames"].append(f["title"])
+        current["features"].append(entry)
+        current["lastPage"] = entry["page"]
+        if SUBCLASS_HINT.search(entry["name"]):
+            current["candidateNames"].append(entry["name"])
         last_level = lvl
-
     if current and current["features"]:
         groups.append(current)
 
@@ -383,8 +429,8 @@ def assemble_subclasses(features: list[dict], doc_title: str) -> list[dict]:
     for g in groups:
         if len(g["features"]) < 2:
             continue
-        name = (g["candidateNames"][0] if g["candidateNames"]
-                else g["features"][0]["name"])
+        name = (g["name"] or (g["candidateNames"][0] if g["candidateNames"]
+                              else g["features"][0]["name"]))
         joined = " ".join(f["text"] for f in g["features"])[:4000].lower()
         cls = next((c for c in CLASSES if c in joined), None)
         out.append({
@@ -405,12 +451,22 @@ def assemble_subclasses(features: list[dict], doc_title: str) -> list[dict]:
             "pages": [g["firstPage"], g.get("lastPage", g["firstPage"])],
             "adapter": "pdf",
             "fidelity": "low",
+            # Say which signal named this one. A group the document explicitly
+            # labelled is a far stronger claim than one inferred from level
+            # ordering, and giving both the same warning taught people to
+            # ignore the warning.
+            "nameSource": g.get("nameSource", "inferred"),
             "extractionWarning": (
-                "Assembled from PDF text. Feature grouping is inferred from "
-                "level ordering and may split or merge subclasses incorrectly - "
-                f"check pages {g['firstPage']}-{g.get('lastPage')} against the "
-                "original."
-
+                "Assembled from PDF text. The document names this subclass "
+                f"explicitly, so its features are grouped by that name. Check "
+                f"pages {g['firstPage']}-{g.get('lastPage')} for anything the "
+                "text did not label."
+                if g.get("nameSource") == "text" else
+                "Assembled from PDF text. Nothing in the document says which "
+                "subclass these features belong to, so the grouping is inferred "
+                "from level ordering and may split or merge subclasses "
+                f"incorrectly - check pages {g['firstPage']}-{g.get('lastPage')} "
+                "against the original."
             ),
             "source": {"document": doc_title, "licenseUrl": None},
 
@@ -468,7 +524,11 @@ def split(path: Path) -> dict:
         "subclasses": [
 
             {"name": s["name"], "class": s["class"],
-             "features": len(s["features"]), "pages": s["pages"]}
+             "features": len(s["features"]), "pages": s["pages"],
+             # So the library can show which names the document actually gave
+             # us and which we inferred - the reader needs to know which rows
+             # deserve a second look before combining them.
+             "nameSource": s.get("nameSource", "inferred")}
             for s in subclasses
 
         ],

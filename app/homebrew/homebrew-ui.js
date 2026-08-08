@@ -104,6 +104,9 @@ let showDrop = false;
 let dropListing = null;
 let dropFilter = '';
 let openDocs = new Set();
+// Per-document selection of extracted subclass groups, so a reader can
+// combine what the splitter guessed apart.
+const selectedSubs = new Map();
 let examples = null;
 
 async function loadDrop() {
@@ -221,11 +224,39 @@ function dropPanel() {
         // Extracted subclasses live together in one subclasses.json per
         // document, so a row addresses its entry by index rather than by a
         // file of its own.
+        //
+        // Rows are SELECTABLE because PDF grouping is a guess whenever the
+        // document does not name its subclasses. When a subclass has been
+        // split across several rows - or a row has swept up features that
+        // belong elsewhere - you need to be able to say so yourself rather
+        // than accept whatever the splitter decided.
+        const selected = selectedSubs.get(doc.document) || new Set();
+        selectedSubs.set(doc.document, selected);
+
         subs.slice(0, 80).forEach((s) => {
           const idx = (doc.subclasses || []).indexOf(s);
           const row = el('div', { style: ROW });
+          const tick = el('input', {
+            type: 'checkbox', style: 'width:16px;height:16px;flex:none',
+            onChange: (e) => {
+              if (e.target.checked) selected.add(idx); else selected.delete(idx);
+              draw();
+            },
+          });
+          tick.checked = selected.has(idx);
+          row.append(tick);
           row.append(el('span', { class: 'chip' }, s.class || '?'));
           row.append(el('span', { style: 'flex:1;font-size:13px' }, s.name));
+          // Say whether the document named this or we guessed, because the
+          // two deserve very different amounts of trust.
+          row.append(el('span', {
+            class: 'chip',
+            style: s.nameSource === 'text'
+              ? 'background:rgba(47,107,98,.25)' : 'background:rgba(154,106,18,.25)',
+            title: s.nameSource === 'text'
+              ? 'The document names this subclass explicitly'
+              : 'Nothing named it - grouped by level order, so check it',
+          }, s.nameSource === 'text' ? 'named' : 'guessed'));
           row.append(el('span', { class: 'muted', style: 'font-size:11px' },
             `${s.features} feat · p${(s.pages || []).join('-')}`));
           row.append(el('button', {
@@ -237,6 +268,38 @@ function dropPanel() {
           }, 'Analyse'));
           box.append(row);
         });
+
+        if (selected.size) {
+          const chosen = [...selected].sort((a, b) => a - b);
+          const bar = el('div', {
+            class: 'panel',
+            style: 'margin-top:10px;padding:12px;background:rgba(184,74,22,.12)',
+          });
+          bar.append(el('p', { style: 'font-size:13px;margin:0 0 8px' },
+            `${chosen.length} selected: `
+            + chosen.map((i) => doc.subclasses[i]?.name).join(' + ')));
+          const nameInput = el('input', {
+            type: 'text', placeholder: 'Name for the combined subclass',
+            value: doc.subclasses[chosen[0]]?.name || '',
+            style: 'margin-bottom:8px',
+          });
+          bar.append(nameInput);
+          const btns = el('div', { class: 'btnrow' });
+          btns.append(el('button', {
+            class: 'act',
+            onClick: () => ingestDropFile({
+              name: nameInput.value.trim() || doc.subclasses[chosen[0]]?.name,
+              kind: 'subclass-merge', indices: chosen,
+              url: `/library/extracted/${doc.document}/subclasses.json`,
+            }),
+          }, chosen.length === 1 ? 'Analyse as named' : `Combine ${chosen.length} into one`));
+          btns.append(el('button', {
+            class: 'act ghost',
+            onClick: () => { selected.clear(); draw(); },
+          }, 'Clear'));
+          bar.append(btns);
+          box.append(bar);
+        }
         if (subs.length > 80) {
           box.append(el('p', { class: 'muted', style: 'font-size:12px' },
             `Showing 80 of ${subs.length} - use the filter to narrow.`));
@@ -276,6 +339,30 @@ async function ingestDropFile(f) {
       const all = await res.json();
       brew = all[f.index];
       if (!brew) throw new Error(`entry ${f.index} is not in that document`);
+    } else if (f.kind === 'subclass-merge') {
+      // Several extracted groups, joined into the subclass the reader can see
+      // they really are. Features are merged and re-sorted by level; the page
+      // range spans everything so the original is still checkable.
+      const all = await res.json();
+      const parts = f.indices.map((i) => all[i]).filter(Boolean);
+      if (!parts.length) throw new Error('none of those entries exist');
+      const features = parts.flatMap((p) => p.features || [])
+        .sort((a, b) => (a.level || 0) - (b.level || 0));
+      const pages = parts.flatMap((p) => p.pages || []).filter(Number.isFinite);
+      brew = {
+        ...parts[0],
+        id: `${(f.name || parts[0].name).toLowerCase().replace(/\W+/g, '-')}-merged`,
+        name: f.name || parts[0].name,
+        features,
+        pages: pages.length ? [Math.min(...pages), Math.max(...pages)] : parts[0].pages,
+        // The class is whichever the parts agree on; disagreement means the
+        // combination is probably wrong, and saying so is better than picking.
+        class: parts.every((p) => p.class === parts[0].class) ? parts[0].class : null,
+        extractionWarning:
+          `Combined by hand from ${parts.length} extracted group(s): `
+          + `${parts.map((p) => p.name).join(', ')}. Pages `
+          + `${pages.length ? `${Math.min(...pages)}-${Math.max(...pages)}` : '?'}.`,
+      };
     } else if (f.kind === 'pdf') {
       // PDF text is extracted server-side; the browser only ever sees text.
       const payload = await res.json();

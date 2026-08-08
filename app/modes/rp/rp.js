@@ -33,6 +33,10 @@ async function reload() {
 function draw() {
   container.innerHTML = '';
   container.append(actionsPanel());
+  // The beat form sits directly under the buttons that opened it, rather than
+  // over the page as a modal, so you can still read what you have already
+  // recorded while typing the next thing.
+  if (openForm) container.append(formPanel(openForm));
   container.append(npcPanel());
   container.append(threadPanel());
   container.append(beatsPanel());
@@ -59,71 +63,224 @@ function actionsPanel() {
   return panel;
 }
 
-async function metSomeone() {
-  const name = prompt('Who did you meet?');
-  if (!name) return;
-  const where = prompt('Where?', '') || null;
-  const want = prompt('What do they want? (optional)', '') || null;
-  const record = {
-    id: `npc-${name.toLowerCase().replace(/\W+/g, '-')}`,
-    name, where, want, disposition: 0,
-    firstMet: new Date().toISOString(), notes: [],
-  };
-  await db.put('npcs', record);
-  await log('npc_met', { name, where, want, threadKey: name });
-  toast(`Met ${name}`, 'ok');
-  await reload();
+/* ------------------------------------------------------------------ */
+/* the beat form                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Recording a beat opens a small inline form.
+ *
+ * This used to be a chain of native prompt() dialogs. They worked, but they
+ * are modal, unstyled, one question at a time with no way back, and blocked
+ * outright in embedded contexts - which includes the Chrome side panel this
+ * app is meant to dock into, and any automated test. A form you can see all
+ * of, correct before committing, and cancel is better on every count.
+ *
+ * `openForm` is the only place a beat collects input, so every beat gets the
+ * same behaviour: Escape cancels, Enter submits, the first field is focused,
+ * and required fields are enforced before anything is written.
+ */
+let openForm = null;
+
+function beatForm(spec) {
+  openForm = spec;
+  draw();
 }
 
-async function madePromise() {
-  const to = prompt('Promised to whom?');
-  if (!to) return;
-  const what = prompt('Promised what?');
-  if (!what) return;
-  await log('promise_made', { to, what, threadKey: `${to}:${what}` });
-  toast('Promise recorded - it will show as an open thread', 'ok');
-  await reload();
+function closeForm() {
+  openForm = null;
+  draw();
 }
 
-async function keptPromise() {
+function formPanel(spec) {
+  const panel = el('div', { class: 'panel rivets accent' });
+  panel.append(el('span', { class: 'lvl accent' }, spec.title));
+  if (spec.hint) panel.append(el('p', { class: 'muted', style: 'font-size:14px' }, spec.hint));
+
+  const values = {};
+  const inputs = [];
+  const form = el('form', { style: 'display:grid;gap:10px;margin-top:8px' });
+
+  for (const f of spec.fields) {
+    const wrap = el('label', { style: 'display:grid;gap:4px' });
+    wrap.append(el('span', { class: 'eyebrow' },
+      f.label + (f.required ? '' : ' (optional)')));
+    let input;
+    if (f.type === 'select') {
+      input = el('select', {});
+      for (const o of f.options) {
+        input.append(el('option', { value: o.value }, o.label));
+      }
+    } else {
+      input = el('input', { type: 'text', placeholder: f.placeholder || '' });
+    }
+    input.addEventListener('input', () => { values[f.key] = input.value; });
+    values[f.key] = f.value || (f.type === 'select' ? f.options?.[0]?.value : '');
+    if (f.value) input.value = f.value;
+    wrap.append(input);
+    form.append(wrap);
+    inputs.push({ f, input });
+  }
+
+  const err = el('p', { class: 'mono', style: 'color:var(--bad,#a3301a);font-size:12px' });
+  form.append(err);
+
+  const row = el('div', { class: 'btnrow' });
+  const submit = el('button', { type: 'submit', class: 'act' }, spec.submit || 'Record');
+  row.append(submit);
+  row.append(el('button', {
+    type: 'button', class: 'act ghost', onClick: closeForm,
+  }, 'Cancel'));
+  form.append(row);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const missing = inputs.filter(({ f, input }) => f.required && !input.value.trim());
+    if (missing.length) {
+      err.textContent = `${missing[0].f.label} is needed.`;
+      missing[0].input.focus();
+      return;
+    }
+    const out = {};
+    for (const { f, input } of inputs) out[f.key] = input.value.trim() || null;
+    openForm = null;
+    await spec.onSubmit(out);
+  });
+
+  // Escape cancels, the way every other dialog on earth behaves.
+  form.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeForm(); });
+
+  panel.append(form);
+  // Focus the first field so you can just start typing.
+  setTimeout(() => inputs[0]?.input?.focus(), 0);
+  return panel;
+}
+
+/* ------------------------------------------------------------------ */
+/* beats                                                               */
+/* ------------------------------------------------------------------ */
+
+function metSomeone() {
+  beatForm({
+    title: 'Met someone',
+    hint: 'Recorded as an NPC, so they can come back later.',
+    submit: 'Record the meeting',
+    fields: [
+      { key: 'name', label: 'Who did you meet?', required: true,
+        placeholder: 'Dockmaster Ilse' },
+      { key: 'where', label: 'Where?', placeholder: 'The winch house' },
+      { key: 'want', label: 'What do they want?', placeholder: 'A favour owed' },
+    ],
+    async onSubmit({ name, where, want }) {
+      const record = {
+        id: `npc-${name.toLowerCase().replace(/\W+/g, '-')}`,
+        name, where, want, disposition: 0,
+        firstMet: new Date().toISOString(), notes: [],
+      };
+      await db.put('npcs', record);
+      await log('npc_met', { name, where, want, threadKey: name });
+      toast(`Met ${name}`, 'ok');
+      await reload();
+    },
+  });
+}
+
+function madePromise() {
+  beatForm({
+    title: 'Made a promise',
+    hint: 'This stays on your open threads until you close it.',
+    submit: 'Record the promise',
+    fields: [
+      { key: 'to', label: 'Promised to whom?', required: true,
+        placeholder: 'Dockmaster Ilse' },
+      { key: 'what', label: 'Promised what?', required: true,
+        placeholder: 'To return the ledger before the tide' },
+    ],
+    async onSubmit({ to, what }) {
+      await log('promise_made', { to, what, threadKey: `${to}:${what}` });
+      toast('Promise recorded - it will show as an open thread', 'ok');
+      await reload();
+    },
+  });
+}
+
+function keptPromise() {
   const open = openThreads(events).filter((t) => t.kind === 'promise');
   if (!open.length) return toast('No open promises', 'warn');
-  const list = open.map((t, i) => `${i + 1}. ${t.summary}`).join('\n');
-  const pick = parseInt(prompt(`Which promise?\n\n${list}`, '1'), 10);
-  const chosen = open[pick - 1];
-  if (!chosen) return;
-  const broken = confirm('OK = kept it. Cancel = broke it.');
-  await log(broken ? 'promise_kept' : 'promise_broken', {
-    to: chosen.payload?.to, what: chosen.payload?.what, threadKey: chosen.key,
+  // Choosing from a list beats "type the number of the promise you mean",
+  // which is what the prompt() version asked for.
+  beatForm({
+    title: 'Close a promise',
+    submit: 'Close it',
+    fields: [
+      { key: 'which', label: 'Which promise?', type: 'select',
+        options: open.map((t, i) => ({ value: String(i), label: t.summary || t.key })) },
+      { key: 'outcome', label: 'How did it end?', type: 'select',
+        options: [{ value: 'kept', label: 'Kept it' },
+          { value: 'broken', label: 'Broke it' }] },
+    ],
+    async onSubmit({ which, outcome }) {
+      const chosen = open[Number(which)];
+      if (!chosen) return;
+      const kept = outcome === 'kept';
+      await log(kept ? 'promise_kept' : 'promise_broken', {
+        to: chosen.payload?.to, what: chosen.payload?.what, threadKey: chosen.key,
+      });
+      toast(kept ? 'Promise closed' : 'Marked as broken', kept ? 'ok' : 'bad');
+      await reload();
+    },
   });
-  toast(broken ? 'Promise closed' : 'Marked as broken', broken ? 'ok' : 'bad');
-  await reload();
   return null;
 }
 
-async function learnedSecret() {
-  const what = prompt('What did you learn?');
-  if (!what) return;
-  const from = prompt('From whom? (optional)', '') || null;
-  await log('secret_learned', { what, from, threadKey: what });
-  toast('Secret recorded', 'ok');
-  await reload();
+function learnedSecret() {
+  beatForm({
+    title: 'Learned a secret',
+    hint: 'Secrets stay open until you use them for something.',
+    submit: 'Record the secret',
+    fields: [
+      { key: 'what', label: 'What did you learn?', required: true,
+        placeholder: 'The harbourmaster is being blackmailed' },
+      { key: 'from', label: 'From whom?', placeholder: 'A drunk pilot' },
+    ],
+    async onSubmit({ what, from }) {
+      await log('secret_learned', { what, from, threadKey: what });
+      toast('Secret recorded', 'ok');
+      await reload();
+    },
+  });
 }
 
-async function madeChoice() {
-  const what = prompt('What did you decide?');
-  if (!what) return;
-  await log('choice_made', { what });
-  toast('Choice recorded', 'ok');
-  await reload();
+function madeChoice() {
+  beatForm({
+    title: 'Made a choice',
+    submit: 'Record the choice',
+    fields: [
+      { key: 'what', label: 'What did you decide?', required: true,
+        placeholder: 'Let the smuggler go rather than turn her in' },
+    ],
+    async onSubmit({ what }) {
+      await log('choice_made', { what });
+      toast('Choice recorded', 'ok');
+      await reload();
+    },
+  });
 }
 
-async function visited() {
-  const name = prompt('Where did you go?');
-  if (!name) return;
-  await log('location_visited', { name });
-  toast(`Logged ${name}`, 'ok');
-  await reload();
+function visited() {
+  beatForm({
+    title: 'Visited somewhere',
+    submit: 'Record the place',
+    fields: [
+      { key: 'name', label: 'Where did you go?', required: true,
+        placeholder: 'The drowned quarter' },
+    ],
+    async onSubmit({ name }) {
+      await log('location_visited', { name });
+      toast(`Logged ${name}`, 'ok');
+      await reload();
+    },
+  });
 }
 
 /* ------------------------------------------------------------------ */

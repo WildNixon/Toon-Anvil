@@ -329,16 +329,29 @@ export const FLOWS = [
       const start = await waitFor(purse, { timeout: 6000 });
       c.ok(!!start, 'the shop shows the purse and what is carried');
 
-      const buy = button(doc, 'Buy');
-      c.ok(!!buy, 'stock can be bought');
-      buy?.click();
+      // Stock is randomly generated and a fresh character carries 15 GP, so
+      // the first item on the shelf is sometimes simply unaffordable - and
+      // refusing that sale is correct behaviour, not a bug. Trying only the
+      // first Buy button made this flow fail intermittently for a reason that
+      // had nothing to do with the code. Walk the shelf until something is
+      // within budget.
+      const buys = allButtons(doc).filter((b) => b.textContent.trim() === 'Buy');
+      c.ok(buys.length > 0, 'stock can be bought', `${buys.length} buyable rows`);
 
-      const after = await waitFor(() => {
-        const p = purse();
-        return p && (p.money !== start?.money || p.carried !== start?.carried) ? p : null;
-      }, { timeout: 6000 });
-      c.ok(!!after, 'buying moves money or weight',
-        `before ${JSON.stringify(start)}, after ${JSON.stringify(purse())}`);
+      let after = null;
+      for (let i = 0; i < buys.length && !after; i += 1) {
+        allButtons(doc).filter((b) => b.textContent.trim() === 'Buy')[i]?.click();
+        // eslint-disable-next-line no-await-in-loop
+        after = await waitFor(() => {
+          const p = purse();
+          return p && (p.money !== start?.money || p.carried !== start?.carried)
+            ? p : null;
+        }, { timeout: 1800 });
+      }
+
+      c.ok(!!after, 'a purchase you can afford moves money or weight',
+        `before ${JSON.stringify(start)}, after ${JSON.stringify(purse())}, `
+        + `tried ${buys.length} items`);
       if (after && start) {
         c.ok(after.carried >= start.carried,
           'the purchased item is being carried',
@@ -390,27 +403,36 @@ export const FLOWS = [
       const beat = button(doc, 'Met someone');
       c.ok(!!beat, 'structured beats are offered');
 
-      // Roleplay collects its detail through native prompt() dialogs. Those
-      // cannot be driven by automation - the browser suppresses them and the
-      // call returns null, so the beat silently records nothing. Standing in
-      // for the user's typing is the only way to test the path BEHIND the
-      // dialog, and it is the path that matters.
+      // Beats now collect their detail through an in-app form, so this drives
+      // the real thing. It used to have to stub window.prompt, which tested
+      // the path behind the dialog but never the dialog itself.
+      const noPrompt = [];
       const realPrompt = win.prompt;
-      const asked = [];
-      win.prompt = (question) => {
-        asked.push(String(question));
-        return /where/i.test(question) ? 'The winch house'
-          : /want/i.test(question) ? 'A favour owed'
-            : 'Dockmaster Ilse';
-      };
+      win.prompt = (q) => { noPrompt.push(String(q)); return null; };
       try {
         beat.click();
+        await waitUntilSettled(doc);
+
+        const fields = [...doc.querySelectorAll('main form input[type=text]')];
+        c.ok(fields.length >= 1, 'the beat opens a form with fields',
+          `found ${fields.length}`);
+        if (!fields.length) return;
+
+        // Submitting empty must be refused rather than recording a blank NPC.
+        button(doc, 'Record the meeting')?.click();
+        await waitUntilSettled(doc);
+        c.ok(/is needed/i.test(mainText(doc)),
+          'submitting an empty required field is refused');
+
+        setField(fields[0], 'Dockmaster Ilse');
+        if (fields[1]) setField(fields[1], 'The winch house');
+        button(doc, 'Record the meeting')?.click();
         await waitUntilSettled(doc);
       } finally {
         win.prompt = realPrompt;
       }
-      c.ok(asked.length > 0, 'recording a beat asks for its details',
-        `asked: ${asked.join(' | ')}`);
+      c.eq(noPrompt.length, 0, 'no native prompt() dialog is used',
+        noPrompt.join(' | '));
       const recorded = await waitFor(() => (mainText(doc).includes('Dockmaster Ilse')
         ? true : null), { timeout: 6000 });
       c.ok(!!recorded, 'the person just met is listed on the roleplay screen');
@@ -479,14 +501,76 @@ export const FLOWS = [
   },
 
   {
+    id: 'library_combine_subclasses',
+    title: 'Extracted subclasses can be selected and combined',
+    async run(c, { doc }) {
+      c.feature('ui', 'homebrew', 'library', 'pdf');
+      c.ok(await goToMode(doc, 'Homebrew',
+        () => /Open library|Hide library/.test(mainText(doc))),
+      'Homebrew mode opens');
+      const opener = button(doc, 'Open library');
+      if (opener) { opener.click(); await waitUntilSettled(doc); }
+
+      // Expand the first extracted document, whichever it is.
+      const docRow = [...doc.querySelectorAll('main div')]
+        .find((d) => /^\+/.test(d.textContent.trim())
+          && /\d+ subclasses/.test(d.textContent));
+      if (!docRow) {
+        c.ok(true, 'no extracted PDFs on this machine - nothing to combine');
+        return;
+      }
+      docRow.click();
+      await waitUntilSettled(doc);
+
+      const boxes = () => [...doc.querySelectorAll('main input[type=checkbox]')];
+      c.ok(boxes().length >= 2, 'extracted subclasses are selectable',
+        `${boxes().length} rows`);
+      if (boxes().length < 2) return;
+
+      // PDF grouping is a guess, so the reader must be able to say which rows
+      // are really one subclass. This is that capability, pinned.
+      boxes()[0].click();
+      await waitUntilSettled(doc);
+      boxes()[1].click();
+      await waitUntilSettled(doc);
+      c.ok(/2 selected:/.test(mainText(doc)), 'the selection is shown back');
+
+      const nameField = [...doc.querySelectorAll('main input[type=text]')]
+        .find((i) => /combined/i.test(i.placeholder || ''));
+      c.ok(!!nameField, 'the combined subclass can be named');
+      if (nameField) setField(nameField, 'Gym Combined Subclass');
+
+      const combine = allButtons(doc)
+        .find((b) => /Combine \d+ into one/.test(b.textContent));
+      c.ok(!!combine, 'there is a control to combine them');
+      combine?.click();
+
+      const staged = await waitFor(() => (mainText(doc).includes('Gym Combined Subclass')
+        ? mainText(doc) : null), { timeout: 12000 });
+      c.ok(!!staged, 'the combined subclass is staged under the chosen name');
+      if (staged) {
+        const n = /Features\s*(\d+)/.exec(staged.replace(/\s+/g, ' '));
+        c.ok(n && Number(n[1]) > 1,
+          'the combined subclass carries features from both parts',
+          `features: ${n?.[1]}`);
+      }
+    },
+  },
+
+  {
     id: 'homebrew_example',
     title: 'The shipped example ingests through the real UI',
     async run(c, { doc }) {
       c.feature('ui', 'homebrew', 'ingest');
-      c.ok(await goToMode(doc, 'Homebrew', 'Open library'), 'Homebrew mode opens');
+      // Tolerate whatever a previous flow left behind. These flows share one
+      // app instance on purpose - that IS the integration - so a flow must not
+      // assume it is the first to touch a toggle.
+      c.ok(await goToMode(doc, 'Homebrew',
+        () => /Open library|Hide library/.test(mainText(doc))),
+      'Homebrew mode opens');
       const open = button(doc, 'Open library');
-      c.ok(!!open, 'the library can be opened');
-      open?.click();
+      if (open) { open.click(); await waitUntilSettled(doc); }
+      c.ok(!!button(doc, 'Hide library'), 'the library is open');
 
       const tryIt = await waitFor(() => button(doc, 'Try the example'),
         { timeout: 8000 });

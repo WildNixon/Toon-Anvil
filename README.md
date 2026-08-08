@@ -70,7 +70,7 @@ Everything below was exercised by hand before release — not "it renders", but
 | **Play** | AC, HP, proficiency, initiative, passive Perception, all 13 conditions, damage / heal, short and long rest, resource pools, attacks, features, inventory. |
 | **Combat** | Encounters, initiative order, adding your character, SRD monsters, or custom combatants. |
 | **Shop** | Generates stock at SRD prices with per-shop variance. |
-| **Roleplay** | Structured beats — promises, secrets, choices, people met. |
+| **Roleplay** | Structured beats — promises, secrets, choices, people met — recorded through an in-app form. |
 | **Chronicle** | Event log with export to Markdown, printable HTML and raw JSON, plus open-thread tracking. |
 | **DM** | Encounter builder with XP budgeting, bestiary search, rules reference. |
 
@@ -105,15 +105,15 @@ reports each one where it matters.
    rolls, but there's no field for it yet.
 7. **The bestiary starts empty.** It's search-driven — type a monster name.
    All 330 are there; none are listed until you ask.
-8. **Roleplay collects details through native `prompt()` dialogs.** They work,
-   but they're modal, unstyled, and blocked outright in some embedded contexts
-   — including automation, which is why the test suite has to stand in for
-   your typing. An in-app form would be better, particularly in the Chrome
-   side panel.
-9. **PDF is the weakest input.** Text extraction loses layout, and a
-   two-column page can mis-group features across subclasses. Every result
-   carries a coverage number so you can see how much survived. Saving the
-   source page as HTML gives markedly better results.
+8. **PDF grouping is only as good as the document.** Where a PDF says "3rd
+   level Toymaker feature", features are grouped under *Toymaker* and marked
+   **named**. Where it just says "At 3rd level" — which is how Wizards' own
+   Unearthed Arcana is written — grouping is inferred from level order and
+   marked **guessed**. In the library you can tick several extracted groups
+   and combine them into one subclass under a name you choose, because a guess
+   you can correct beats a guess you can't. Text extraction also loses layout,
+   so every result carries a coverage number. Saving the source page as HTML
+   gives markedly better results than a PDF.
 
 **Not planned:** anything that reads D&D Beyond, and any bulk crawl of a
 homebrew site.
