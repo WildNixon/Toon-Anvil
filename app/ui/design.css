@@ -333,3 +333,67 @@ th {
   .topbar .who { text-align: left; }
   main { padding: 16px 12px 80px; }
 }
+
+/* ------------------------------------------------------------------ */
+/* sandbox (ephemeral session)                                         */
+/* ------------------------------------------------------------------ */
+
+/* A sandbox that looks identical to a real session is a trap - it is how
+   somebody builds a character for an hour and then loses it. The bar is
+   deliberately loud, always visible, and carries the way out. */
+.sandbox-bar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 900;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+  padding: 9px 16px;
+  background: var(--warn);
+  color: #fff;
+  border-top: 3px solid rgba(0, 0, 0, .28);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, .18);
+}
+.sandbox-bar .label {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.sandbox-bar .detail { font-size: 13px; flex: 1; min-width: 220px; }
+.sandbox-bar button {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 7px 12px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, .7);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+.sandbox-bar button.keep { background: #fff; color: var(--warn); border-color: #fff; }
+.sandbox-bar button:hover { background: rgba(255, 255, 255, .18); }
+.sandbox-bar button.keep:hover { background: rgba(255, 255, 255, .85); }
+
+/* Keep the last panel clear of the fixed bar. */
+body.sandbox #view { padding-bottom: 86px; }
+
+.topbar .try {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  margin-left: 8px;
+  border-radius: 2px;
+  border: 1px solid rgba(238, 241, 239, .45);
+  background: transparent;
+  color: var(--chrome-ink);
+  cursor: pointer;
+}
+.topbar .try:hover { background: rgba(238, 241, 239, .16); }

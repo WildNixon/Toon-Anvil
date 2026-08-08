@@ -501,6 +501,52 @@ export const FLOWS = [
   },
 
   {
+    id: 'sandbox_bar',
+    title: 'The sandbox says what it is and offers a way out',
+    async run(c, { doc, win }) {
+      c.feature('ui', 'sandbox', 'storage');
+      // These flows already run inside a sandbox, so the bar must be here.
+      const bar = doc.querySelector('#sandbox-bar');
+      c.ok(!!bar, 'a sandbox session shows its bar');
+      if (!bar) return;
+      c.ok(/nothing is written to disk/i.test(bar.textContent),
+        'the bar says plainly that nothing is saved');
+      c.ok(!doc.querySelector('.topbar .try'),
+        'the "try a sandbox" entry is hidden while already in one');
+
+      // By now earlier flows have built characters, so the count must be live.
+      const n = Number(bar.dataset.count || 0);
+      c.ok(n > 0, 'the bar counts what has been made here', `count ${n}`);
+      const keep = bar.querySelector('.keep');
+      c.ok(keep && !keep.disabled, 'keeping is offered once there is something to keep');
+
+      // The export has to be a real, importable bundle - a sandbox you can
+      // only lose things in would be worse than no sandbox.
+      let captured = null;
+      const realCreate = win.URL.createObjectURL;
+      win.URL.createObjectURL = (b) => {
+        try { b.text().then((t) => { captured = t; }); } catch { /* ignore */ }
+        return 'blob:gym';
+      };
+      try {
+        keep.click();
+        await waitFor(() => (captured ? true : null), { timeout: 8000 });
+      } finally {
+        win.URL.createObjectURL = realCreate;
+      }
+      c.ok(!!captured, 'keeping produces a downloadable bundle');
+      if (captured) {
+        let parsed = null;
+        try { parsed = JSON.parse(captured); } catch { /* leave null */ }
+        c.ok(!!parsed, 'the bundle is valid JSON');
+        c.eq(parsed?.kind, 'toon-anvil-sandbox', 'the bundle identifies itself');
+        c.ok((parsed?.characters || []).length > 0,
+          'the bundle carries the characters made here');
+      }
+    },
+  },
+
+  {
     id: 'library_combine_subclasses',
     title: 'Extracted subclasses can be selected and combined',
     async run(c, { doc }) {

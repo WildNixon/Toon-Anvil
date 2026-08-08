@@ -73,6 +73,7 @@ Everything below was exercised by hand before release — not "it renders", but
 | **Roleplay** | Structured beats — promises, secrets, choices, people met — recorded through an in-app form. |
 | **Chronicle** | Event log with export to Markdown, printable HTML and raw JSON, plus open-thread tracking. |
 | **DM** | Encounter builder with XP budgeting, bestiary search, rules reference. |
+| **Sandbox** | Throwaway in-memory session with an export path back out. |
 
 **Not finished — known and deliberate**
 
@@ -134,6 +135,24 @@ nothing to break when an upstream URL moves. If a dependency is missing,
 `python run.py --check` tells you exactly which and what to do.
 
 ---
+
+## Try things without saving them
+
+Press **Try a sandbox** in the top bar. The whole app runs against an in-memory
+store: characters, homebrew, NPCs and the event log live for exactly as long as
+the tab does, and your real library is untouched.
+
+Useful for taking a subclass apart, rolling a dozen characters to compare, or
+handing the app to somebody at the table without any of it reaching your saved
+work.
+
+A bar along the bottom says plainly that nothing is being saved and counts what
+you've made. **Keep what I made** downloads everything as one JSON bundle that
+Build's *Import JSON* reads straight back — so a sandbox is somewhere you can
+change your mind, not only somewhere you lose things. Leaving with unsaved work
+asks first, and so does closing the tab.
+
+You can also go straight there with `?storage=memory`.
 
 ## Where files go
 

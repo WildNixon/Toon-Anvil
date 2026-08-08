@@ -172,13 +172,29 @@ function renderNav() {
 }
 
 function renderWho() {
-  const { character, derived, dataSource } = getState();
-  const src = dataSource === 'server' ? 'shared' : 'this device';
-  $('#who').innerHTML = character
+  const { character, derived, dataSource, ephemeral } = getState();
+  const src = ephemeral ? 'sandbox'
+    : dataSource === 'server' ? 'shared' : 'this device';
+  const who = $('#who');
+  who.innerHTML = character
     ? `<strong>${esc(character.name || 'Unnamed')}</strong>`
       + `${esc(describeClasses(character))} &middot; AC ${derived?.ac ?? '--'}`
       + ` &middot; ${esc(src)}`
     : `<strong>No character</strong>Storage: ${esc(src)}`;
+
+  // Offer the sandbox here rather than only as a URL you have to know about.
+  // Hidden while you are already in one - the bar at the bottom owns that
+  // state, and two controls for the same thing in two places is how people
+  // end up unsure which session they are in.
+  if (!ephemeral) {
+    const btn = document.createElement('button');
+    btn.className = 'try';
+    btn.textContent = 'Try a sandbox';
+    btn.title = 'Open a throwaway session. Nothing you do in it is saved, and '
+      + 'your real characters are untouched.';
+    btn.addEventListener('click', startSandbox);
+    who.append(btn);
+  }
 }
 
 function describeClasses(ch) {
@@ -187,6 +203,134 @@ function describeClasses(ch) {
 }
 
 const cap = (s) => String(s || '').replace(/^./, (c) => c.toUpperCase());
+
+/* ------------------------------------------------------------------ */
+/* sandbox - a session that keeps nothing                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Try things without saving them.
+ *
+ * The whole app runs against an in-memory store: characters, homebrew, NPCs
+ * and the event log all live for exactly as long as the tab does. It exists so
+ * you can take a subclass apart, roll a dozen characters, or hand the app to
+ * somebody else without any of it reaching your real library.
+ *
+ * Two things make it safe rather than a trap:
+ *   - the bar is always visible and says plainly that nothing is being saved;
+ *   - there is a way OUT that does not silently throw the work away. "Keep
+ *     what I made" downloads everything as JSON, which Build's Import JSON
+ *     reads straight back. A sandbox you can only lose things in would be
+ *     worse than no sandbox.
+ */
+export function startSandbox() {
+  const url = new URL(location.href);
+  url.searchParams.set('storage', 'memory');
+  location.href = url.toString();
+}
+
+function leaveSandbox(count) {
+  if (count > 0) {
+    const ok = window.confirm(
+      `Leaving the sandbox discards ${count} unsaved item${count === 1 ? '' : 's'}.\n\n`
+      + 'Use "Keep what I made" first if you want to bring any of it with you.\n\n'
+      + 'Leave anyway?',
+    );
+    if (!ok) return;
+  }
+  const url = new URL(location.href);
+  url.searchParams.delete('storage');
+  // Skip the beforeunload guard: the user has just answered this exact
+  // question, and asking twice teaches people to click through warnings.
+  sandboxLeaving = true;
+  location.href = url.toString();
+}
+
+/** Everything made in this session, as one importable bundle. */
+async function keepSandbox() {
+  const bundle = { kind: 'toon-anvil-sandbox', exported: new Date().toISOString() };
+  let total = 0;
+  for (const kind of ['characters', 'homebrew', 'npcs', 'shops', 'campaigns']) {
+    // eslint-disable-next-line no-await-in-loop
+    const rows = await db.list(kind).catch(() => []);
+    if (rows.length) { bundle[kind] = rows; total += rows.length; }
+  }
+  if (!total) return setState({ toast: { message: 'Nothing made yet', kind: 'warn' } });
+
+  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `toon-anvil-sandbox-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  sandboxKept = true;
+  await refreshSandboxBar();
+  return setState({
+    toast: { message: `Saved ${total} item(s) - import them from Build`, kind: 'ok' },
+  });
+}
+
+let sandboxKept = false;
+let sandboxLeaving = false;
+
+/** How much would be lost right now. */
+async function sandboxCount() {
+  let n = 0;
+  for (const kind of ['characters', 'homebrew', 'npcs', 'shops', 'campaigns']) {
+    // eslint-disable-next-line no-await-in-loop
+    n += (await db.list(kind).catch(() => [])).length;
+  }
+  return n;
+}
+
+async function refreshSandboxBar() {
+  const bar = $('#sandbox-bar');
+  if (!bar) return;
+  const n = await sandboxCount();
+  bar.querySelector('.detail').textContent = n
+    ? `${n} item${n === 1 ? '' : 's'} made here. Nothing is written to disk — `
+      + 'it all disappears when you close or reload this tab.'
+    : 'Nothing is written to disk. Build, break and throw away as much as you like.';
+  bar.querySelector('.keep').disabled = n === 0;
+  bar.querySelector('.keep').textContent = sandboxKept && n
+    ? 'Save again' : 'Keep what I made';
+  bar.dataset.count = String(n);
+}
+
+function mountSandboxBar() {
+  document.body.classList.add('sandbox');
+  const bar = document.createElement('div');
+  bar.id = 'sandbox-bar';
+  bar.className = 'sandbox-bar';
+  bar.innerHTML = '<span class="label">Sandbox</span>'
+    + '<span class="detail"></span>';
+
+  const keep = document.createElement('button');
+  keep.className = 'keep';
+  keep.textContent = 'Keep what I made';
+  keep.addEventListener('click', keepSandbox);
+
+  const leave = document.createElement('button');
+  leave.textContent = 'Leave sandbox';
+  leave.addEventListener('click',
+    () => leaveSandbox(Number(bar.dataset.count || 0)));
+
+  bar.append(keep, leave);
+  document.body.append(bar);
+
+  // Keep the count honest as things are made, without polling hard.
+  subscribe(() => { refreshSandboxBar(); });
+  refreshSandboxBar();
+
+  // Closing the tab is the other way to lose everything, and the browser will
+  // not let us explain why - but it will ask.
+  window.addEventListener('beforeunload', (e) => {
+    if (sandboxLeaving || sandboxKept) return;
+    if (Number(bar.dataset.count || 0) === 0) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+}
 
 /* ------------------------------------------------------------------ */
 /* toast                                                               */
@@ -218,18 +362,7 @@ async function boot() {
   const adapter = await initDb({ prefer });
   setState({ dataSource: adapter.mode, ephemeral: prefer === 'memory' });
 
-  // An ephemeral session that looks exactly like a real one is a trap - it is
-  // how somebody builds a character for an hour and then loses it. Say so.
-  if (prefer === 'memory') {
-    const flag = document.createElement('div');
-    flag.id = 'ephemeral-banner';
-    flag.textContent = 'EPHEMERAL SESSION — nothing is saved, everything is '
-      + 'lost on reload';
-    flag.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9999;'
-      + 'background:#9a6a12;color:#fff;font:700 11px/1.9 Consolas,monospace;'
-      + 'letter-spacing:.14em;text-align:center;text-transform:uppercase';
-    document.body.append(flag);
-  }
+  if (prefer === 'memory') mountSandboxBar();
 
   const compendium = await compendia(
     'classes', 'species', 'backgrounds', 'feats', 'spells',
