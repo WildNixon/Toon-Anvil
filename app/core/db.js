@@ -197,6 +197,7 @@ class ServerAdapter {
     const res = await fetch(this.base + path, {
       headers: {
         'Content-Type': 'application/json',
+        'X-Toon-Client': CLIENT_ID,
         ...(token ? { 'X-Toon-Token': token } : {}),
       },
       ...opts,
@@ -260,6 +261,19 @@ const PREF_KEY = 'toonanvil.dataSource';
 
 /** Where the extension should look for the shared server. */
 export const DEFAULT_SERVER = 'http://127.0.0.1:7801';
+
+/**
+ * Who this browser tab is, for the change feed.
+ *
+ * Sent on every write so the server can say WHO made a change, and live.js can
+ * ignore its own. Without it a tab re-renders on its own keystrokes: typing in
+ * Build saves, the save bumps the revision, the revision comes back as "someone
+ * changed this character", and the cursor jumps.
+ *
+ * Deliberately per-tab and not persisted: two tabs in one browser really are
+ * two clients, and each should see the other's edits.
+ */
+export const CLIENT_ID = `c-${Math.random().toString(36).slice(2, 10)}`;
 
 export function serverBase() {
   // Served by serve.py: same origin. Inside the extension: the localhost server.

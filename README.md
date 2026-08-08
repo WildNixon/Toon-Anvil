@@ -196,8 +196,8 @@ the writing assistant works with no key and no cost.
 
 ## Playing together on one network
 
-Stage one of multiplayer is in: profiles, a join code, and permissions the
-**server** enforces.
+Profiles, a join code, permissions the **server** enforces, and screens that
+update while you are looking at them.
 
 ```bash
 python run.py --lan
@@ -218,8 +218,19 @@ once.
 | Another player's character | edit | read |
 | Homebrew, custom content, campaign | edit | read |
 
+**Everyone's screen keeps up.** When the DM applies damage, the player looking
+at that sheet sees the number change — no reload, no refresh button. The server
+keeps a revision counter and clients watch it over a held-open stream, with
+polling underneath as the fallback that always works. What travels is only
+*what* changed, never the record: each client re-reads from the server, so
+there is one source of truth and no chance of two screens disagreeing.
+
+Your own edits never bounce back at you — every write is tagged with the tab
+that made it, so typing in Build cannot re-render Build under your cursor.
+
 **Solo play is untouched.** With no table open nothing asks who you are — the
-permission checks only run once a table exists.
+permission checks only run once a table exists — and with no shared server the
+live watcher never starts, because nothing else can change your data.
 
 **What a join code is and is not.** It stops somebody on the same wifi
 wandering into your game by accident. It is **not authentication**: nothing is

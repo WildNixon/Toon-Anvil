@@ -845,6 +845,149 @@ export const FLOWS = [
  * `Check` is passed in rather than imported so this module stays independent
  * of the gym's grading, and can be driven from a console when debugging.
  */
+
+/* ------------------------------------------------------------------ */
+/* two clients                                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The one test the whole live tier exists for.
+ *
+ * Every other flow runs against an EPHEMERAL boot so it cannot touch real
+ * data. This one cannot: two browsers only see each other through the shared
+ * server, and a memory store is private to its own frame. So it boots two REAL
+ * clients, works on a single obviously-ours probe character, and deletes it
+ * both before and after - bounding the worst case to one visibly-named file
+ * that the next run clears.
+ *
+ * It also runs LAST, and refuses to run at all unless the server is reachable
+ * and no table is open, because a half-joined table would make a refusal look
+ * like a sync failure.
+ */
+const PROBE_ID = 'gym-sync-probe';
+
+const api = async (path, opts = {}) => {
+  const res = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' }, ...opts,
+  });
+  let body = {};
+  try { body = await res.json(); } catch { /* no body */ }
+  return { status: res.status, body };
+};
+
+async function bootClient(label) {
+  const frame = document.createElement('iframe');
+  // No ?storage=memory on purpose: these two must share the server.
+  frame.src = '/index.html';
+  frame.dataset.gym = label;
+  frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;'
+    + 'height:1000px;border:0';
+  document.body.append(frame);
+  await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
+  const doc = frame.contentDocument;
+  await waitFor(() => (doc.querySelector('main') && button(doc, 'Build') ? true : null),
+    { timeout: 15000 });
+  return { frame, doc };
+}
+
+/** Open the probe character in Play mode and return a reader for its HP. */
+async function openProbe(doc, name) {
+  await goToMode(doc, 'Build', 'Roster');
+  const pick = await waitFor(() => [...doc.querySelectorAll('main button')]
+    .find((b) => b.textContent.trim().startsWith(name)) || null, { timeout: 8000 });
+  pick?.click();
+  await waitUntilSettled(doc);
+  const ok = await goToMode(doc, 'Play', (d = doc) => /Adjust HP/.test(mainText(d)));
+  return { ok, hp: () => readNumberAfter(doc, 'HP') };
+}
+
+export async function runTwoClient(CheckClass) {
+  const check = new CheckClass('two_clients_stay_in_step');
+  const t0 = performance.now();
+  let error = null;
+  const frames = [];
+  try {
+    check.feature('ui', 'live', 'sync', 'multiplayer');
+
+    // Preconditions, asserted rather than assumed - each of these failing
+    // would otherwise show up as "sync is broken".
+    const reachable = await api('/api/changes?since=0');
+    check.ok(reachable.status === 200, 'the shared server is reachable',
+      `HTTP ${reachable.status}`);
+    if (reachable.status !== 200) throw new Error('no server: two clients cannot share');
+
+    const table = await api('/api/table');
+    check.ok(!table.body.open, 'no table is open, so writes need no token');
+    if (table.body.open) throw new Error('a table is open; close it to run this flow');
+
+    await api(`/api/characters/${PROBE_ID}`, { method: 'DELETE' });
+    const made = await api(`/api/characters/${PROBE_ID}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        id: PROBE_ID, name: 'Gym Sync Probe', level: 3,
+        classes: [{ id: 'fighter', level: 3 }], abilities:
+          { str: 14, dex: 12, con: 14, int: 10, wis: 10, cha: 10 },
+      }),
+    });
+    check.eq(made.status, 200, 'a probe character exists on the server');
+
+    const a = await bootClient('dm');
+    frames.push(a.frame);
+    const b = await bootClient('player');
+    frames.push(b.frame);
+    check.ok(true, 'two independent clients booted against the same server');
+
+    const openA = await openProbe(a.doc, 'Gym Sync Probe');
+    const openB = await openProbe(b.doc, 'Gym Sync Probe');
+    check.ok(openA.ok, 'client A has the probe open in Play');
+    check.ok(openB.ok, 'client B has the same character open');
+
+    const startB = await waitFor(() => (Number.isFinite(openB.hp()) ? openB.hp() : null));
+    check.ok(Number.isFinite(startB), 'client B shows hit points', `read ${startB}`);
+    const startA = await waitFor(() => (Number.isFinite(openA.hp()) ? openA.hp() : null));
+    check.eq(startA, startB, 'both clients start on the same number');
+    if (!Number.isFinite(startB)) throw new Error('client B never showed HP');
+
+    // A applies damage through the UI, exactly as a DM would.
+    const amount = a.doc.querySelector('main input[type=number]');
+    check.ok(!!amount, 'client A has a damage field');
+    setField(amount, '7');
+    button(a.doc, 'Damage')?.click();
+    const hurtA = await waitFor(() => (openA.hp() !== startA ? openA.hp() : null),
+      { timeout: 6000 });
+    check.eq(hurtA, startA - 7, 'client A shows the damage it applied');
+
+    // The whole feature: B was never touched and never reloaded.
+    const hurtB = await waitFor(() => (openB.hp() !== startB ? openB.hp() : null),
+      { timeout: 12000 });
+    check.ok(hurtB !== null,
+      'client B updated on its own, with no reload and no click');
+    if (hurtB !== null) {
+      check.eq(hurtB, startB - 7,
+        'and shows the same number the other client does', `A=${hurtA} B=${hurtB}`);
+    }
+  } catch (err) {
+    error = `${err.name}: ${err.message}`;
+  } finally {
+    for (const f of frames) f.remove();
+    // Always, even on the throw paths above.
+    try { await api(`/api/characters/${PROBE_ID}`, { method: 'DELETE' }); }
+    catch { /* the server went away; nothing more we can do */ }
+  }
+  return {
+    id: 'two_clients_stay_in_step',
+    title: 'Two clients stay in step without a reload',
+    passed: check.passed,
+    total: check.total,
+    failures: check.failures,
+    features: [...check.touched],
+    error,
+    empty: !error && check.total === 0,
+    ok: !error && check.total > 0 && check.failures.length === 0,
+    ms: +(performance.now() - t0).toFixed(0),
+  };
+}
+
 export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
   const frame = document.createElement('iframe');
   // Ephemeral: no real character is created, no real chronicle is appended to.
@@ -906,5 +1049,10 @@ export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
   } finally {
     frame.remove();
   }
+
+  // Last, and outside the shared ephemeral frame: this one needs the real
+  // server, so it manages its own clients and cleans up after itself.
+  results.push(await runTwoClient(CheckClass));
+  onProgress({ flow: 'two_clients_stay_in_step' });
   return results;
 }

@@ -1694,6 +1694,195 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- live state -------------------------------------- */
+  {
+    id: 'live',
+    title: 'Knowing when somebody else changed something',
+    why: 'Damage the DM applies has to reach the player\'s sheet while they '
+       + 'are looking at it. These tests go over real HTTP and hold a real '
+       + 'EventSource open, because a mocked stream would prove nothing about '
+       + 'whether the server actually pushes.',
+    scenarios: [
+      {
+        id: 'counter_advances_on_write',
+        title: 'Every write moves the revision, and says what moved',
+        async run(c, { table }) {
+          c.feature('live', 'sync');
+          const before = (await table.changes(0)).rev;
+          c.ok(Number.isFinite(before), 'the server reports a revision', String(before));
+
+          await table.put('characters', 'gym-live-1', { name: 'One' }, null);
+          const after = await table.changes(before);
+          c.ok(after.rev > before, 'a write advances the revision',
+            `${before} -> ${after.rev}`);
+          c.eq(after.changes.length, 1, 'and reports exactly what changed');
+          c.eq(after.changes[0].kind, 'characters', 'the kind is named');
+          c.eq(after.changes[0].id, 'gym-live-1', 'and so is the id');
+
+          // A read must NOT move it, or every poll wakes every client forever.
+          await table.get('characters', 'gym-live-1', null);
+          c.eq((await table.changes(0)).rev, after.rev,
+            'a read leaves the revision alone');
+
+          const del = await table.changes(after.rev);
+          c.eq(del.changes.length, 0, 'and nothing new is invented between polls');
+
+          await table.del('characters', 'gym-live-1', null);
+          const gone = await table.changes(after.rev);
+          c.ok(gone.changes.some((x) => x.id === 'gym-live-1'),
+            'a delete is announced too, not only a write');
+        },
+      },
+      {
+        id: 'since_filters_and_reports_gaps',
+        title: 'A client that fell behind is told so rather than quietly missing changes',
+        async run(c, { table }) {
+          c.feature('live', 'sync');
+          const start = (await table.changes(0)).rev;
+          for (let i = 0; i < 3; i += 1) {
+            // eslint-disable-next-line no-await-in-loop
+            await table.put('characters', `gym-live-${i}`, { name: `C${i}` }, null);
+          }
+          const all = await table.changes(start);
+          c.eq(all.changes.length, 3, 'since=N returns only what came after N');
+          c.ok(all.changes.every((x) => x.rev > start), 'and none from before it');
+          c.ok(!all.gap, 'a client that kept up is not told it fell behind');
+
+          const partial = await table.changes(start + 1);
+          c.eq(partial.changes.length, 2, 'the filter is exclusive of `since`');
+
+          // The one that matters: a client claiming a revision the server has
+          // never reached means the server RESTARTED and its counter reset.
+          // Reporting "nothing new" there would leave that client permanently
+          // stale with no way to notice.
+          const ahead = await table.changes(all.rev + 500);
+          c.ok(ahead.gap, 'a client ahead of the server is told it has a gap');
+          c.ok(ahead.rev < all.rev + 500,
+            'and is given the real revision to reset to', String(ahead.rev));
+
+          for (let i = 0; i < 3; i += 1) {
+            // eslint-disable-next-line no-await-in-loop
+            await table.del('characters', `gym-live-${i}`, null);
+          }
+        },
+      },
+      {
+        id: 'stream_pushes_without_asking',
+        title: 'A held-open stream delivers a change made by somebody else',
+        async run(c, { table }) {
+          c.feature('live', 'sync', 'stream');
+          const start = (await table.changes(0)).rev;
+
+          // Open the stream first, then write from "another client" (this
+          // scenario, over a separate request) and see whether it arrives
+          // without anybody polling.
+          const listening = table.stream(start, 2500);
+          await new Promise((r) => { setTimeout(r, 300); });
+          await table.put('characters', 'gym-live-push', { name: 'Pushed' }, null);
+          const { error, messages } = await listening;
+
+          c.ok(!error, 'the stream opened', error || '');
+          c.ok(messages.length >= 1, 'and delivered at least one message',
+            `${messages.length} message(s)`);
+          const hello = messages.find((m) => m.type === 'hello');
+          c.ok(!!hello, 'the first message states the current revision');
+
+          const push = messages.find((m) => (m.changes || [])
+            .some((x) => x.id === 'gym-live-push'));
+          c.ok(!!push, 'the write arrived over the stream, unasked');
+          if (push) {
+            c.ok(push.rev > start, 'carrying a revision the client can resume from',
+              `${start} -> ${push.rev}`);
+          }
+          await table.del('characters', 'gym-live-push', null);
+        },
+      },
+      {
+        id: 'stream_and_poll_agree',
+        title: 'The fast path and the fallback report the same thing',
+        async run(c, { table }) {
+          c.feature('live', 'sync', 'stream');
+          const start = (await table.changes(0)).rev;
+          const listening = table.stream(start, 2200);
+          await new Promise((r) => { setTimeout(r, 300); });
+          await table.put('characters', 'gym-live-agree', { name: 'Agree' }, null);
+          const { messages } = await listening;
+          const polled = await table.changes(start);
+
+          const streamed = messages.flatMap((m) => m.changes || [])
+            .filter((x) => x.rev > start)
+            .map((x) => `${x.rev}:${x.kind}:${x.id}`);
+          const byPoll = polled.changes.map((x) => `${x.rev}:${x.kind}:${x.id}`);
+
+          // Assert each transport saw the write on its own first. Comparing
+          // them alone would pass with both empty, which is precisely the
+          // failure this is meant to catch.
+          c.ok(streamed.some((k) => k.endsWith(':gym-live-agree')),
+            'the stream saw the write', streamed.join(' ') || '(nothing)');
+          c.ok(byPoll.some((k) => k.endsWith(':gym-live-agree')),
+            'and so did polling', byPoll.join(' ') || '(nothing)');
+          c.ok(polled.rev > start, 'polling reports a revision that moved',
+            `${start} -> ${polled.rev}`);
+
+          // Polling is the guarantee; the stream is the optimisation. If they
+          // disagree, whichever transport a client happened to get would change
+          // what it believes - so this is the test that keeps them one feature.
+          c.eq([...new Set(streamed)].sort().join('|'), byPoll.sort().join('|'),
+            'stream and poll report the same changes for the same window');
+          await table.del('characters', 'gym-live-agree', null);
+        },
+      },
+      {
+        id: 'changes_say_who',
+        title: 'A change names the client that caused it',
+        async run(c, { table }) {
+          c.feature('live', 'sync');
+          const start = (await table.changes(0)).rev;
+          await table.put('characters', 'gym-live-who', { name: 'Who' }, null,
+            'c-gym-probe');
+          const seen = (await table.changes(start)).changes
+            .find((x) => x.id === 'gym-live-who');
+          c.ok(!!seen, 'the write was recorded');
+          c.eq(seen?.by, 'c-gym-probe',
+            'and carries the client id that made it');
+
+          // Why this matters: without attribution a tab re-renders on the echo
+          // of its OWN save. Typing in Build saves each keystroke, the save
+          // bumps the revision, and the re-render moves the cursor mid-word.
+          const anon = await table.changes(start);
+          c.ok(anon.changes.every((x) => 'by' in x),
+            'every change carries the field, even when nobody claimed it');
+          await table.del('characters', 'gym-live-who', null);
+        },
+      },
+      {
+        id: 'table_actions_are_announced',
+        title: 'Opening and joining a table are changes too',
+        async run(c, { table }) {
+          c.feature('live', 'sync', 'table');
+          await table.close();
+          const start = (await table.changes(0)).rev;
+
+          const dm = await table.open('Live DM');
+          const afterOpen = await table.changes(start);
+          c.ok(afterOpen.changes.some((x) => x.kind === 'table'),
+            'opening a table is announced');
+
+          const mid = afterOpen.rev;
+          await table.join(dm.code, 'Ren');
+          const afterJoin = await table.changes(mid);
+          c.ok(afterJoin.changes.some((x) => x.kind === 'table'),
+            'so is a player joining - the DM sees them arrive without reloading');
+
+          await table.close();
+          const afterClose = await table.changes(afterJoin.rev);
+          c.ok(afterClose.changes.some((x) => x.kind === 'table'),
+            'and so is closing it, which revokes every token');
+        },
+      },
+    ],
+  },
+
   /* ---------------- cross-engine agreement ------------------------- */
   {
     id: 'agreement',
@@ -1966,6 +2155,22 @@ export const MUTATIONS = [
           c.hp = Math.max(0, c.hp + delta);
           return { landed: Math.abs(delta), mitigation: null, downed: c.hp === 0 };
         } } } }),
+  },
+  {
+    id: 'stream_goes_silent',
+    what: 'the change stream connects but never pushes anything',
+    // The failure that would be hardest to notice by hand: everything looks
+    // connected, and the table just quietly stops updating.
+    patch: (ctx) => ({ table: { ...ctx.table,
+      stream: async () => ({ error: null, messages: [] }) } }),
+  },
+  {
+    id: 'changes_never_report_gaps',
+    what: '/api/changes always says gap:false',
+    // A client that fell behind would then never re-read, and would show stale
+    // hit points indefinitely while looking perfectly healthy.
+    patch: (ctx) => ({ table: { ...ctx.table,
+      changes: async (since) => ({ ...(await ctx.table.changes(since)), gap: false }) } }),
   },
   {
     id: 'unbounded_encounters',

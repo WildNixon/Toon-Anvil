@@ -120,6 +120,70 @@ def autosplit_inbox() -> list[dict]:
     write_manifest(man)
     return results
 
+# --------------------------------------------------------------------------
+# change feed
+# --------------------------------------------------------------------------
+#
+# Every write bumps a counter and appends {rev, kind, id} to a small ring.
+# Clients hold the last rev they saw and ask what has happened since, either by
+# holding a stream open or by polling. That is the whole mechanism: the server
+# says WHAT changed, never the record itself, so a client re-fetches only what
+# it actually displays and there is one source of truth for the data.
+#
+# In memory on purpose. A restart resets the counter, and clients handle that
+# by re-fetching everything - which is the correct response to "the server you
+# were talking to went away".
+_rev = 0
+_changes: list[dict] = []
+_rev_lock = threading.Lock()
+_rev_wake = threading.Condition(_rev_lock)
+MAX_CHANGES = 500
+
+# One thread per held stream, so this is a real resource. Six players is
+# nothing; a runaway client reconnecting in a loop is not.
+MAX_STREAMS = 16
+_streams = 0
+_stream_lock = threading.Lock()
+
+
+def bump(kind: str, rid: str | None = None, by: str | None = None) -> int:
+    """Record that something changed. Returns the new revision.
+
+    `by` is the client that caused it, so a browser can ignore the echo of its
+    own write. Without that a tab re-renders on its own keystrokes and the
+    cursor jumps mid-word.
+    """
+    global _rev
+    with _rev_wake:
+        _rev += 1
+        _changes.append({"rev": _rev, "kind": kind, "id": rid,
+                         "by": by, "at": time.time()})
+        if len(_changes) > MAX_CHANGES:
+            del _changes[:-MAX_CHANGES]
+        _rev_wake.notify_all()
+        return _rev
+
+
+def changes_since(since: int) -> tuple[int, list[dict], bool]:
+    """(current rev, changes after `since`, whether the gap was too large).
+
+    `gap` is the honest answer to "you have been away longer than my memory".
+    A client that sees it re-fetches everything rather than believing it is up
+    to date on the strength of a partial list.
+    """
+    with _rev_lock:
+        # A client AHEAD of us means this process restarted and the counter
+        # reset. Everything they believe may be stale, so that is a gap too -
+        # not "nothing new since 99".
+        if since > _rev:
+            return _rev, [], True
+        if not _changes:
+            return _rev, [], False
+        oldest = _changes[0]["rev"]
+        gap = since < oldest - 1
+        return _rev, [c for c in _changes if c["rev"] > since], gap
+
+
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,180}$")
 _write_lock = threading.Lock()
@@ -232,6 +296,10 @@ class Handler(SimpleHTTPRequestHandler):
         host = (self.client_address[0] if self.client_address else "")
         return host in ("127.0.0.1", "::1", "localhost")
 
+    def _client(self) -> str | None:
+        """Which browser tab sent this. Absent for curl, which is fine."""
+        return (self.headers.get("X-Toon-Client") or "").strip()[:40] or None
+
     def _token(self) -> str | None:
         auth = self.headers.get("Authorization") or ""
         if auth.lower().startswith("bearer "):
@@ -338,7 +406,9 @@ class Handler(SimpleHTTPRequestHandler):
                 json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8"
             )
             tmp.replace(path)  # atomic: never leave a half-written character
-        return self._send_json({"ok": True, "id": rid, "updatedAt": payload["updatedAt"]})
+        rev = bump(parts[1], rid, self._client())
+        return self._send_json({"ok": True, "id": rid, "rev": rev,
+                                "updatedAt": payload["updatedAt"]})
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -431,22 +501,30 @@ class Handler(SimpleHTTPRequestHandler):
                 if not self._is_local():
                     return self._send_json(
                         {"error": "only the DM's own machine can open a table"}, 403)
-                return self._send_json(mod.open_table(payload.get("name") or "DM"))
+                out = mod.open_table(payload.get("name") or "DM")
+                bump("table", None, self._client())
+                return self._send_json(out)
 
             if action == "close":
                 who = mod.whoami(self._token())
                 if not self._is_local() and (not who or who.get("role") != "dm"):
                     return self._send_json({"error": "only the DM can close the table"}, 403)
-                return self._send_json(mod.close_table())
+                out = mod.close_table()
+                bump("table", None, self._client())
+                return self._send_json(out)
 
             if action == "join":
                 out = mod.join(payload.get("code") or "",
                                payload.get("name") or "Player",
                                payload.get("profileId"))
+                if out.get("ok"):
+                    bump("table", None, self._client())
                 return self._send_json(out, 200 if out.get("ok") else 403)
 
             if action == "leave":
-                return self._send_json(mod.revoke(self._token() or ""))
+                out = mod.revoke(self._token() or "")
+                bump("table", None, self._client())
+                return self._send_json(out)
 
             if action == "claim":
                 # Bind a character to the profile behind this token.
@@ -457,7 +535,9 @@ class Handler(SimpleHTTPRequestHandler):
                 cid = safe_id(str(payload.get("characterId") or ""))
                 if not cid:
                     return self._send_json({"error": "bad character id"}, 400)
-                return self._send_json(mod.set_owner(target or who["id"], cid))
+                out = mod.set_owner(target or who["id"], cid)
+                bump("table", cid, self._client())
+                return self._send_json(out)
 
             return self._send_json({"error": "unknown table action"}, 404)
 
@@ -558,7 +638,8 @@ class Handler(SimpleHTTPRequestHandler):
                 for ev in events:
                     ev.setdefault("ts", now_iso())
                     fh.write(json.dumps(ev, ensure_ascii=False) + "\n")
-        return self._send_json({"ok": True, "written": len(events)})
+        return self._send_json({"ok": True, "written": len(events),
+                                "rev": bump("events", None, self._client())})
 
     def do_DELETE(self) -> None:
         parts = [p for p in urlparse(self.path).path.split("/") if p]
@@ -577,8 +658,84 @@ class Handler(SimpleHTTPRequestHandler):
 
         if path.exists():
             path.unlink()
-            return self._send_json({"ok": True, "deleted": rid})
+            return self._send_json({"ok": True, "deleted": rid,
+                                    "rev": bump(parts[1], rid, self._client())})
         return self._send_json({"error": "not found"}, 404)
+
+    # ---- the change stream ----------------------------------------------
+    #
+    # Server-Sent Events over the existing HTTP server. ThreadingHTTPServer
+    # gives each held connection its own thread, which is fine for a table of
+    # six and is why MAX_STREAMS exists - a client stuck in a reconnect loop
+    # would otherwise eat the pool.
+    #
+    # Deliberately short-lived: the stream ends itself after a few minutes and
+    # EventSource reconnects on its own. A connection that lives forever is a
+    # connection nobody notices leaking.
+    STREAM_SECONDS = 240
+    HEARTBEAT_SECONDS = 20
+
+    def _stream(self, query) -> None:
+        global _streams
+        with _stream_lock:
+            if _streams >= MAX_STREAMS:
+                # Refuse rather than degrade. The client polls instead, which
+                # is slower and completely correct.
+                return self._send_json(
+                    {"error": "too many open streams; poll /api/changes instead"}, 503)
+            _streams += 1
+
+        try:
+            since = int((query.get("since") or ["0"])[0])
+        except ValueError:
+            since = 0
+
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
+            self._cors()
+            self.end_headers()
+            # No Content-Length, so the body is delimited by the close. Telling
+            # the base class not to reuse this connection keeps it honest.
+            self.close_connection = True
+
+            def send(payload: dict) -> None:
+                self.wfile.write(
+                    f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8"))
+                self.wfile.flush()
+
+            rev, items, gap = changes_since(since)
+            send({"type": "hello", "rev": rev, "gap": gap, "changes": items})
+
+            deadline = time.time() + self.STREAM_SECONDS
+            last = rev
+            while time.time() < deadline:
+                with _rev_wake:
+                    # Wake on a write, or on the heartbeat - whichever first.
+                    _rev_wake.wait(timeout=self.HEARTBEAT_SECONDS)
+                    current = _rev
+                if current != last:
+                    rev, items, gap = changes_since(last)
+                    send({"type": "change", "rev": rev, "gap": gap, "changes": items})
+                    last = rev
+                else:
+                    # A comment line keeps proxies and idle timeouts happy
+                    # without looking like data to the client.
+                    self.wfile.write(b": keep-alive\n\n")
+                    self.wfile.flush()
+
+            send({"type": "bye", "rev": last})
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            # The player closed the tab. Entirely normal; not worth a log line.
+            pass
+        except Exception as exc:                               # noqa: BLE001
+            sys.stderr.write(f"  stream ended: {type(exc).__name__}\n")
+        finally:
+            with _stream_lock:
+                _streams -= 1
+        return None
 
     def _api_get(self, parsed) -> None:
         # Percent-decode each segment. urlparse does not, so a document named
@@ -697,6 +854,19 @@ class Handler(SimpleHTTPRequestHandler):
                     + [{**f, "origin": "corpus"} for f in corpus_files]
                 ),
             })
+
+        if parts == ["api", "changes"]:
+            # The polling half. Always available, never blocks, and the answer
+            # a client falls back to when a held stream drops.
+            try:
+                since = int((query.get("since") or ["0"])[0])
+            except ValueError:
+                since = 0
+            rev, items, gap = changes_since(since)
+            return self._send_json({"rev": rev, "changes": items, "gap": gap})
+
+        if parts == ["api", "stream"]:
+            return self._stream(query)
 
         if parts == ["api", "table"]:
             mod = self._table()

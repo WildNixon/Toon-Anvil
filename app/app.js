@@ -11,6 +11,8 @@ import { initDb, db, compendia, getDataSource, setDataSource, openRealStore }
 import { getState, setState, subscribe, watch, esc, $ } from './core/store.js';
 import { setContext } from './core/events.js';
 import { derive } from './core/derive.js';
+import * as session from './core/session.js';
+import * as live from './core/live.js';
 
 const MODES = [
   { id: 'build',     label: 'Build',     load: () => import('./modes/build/build.js') },
@@ -205,6 +207,56 @@ function describeClasses(ch) {
 }
 
 const cap = (s) => String(s || '').replace(/^./, (c) => c.toUpperCase());
+
+/* ------------------------------------------------------------------ */
+/* live updates                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Re-read what somebody else changed.
+ *
+ * The stream says only WHAT changed, so this re-fetches from the store rather
+ * than trusting a pushed copy - one source of truth, and no chance of the
+ * screen disagreeing with the file on disk.
+ *
+ * Modes render once and do not watch the store, so refreshing state alone
+ * changes nothing on screen - the sheet went on showing the old hit points.
+ * The screen is therefore re-rendered explicitly, but ONLY when the change
+ * touches the character being looked at. A full re-render on every change
+ * would throw away half-typed input elsewhere.
+ *
+ * Our own writes never reach here: live.js drops them by client id, so typing
+ * in Build does not re-render Build underneath the cursor.
+ */
+async function watchTheTable() {
+  await live.start();
+
+  live.subscribe(['characters', 'table'], async ({ changes, gap }) => {
+    const mine = getState().characterId;
+    const touchedMe = gap || changes.some(
+      (c) => c.kind === 'characters' && c.id === mine,
+    );
+    const tableChanged = gap || changes.some((c) => c.kind === 'table');
+
+    // The roster changes when anybody's character does.
+    setState({ characters: await db.list('characters') });
+
+    if (tableChanged) {
+      await session.refresh();
+      renderNav();
+    }
+
+    if (touchedMe && mine) {
+      const fresh = await db.get('characters', mine);
+      if (fresh) {
+        setState({ character: fresh });
+        recompute();
+        await renderMode();
+      }
+    }
+    renderWho();
+  });
+}
 
 /* ------------------------------------------------------------------ */
 /* sandbox - a session that keeps nothing                              */
@@ -476,9 +528,15 @@ async function boot() {
   else if (characters.length) await selectCharacter(characters[0].id);
 
   setState({ mode });
+  // Who am I at this table? With none open the answer is "the only person
+  // here", which is what solo play already assumed.
+  await session.refresh();
+
   renderNav();
   renderWho();
   await renderMode();
+
+  watchTheTable();
 
   // Register the service worker last so a failure here never blocks boot.
   // file:// and the extension's own origin do not support it; that is fine,

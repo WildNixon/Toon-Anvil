@@ -122,9 +122,10 @@ async function buildCtx() {
     // the whole question here is what the SERVER refuses.
     table: (() => {
       const base = () => location.origin;
-      const call = async (path, opts = {}, token = undefined) => {
+      const call = async (path, opts = {}, token = undefined, client = undefined) => {
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['X-Toon-Token'] = token;
+        if (client) headers['X-Toon-Client'] = client;
         const res = await fetch(base() + path, { headers, ...opts });
         let body = {};
         try { body = await res.json(); } catch { /* no body */ }
@@ -140,11 +141,31 @@ async function buildCtx() {
         leave: (token) => call('/api/table/leave', { method: 'POST' }, token),
         claim: (characterId, token) => call('/api/table/claim',
           { method: 'POST', body: JSON.stringify({ characterId }) }, token),
-        put: (kind, id, record, token) => call(`/api/${kind}/${id}`,
-          { method: 'PUT', body: JSON.stringify(record) }, token),
+        put: (kind, id, record, token, client) => call(`/api/${kind}/${id}`,
+          { method: 'PUT', body: JSON.stringify(record) }, token, client),
         del: (kind, id, token) => call(`/api/${kind}/${id}`,
           { method: 'DELETE' }, token),
         get: async (kind, id, token) => (await call(`/api/${kind}/${id}`, {}, token)).body,
+        changes: (since = 0) => call(`/api/changes?since=${since}`),
+        // Hold a real EventSource open and collect what arrives. Testing the
+        // stream any other way tests the poller instead.
+        stream: (since = 0, ms = 2500) => new Promise((resolve) => {
+          const got = [];
+          let src;
+          try { src = new EventSource(`${base()}/api/stream?since=${since}`); }
+          catch (err) { resolve({ error: String(err), messages: got }); return; }
+          const done = (error = null) => {
+            try { src.close(); } catch { /* already closed */ }
+            resolve({ error, messages: got });
+          };
+          src.onmessage = (ev) => {
+            try { got.push(JSON.parse(ev.data)); } catch { /* heartbeat */ }
+          };
+          // An error AFTER the first message is the server closing on purpose;
+          // only a failure to connect at all counts against the stream.
+          src.onerror = () => { if (!got.length) done('stream never opened'); };
+          setTimeout(() => done(), ms);
+        }),
       };
     })(),
     hb: {
