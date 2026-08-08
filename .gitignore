@@ -16,6 +16,10 @@ data/campaigns/
 data/npcs/
 data/shops/
 data/events.jsonl
+# Who is at the table, and every join token. Ending a session deletes it;
+# it must never reach a commit.
+data/table.json
+data/_table_test.json
 data/events-*.jsonl
 
 # --- the user's own homebrew: theirs, not ours to publish -------------------

@@ -23,7 +23,7 @@
  * can be rebuilt at any time without taking somebody's homebrew with it.
  */
 export const KINDS = ['characters', 'campaigns', 'homebrew', 'npcs', 'shops',
-  'custom-monsters', 'custom-items', 'custom-spells'];
+  'custom-monsters', 'custom-items', 'custom-spells', 'profiles'];
 
 /** Which compendium each custom store extends. */
 export const CUSTOM_KINDS = {
@@ -177,11 +177,43 @@ class ServerAdapter {
     this.label = this.base;
   }
 
+  /**
+   * The table token, read straight from localStorage.
+   *
+   * session.js owns this key, but importing it here would be circular - it
+   * needs serverBase() from this file. One string constant is a smaller price
+   * than a dependency cycle, and it is asserted in the gym so the two cannot
+   * drift apart.
+   */
+  static get TOKEN_KEY() { return 'toonanvil.token'; }
+
+  #token() {
+    try { return localStorage.getItem(ServerAdapter.TOKEN_KEY) || null; }
+    catch { return null; }
+  }
+
   async #json(path, opts) {
+    const token = this.#token();
     const res = await fetch(this.base + path, {
-      headers: { 'Content-Type': 'application/json' }, ...opts,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'X-Toon-Token': token } : {}),
+      },
+      ...opts,
     });
-    if (!res.ok) throw new Error(`${opts?.method || 'GET'} ${path} -> ${res.status}`);
+    if (!res.ok) {
+      // A refusal from the table carries a reason worth showing: "that is
+      // somebody else's character" is far more use than "PUT -> 403".
+      let detail = '';
+      try {
+        const body = await res.json();
+        if (body?.error) detail = ` - ${body.error}`;
+      } catch { /* not json */ }
+      const err = new Error(`${opts?.method || 'GET'} ${path} -> ${res.status}${detail}`);
+      err.status = res.status;
+      err.refused = res.status === 401 || res.status === 403;
+      throw err;
+    }
     return res.json();
   }
 

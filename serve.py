@@ -37,7 +37,10 @@ KINDS = {"characters", "campaigns", "homebrew", "npcs", "shops",
          # Content ingested from a dropped PDF or written by hand. Kept apart
          # from app/data/compendium so the bundled SRD can be rebuilt without
          # taking somebody's homebrew with it.
-         "custom-monsters", "custom-items", "custom-spells"}
+         "custom-monsters", "custom-items", "custom-spells",
+         # Who is at the table. Written by tools/table.py on join; stored
+         # here too so a DM can rename or recolour a player.
+         "profiles"}
 EVENT_LOG = DATA / "events.jsonl"
 MAX_LOG_BYTES = 100 * 1024 * 1024
 
@@ -193,7 +196,8 @@ class Handler(SimpleHTTPRequestHandler):
         # The extension runs on chrome-extension://<id>; let it talk to us.
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers",
+                 "Content-Type,Authorization,X-Toon-Token")
 
     def _send_json(self, payload, status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -203,6 +207,66 @@ class Handler(SimpleHTTPRequestHandler):
         self._cors()
         self.end_headers()
         self.wfile.write(body)
+
+    # ---- table identity -------------------------------------------------
+    #
+    # With NO TABLE OPEN none of this runs: single-player must not grow a
+    # login. The moment a DM opens a table, every mutating route is checked
+    # here - a player's browser can ask for anything, so hiding a button in
+    # the UI proves nothing.
+    def _table(self):
+        try:
+            sys.path.insert(0, str(ROOT / "tools"))
+            import table as table_mod                      # noqa: PLC0415
+            return table_mod
+        except Exception:                                  # noqa: BLE001
+            return None
+
+    def _is_local(self) -> bool:
+        """Is this request from the machine running the server?
+
+        Opening a table is a DM action taken at their own keyboard. Allowing it
+        over the network would let a player rotate the code and shut the DM
+        out of their own game.
+        """
+        host = (self.client_address[0] if self.client_address else "")
+        return host in ("127.0.0.1", "::1", "localhost")
+
+    def _token(self) -> str | None:
+        auth = self.headers.get("Authorization") or ""
+        if auth.lower().startswith("bearer "):
+            return auth[7:].strip() or None
+        return self.headers.get("X-Toon-Token") or None
+
+    def _guard_write(self, kind: str, rid: str):
+        """(allowed, response_tuple_or_None). Open door when no table.
+
+        Loads the record from DISK to decide ownership. It must never be taken
+        from the request body: that is attacker-controlled, and reading it from
+        there let a player overwrite anybody's character just by omitting the
+        ownerId field.
+        """
+        mod = self._table()
+        if mod is None:
+            return True, None
+        if not mod.read().get("open"):
+            return True, None                              # solo: unchanged
+
+        path = kind_dir(kind) / f"{rid}.json"
+        exists = path.exists()
+        stored = None
+        if exists:
+            try:
+                stored = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                stored = None
+
+        who = mod.whoami(self._token())
+        ok, why = mod.may_write(who, kind, rid, stored, exists)
+        if ok:
+            return True, None
+        return False, ({"error": why, "needsJoin": who is None},
+                       401 if who is None else 403)
 
     def _read_json(self):
         try:
@@ -261,6 +325,11 @@ class Handler(SimpleHTTPRequestHandler):
         if payload is None:
             return self._send_json({"error": "bad json body"}, 400)
         payload.setdefault("id", rid)
+
+        allowed, refusal = self._guard_write(parts[1], rid)
+        if not allowed:
+            return self._send_json(*refusal)
+
         payload["updatedAt"] = now_iso()
         path = kind_dir(parts[1]) / f"{rid}.json"
         with _write_lock:
@@ -347,6 +416,50 @@ class Handler(SimpleHTTPRequestHandler):
                     encoding="utf-8",
                 )
             return self._send_json({"ok": True, "file": path.name, "version": version})
+
+        # ---- the table -------------------------------------------------
+        if parsed.path.startswith("/api/table/"):
+            mod = self._table()
+            if mod is None:
+                return self._send_json({"error": "table support unavailable"}, 503)
+            payload = self._read_json() or {}
+            action = parsed.path.rsplit("/", 1)[-1]
+
+            if action == "open":
+                # Only from the machine running the server. A player who could
+                # open a table could rotate the code and lock the DM out.
+                if not self._is_local():
+                    return self._send_json(
+                        {"error": "only the DM's own machine can open a table"}, 403)
+                return self._send_json(mod.open_table(payload.get("name") or "DM"))
+
+            if action == "close":
+                who = mod.whoami(self._token())
+                if not self._is_local() and (not who or who.get("role") != "dm"):
+                    return self._send_json({"error": "only the DM can close the table"}, 403)
+                return self._send_json(mod.close_table())
+
+            if action == "join":
+                out = mod.join(payload.get("code") or "",
+                               payload.get("name") or "Player",
+                               payload.get("profileId"))
+                return self._send_json(out, 200 if out.get("ok") else 403)
+
+            if action == "leave":
+                return self._send_json(mod.revoke(self._token() or ""))
+
+            if action == "claim":
+                # Bind a character to the profile behind this token.
+                who = mod.whoami(self._token())
+                if not who:
+                    return self._send_json({"error": "join first"}, 401)
+                target = payload.get("profileId") if who["role"] == "dm" else who["id"]
+                cid = safe_id(str(payload.get("characterId") or ""))
+                if not cid:
+                    return self._send_json({"error": "bad character id"}, 400)
+                return self._send_json(mod.set_owner(target or who["id"], cid))
+
+            return self._send_json({"error": "unknown table action"}, 404)
 
         # ---- optional connectors ---------------------------------------
         #
@@ -455,6 +568,13 @@ class Handler(SimpleHTTPRequestHandler):
         if not rid:
             return self._send_json({"error": "bad id"}, 400)
         path = kind_dir(parts[1]) / f"{rid}.json"
+
+        # A delete needs the same check as a write - removing somebody's
+        # character is the most destructive thing a player could do.
+        allowed, refusal = self._guard_write(parts[1], rid)
+        if not allowed:
+            return self._send_json(*refusal)
+
         if path.exists():
             path.unlink()
             return self._send_json({"ok": True, "deleted": rid})
@@ -577,6 +697,17 @@ class Handler(SimpleHTTPRequestHandler):
                     + [{**f, "origin": "corpus"} for f in corpus_files]
                 ),
             })
+
+        if parts == ["api", "table"]:
+            mod = self._table()
+            if mod is None:
+                return self._send_json({"open": False, "me": None, "profiles": []})
+            out = mod.status(self._token())
+            # The code goes only to the machine running the server, so the DM
+            # can read it off their own screen and say it aloud.
+            if out["open"] and self._is_local():
+                out["code"] = mod.read().get("code")
+            return self._send_json(out)
 
         if parts == ["api", "providers"]:
             # Reports only WHETHER each connector is configured - never a key's

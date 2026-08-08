@@ -152,12 +152,31 @@ def free_port(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) != 0
 
 
+def _lan_ip() -> str:
+    """This machine's address on the local network.
+
+    Connecting a UDP socket sends nothing; it just asks the routing table which
+    interface would be used, which is the only reliable way to get the address
+    a player should type.
+    """
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:                                      # noqa: BLE001
+        return "your-ip-address"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Start Toon Anvil")
     ap.add_argument("--port", type=int, default=7801)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--check", action="store_true", help="run checks and exit")
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--lan", action="store_true",
+                    help="let other devices on your network join this table")
     args = ap.parse_args()
 
     width = shutil.get_terminal_size((70, 20)).columns
@@ -201,7 +220,7 @@ def main() -> int:
     if not args.no_browser:
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
 
-    sys.argv = [sys.argv[0], "--port", str(port), "--host", args.host]
+    sys.argv = [sys.argv[0], "--port", str(port), "--host", host]
     import serve                                               # noqa: PLC0415
     return serve.main()
 

@@ -194,6 +194,42 @@ request.
 The cheapest thing to add is a local model: install Ollama, pull a model, and
 the writing assistant works with no key and no cost.
 
+## Playing together on one network
+
+Stage one of multiplayer is in: profiles, a join code, and permissions the
+**server** enforces.
+
+```bash
+python run.py --lan
+```
+
+That is the only command that makes Toon Anvil reachable by other machines —
+without it nothing changes. It prints the address players type and the warning
+below.
+
+Open the DM screen, start a table, and read out the code (`ANVIL-K7WU`).
+Players open the address, enter the code, and pick a name. Their browser keeps
+a token; a reload does not ask again. Ending the table revokes every token at
+once.
+
+| | DM | Player |
+|---|---|---|
+| Their own character | edit | edit |
+| Another player's character | edit | read |
+| Homebrew, custom content, campaign | edit | read |
+
+**Solo play is untouched.** With no table open nothing asks who you are — the
+permission checks only run once a table exists.
+
+**What a join code is and is not.** It stops somebody on the same wifi
+wandering into your game by accident. It is **not authentication**: nothing is
+encrypted, and anyone determined who is already on your network can get past
+it. Use this on a network you trust — your home, not cafe or hotel wifi. The
+app says the same thing where you turn it on rather than burying it here.
+
+Enforcement is server-side without exception, because a player's browser can
+ask for anything and a hidden button proves nothing.
+
 ## Try things without saving them
 
 Press **Try a sandbox** in the top bar. The whole app runs against an in-memory

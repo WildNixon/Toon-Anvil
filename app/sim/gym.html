@@ -86,6 +86,7 @@ import * as dmLoot from '../modes/dm/loot.js';
 import * as dmGen from '../modes/dm/generators.js';
 import * as parseContent from '../homebrew/parse-content.js';
 import * as providers from '../core/providers.js';
+import * as session from '../core/session.js';
 
 const $ = (s) => document.querySelector(s);
 const log = (m) => { $('#log').textContent += `${m}\n`;
@@ -115,6 +116,37 @@ async function buildCtx() {
     dm: { runner: dmRunner, party: dmParty, loot: dmLoot, gen: dmGen },
     content: { ...parseContent, compendiumWithCustom },
     providers,
+    session,
+    dbTokenKey: 'toonanvil.token',
+    // Raw HTTP on purpose. Going through ServerAdapter would test the client;
+    // the whole question here is what the SERVER refuses.
+    table: (() => {
+      const base = () => location.origin;
+      const call = async (path, opts = {}, token = undefined) => {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['X-Toon-Token'] = token;
+        const res = await fetch(base() + path, { headers, ...opts });
+        let body = {};
+        try { body = await res.json(); } catch { /* no body */ }
+        return { status: res.status, body, ...body };
+      };
+      return {
+        status: () => call('/api/table'),
+        open: (name) => call('/api/table/open',
+          { method: 'POST', body: JSON.stringify({ name }) }),
+        close: () => call('/api/table/close', { method: 'POST' }),
+        join: (code, name) => call('/api/table/join',
+          { method: 'POST', body: JSON.stringify({ code, name }) }),
+        leave: (token) => call('/api/table/leave', { method: 'POST' }, token),
+        claim: (characterId, token) => call('/api/table/claim',
+          { method: 'POST', body: JSON.stringify({ characterId }) }, token),
+        put: (kind, id, record, token) => call(`/api/${kind}/${id}`,
+          { method: 'PUT', body: JSON.stringify(record) }, token),
+        del: (kind, id, token) => call(`/api/${kind}/${id}`,
+          { method: 'DELETE' }, token),
+        get: async (kind, id, token) => (await call(`/api/${kind}/${id}`, {}, token)).body,
+      };
+    })(),
     hb: {
       parse: adapters.parse,
       detect: adapters.detect,

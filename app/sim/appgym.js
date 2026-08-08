@@ -1524,6 +1524,176 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- the table -------------------------------------- */
+  {
+    id: 'table',
+    title: 'Profiles and permissions',
+    why: 'A player\'s browser can ask the server for anything. Hiding a button '
+       + 'proves nothing, so these tests go over HTTP and check that the '
+       + 'SERVER refuses - which is the only place a refusal counts.',
+    scenarios: [
+      {
+        id: 'solo_needs_no_login',
+        title: 'With no table open, nothing asks who you are',
+        async run(c, { table }) {
+          c.feature('table', 'permissions');
+          await table.close();
+          const status = await table.status();
+          c.ok(!status.open, 'no table is open to begin with');
+
+          const wrote = await table.put('characters', 'gym-solo',
+            { name: 'Solo', classes: [] }, null);
+          c.eq(wrote.status, 200, 'a write with no token succeeds',
+            JSON.stringify(wrote.body).slice(0, 120));
+          await table.del('characters', 'gym-solo', null);
+        },
+      },
+      {
+        id: 'join_flow',
+        title: 'A wrong code is refused and a right one admits',
+        async run(c, { table }) {
+          c.feature('table', 'join');
+          const opened = await table.open('Gym DM');
+          c.ok(opened.ok && opened.code, 'the DM gets a code', opened.code);
+          c.ok(/^ANVIL-[A-Z0-9]{4}$/.test(opened.code || ''),
+            'the code is short and readable aloud', opened.code);
+          c.ok(!!opened.token, 'and a token of their own');
+
+          const wrong = await table.join('ANVIL-ZZZZ', 'Nobody');
+          c.ok(!wrong.ok, 'a wrong code is refused');
+          c.ok(!wrong.token, 'and hands out no token');
+
+          // People retype these, so the obvious variants must work.
+          for (const variant of [opened.code.toLowerCase(),
+            opened.code.replace('-', ' '), opened.code.split('-')[1]]) {
+            // eslint-disable-next-line no-await-in-loop
+            const r = await table.join(variant, 'Kim');
+            c.ok(r.ok, `"${variant}" is accepted`);
+          }
+          await table.close();
+        },
+      },
+      {
+        id: 'server_refuses_the_wrong_writer',
+        title: 'A player cannot write another player\'s character',
+        async run(c, { table }) {
+          c.feature('table', 'permissions', 'security');
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          c.ok(kim.ok, 'the player joined');
+          if (!kim.ok) return;
+
+          // Kim makes and claims her own.
+          await table.put('characters', 'gym-kim',
+            { name: 'Kim', ownerId: kim.profile.id, classes: [] }, kim.token);
+          await table.claim('gym-kim', kim.token);
+          // The DM makes one owned by somebody else.
+          await table.put('characters', 'gym-theirs',
+            { name: 'Theirs', ownerId: 'p-someone', classes: [] }, dm.token);
+
+          const own = await table.put('characters', 'gym-kim',
+            { name: 'Kim v2' }, kim.token);
+          c.eq(own.status, 200, 'a player may write their own character');
+
+          // The vulnerability this test was written for: an earlier version
+          // read ownerId out of the REQUEST, so omitting it made any record
+          // look unclaimed and a player could overwrite anybody.
+          const stripped = await table.put('characters', 'gym-theirs',
+            { name: 'Hijacked' }, kim.token);
+          c.eq(stripped.status, 403,
+            'omitting ownerId does not make another character writable');
+
+          const spoofed = await table.put('characters', 'gym-theirs',
+            { name: 'Hijacked', ownerId: kim.profile.id }, kim.token);
+          c.eq(spoofed.status, 403,
+            'nor does claiming ownership in the request body');
+
+          const deleted = await table.del('characters', 'gym-theirs', kim.token);
+          c.eq(deleted.status, 403, 'nor can a player delete it');
+
+          // And prove it on disk, not just in the status code.
+          const after = await table.get('characters', 'gym-theirs', dm.token);
+          c.eq(after?.name, 'Theirs', 'the record is untouched');
+
+          await table.del('characters', 'gym-kim', dm.token);
+          await table.del('characters', 'gym-theirs', dm.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'shared_content_is_dm_only',
+        title: 'Players cannot change the shared world',
+        async run(c, { table }) {
+          c.feature('table', 'permissions');
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          for (const kind of ['homebrew', 'custom-monsters', 'custom-items',
+            'custom-spells', 'npcs', 'shops', 'campaigns']) {
+            // eslint-disable-next-line no-await-in-loop
+            const r = await table.put(kind, 'gym-shared', { name: 'Mine' }, kim.token);
+            c.eq(r.status, 403, `a player cannot write ${kind}`);
+            // eslint-disable-next-line no-await-in-loop
+            const d = await table.put(kind, 'gym-shared', { name: 'DM' }, dm.token);
+            c.eq(d.status, 200, `but the DM can`);
+            // eslint-disable-next-line no-await-in-loop
+            await table.del(kind, 'gym-shared', dm.token);
+          }
+          await table.close();
+        },
+      },
+      {
+        id: 'no_token_no_write',
+        title: 'With a table open, an unjoined browser cannot write',
+        async run(c, { table }) {
+          c.feature('table', 'permissions', 'security');
+          const dm = await table.open('Gym DM');
+          const anon = await table.put('characters', 'gym-anon',
+            { name: 'Anon' }, null);
+          c.eq(anon.status, 401, 'no token is refused');
+          c.ok(/join code/i.test(anon.body?.error || ''),
+            'and told how to get in', anon.body?.error);
+
+          // A revoked token is as good as none.
+          const kim = await table.join(dm.code, 'Kim');
+          await table.leave(kim.token);
+          const revoked = await table.put('characters', 'gym-anon',
+            { name: 'Anon' }, kim.token);
+          c.eq(revoked.status, 401, 'a revoked token stops working');
+
+          await table.close();
+          const afterClose = await table.put('characters', 'gym-anon',
+            { name: 'Solo again' }, null);
+          c.eq(afterClose.status, 200,
+            'closing the table returns the app to solo, with no login');
+          await table.del('characters', 'gym-anon', null);
+        },
+      },
+      {
+        id: 'token_key_agrees',
+        title: 'The storage layer and the session agree on the token key',
+        async run(c, { session, dbTokenKey }) {
+          c.feature('table');
+          // db.js reads the token straight from localStorage to avoid an
+          // import cycle with session.js. That duplication is only safe if
+          // the two names cannot drift apart.
+          c.eq(dbTokenKey, 'toonanvil.token',
+            'the storage adapter reads the agreed key');
+          const before = localStorage.getItem('toonanvil.token');
+          try {
+            localStorage.setItem('toonanvil.token', 'gym-probe');
+            c.eq(session.token(), 'gym-probe',
+              'and the session module reads the same one');
+          } finally {
+            if (before === null) localStorage.removeItem('toonanvil.token');
+            else localStorage.setItem('toonanvil.token', before);
+          }
+        },
+      },
+    ],
+  },
+
   /* ---------------- cross-engine agreement ------------------------- */
   {
     id: 'agreement',
