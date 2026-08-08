@@ -1,5 +1,22 @@
 # Attribution & licensing
 
+**[LICENSE](LICENSE) (MIT) covers the Toon Anvil SOURCE CODE only.** The game
+content and typefaces bundled with it are separately licensed, and this file is
+the authoritative statement of what is covered by what:
+
+| What | Where | Licence |
+|---|---|---|
+| Source code | everything except the rows below | MIT |
+| Rules content | `app/data/compendium/` | CC-BY-4.0 (SRD 5.2.1) |
+| Typefaces | `app/data/fonts/` | SIL Open Font License 1.1 |
+| Comparison index | `library/_vectors.json` | measurements only — see below |
+
+Homebrew you create or import remains yours. Toon Anvil stores it locally and
+transmits it nowhere.
+
+*Dungeons & Dragons* and *D&D* are trademarks of Wizards of the Coast LLC. Toon
+Anvil is unaffiliated with and unendorsed by Wizards of the Coast.
+
 ## SRD 5.2.1 content
 
 Toon Anvil bundles rules content from the **System Reference Document 5.2.1**.
