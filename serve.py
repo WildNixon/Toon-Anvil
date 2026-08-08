@@ -344,6 +344,19 @@ class Handler(SimpleHTTPRequestHandler):
                 )
             return self._send_json({"ok": True, "file": path.name, "version": version})
 
+        if parsed.path == "/api/appgym":
+            payload = self._read_json()
+            if payload is None:
+                return self._send_json({"error": "bad json body"}, 400)
+            payload["at"] = now_iso()
+            DATA.mkdir(parents=True, exist_ok=True)
+            with _write_lock:
+                # Append-only. A regression must remain in the record; the
+                # point of the history is that it can get worse.
+                with (DATA / "appgym.jsonl").open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            return self._send_json({"ok": True, "at": payload["at"]})
+
         if parsed.path == "/api/sim":
             payload = self._read_json()
             if payload is None:
@@ -486,6 +499,23 @@ class Handler(SimpleHTTPRequestHandler):
                     + [{**f, "origin": "corpus"} for f in corpus_files]
                 ),
             })
+
+        if parts == ["api", "appgym"]:
+            # Graded runs of the application gym, newest last. Append-only so
+            # the loop can be graphed over time; a run that regressed must stay
+            # visible rather than being overwritten by the next green one.
+            gp = DATA / "appgym.jsonl"
+            if not gp.exists():
+                return self._send_json([])
+            rows = []
+            for line in gp.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+            return self._send_json(rows[-200:])
 
         if parts == ["api", "vectors"]:
             vp = LIBRARY / "_vectors.json"

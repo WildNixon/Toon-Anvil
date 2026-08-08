@@ -293,7 +293,13 @@ export function openThreads(events) {
       payload: n,
     }));
 
-  return [...threads, ...dangling].sort((a, b) => a.since.localeCompare(b.since));
+  // Sort defensively. `since` comes from an event's timestamp, and the event
+  // log is JSON Lines on disk that a person can edit, hand-merge or carry over
+  // from an older schema. One row without a ts must not take the whole
+  // Chronicle tab down with a TypeError - an undated thread sorts first and
+  // stays visible, which is far better than showing nothing at all.
+  return [...threads, ...dangling]
+    .sort((a, b) => String(a.since || '').localeCompare(String(b.since || '')));
 }
 
 /** Headline counts for a set of events - used by the Chronicle and the export. */

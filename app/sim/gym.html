@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Toon Anvil — application gym</title>
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../ui/design.css">
+<style>
+  body { padding: 0 0 80px; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 22px; }
+  .bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+          gap: 10px; margin: 16px 0; }
+  .bar { background: var(--plate, #c0c6c4); padding: 12px; border-radius: 2px;
+         border-top: 4px solid var(--iron, #1c2124); }
+  .bar .k { font-family: var(--mono, monospace); font-size: 10px; letter-spacing: .14em;
+            text-transform: uppercase; color: var(--slag, #3a4247); }
+  .bar .v { font-family: var(--display, sans-serif); font-size: 26px; line-height: 1.1; }
+  .bar.ok .v { color: #2f6b62; } .bar.bad .v { color: #a3301a; }
+  .suite { margin: 22px 0; }
+  .sc { display: flex; gap: 10px; align-items: baseline; padding: 5px 0;
+        border-bottom: 1px solid rgba(28,33,36,.14); font-size: 14px; }
+  .sc .tag { font-family: var(--mono, monospace); font-size: 10px; font-weight: 700;
+             padding: 2px 7px; border-radius: 2px; letter-spacing: .1em; }
+  .sc.ok .tag { background: #2f6b62; color: #fff; }
+  .sc.bad .tag { background: #a3301a; color: #fff; }
+  .sc.err .tag { background: #9a6a12; color: #fff; }
+  .sc .n { font-family: var(--mono, monospace); font-size: 11px; color: var(--slag,#3a4247); }
+  .fail { font-family: var(--mono, monospace); font-size: 12px; color: #a3301a;
+          margin: 3px 0 6px 76px; }
+  .why { font-size: 14px; color: var(--slag, #3a4247); max-width: 68ch; margin: 0 0 10px; }
+  canvas { background: #fff; border-radius: 2px; max-width: 100%; }
+  .feat { display: inline-block; font-family: var(--mono, monospace); font-size: 10px;
+          padding: 2px 7px; margin: 2px; border-radius: 999px;
+          background: rgba(28,33,36,.12); }
+  #log { font-family: var(--mono, monospace); font-size: 12px; white-space: pre-wrap;
+         max-height: 180px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header style="padding:36px 0 12px">
+    <div class="eyebrow">Toon Anvil</div>
+    <h1 style="font-family:var(--display,sans-serif);font-size:clamp(30px,7vw,52px);
+               text-transform:uppercase;margin:6px 0">Application gym</h1>
+    <p class="why">
+      Graded integration testing for the app itself. The campaign emulator asks
+      whether a subclass is balanced; this asks whether the features work and
+      whether they work <em>together</em>. Bars are pre-registered, coverage is
+      measured rather than assumed, and a scenario that asserts nothing is
+      counted as a failure rather than a pass.
+    </p>
+    <div class="btnrow">
+      <button id="run" class="act">Run the gym</button>
+      <button id="runui" class="act ghost">Include UI tier</button>
+      <button id="pub" class="act ghost">Publish result</button>
+    </div>
+    <div id="log" style="margin-top:12px"></div>
+  </header>
+
+  <div id="bars" class="bars"></div>
+  <div id="charts"></div>
+  <div id="out"></div>
+  <div id="features" style="margin:24px 0"></div>
+</div>
+
+<script type="module">
+import { runLogic, grade, publishRun, loadHistory, BARS } from './appgym.js';
+import { initDb, MemoryAdapter, db, KINDS, compendia, dataFile } from '../core/db.js';
+import * as engine from '../core/engine.js';
+import * as events from '../core/events.js';
+import * as adapters from '../homebrew/adapters.js';
+import * as mapping from '../homebrew/mapping.js';
+import * as sheet from '../homebrew/sheet.js';
+import { emitHtml } from '../homebrew/emit-html.js';
+import * as exec from './executable.js';
+import * as enc from './encounter.js';
+import * as sim from './campaign.js';
+
+const $ = (s) => document.querySelector(s);
+const log = (m) => { $('#log').textContent += `${m}\n`;
+                     $('#log').scrollTop = 1e6; };
+
+let lastRun = null;
+
+/** Build the context the suites run against. Memory-backed, never the real DB. */
+async function buildCtx() {
+  log('initialising memory store…');
+  await initDb({ inject: new MemoryAdapter() });
+  log('loading compendium…');
+  const c = await compendia('classes', 'species', 'backgrounds', 'feats',
+                            'spells', 'monsters', 'equipment');
+  const srdEffects = await dataFile('srd-effects.json', {});
+  const mechFile = await dataFile('spell-mechanics.json', { mechanics: {} });
+  const sources = {
+    classes: c.classes, species: c.species, backgrounds: c.backgrounds,
+    feats: c.feats, equipment: c.equipment, srdEffects, homebrew: [],
+  };
+  return {
+    sources, db, KINDS, engine, events, exec, sim, enc,
+    monsters: c.monsters, spells: c.spells, equipment: c.equipment,
+    mechanics: mechFile.mechanics,
+    hb: {
+      parse: adapters.parse,
+      detect: adapters.detect,
+      suggest: mapping.suggestAll,
+      accept: mapping.acceptSuggestions,
+      stats: mapping.mappingStats,
+      sheetData: sheet.sheetData,
+      sheetJson: sheet.sheetJson,
+      sheetHtml: sheet.sheetHtml,
+      emitHtml,
+    },
+  };
+}
+
+/**
+ * UI tier: load the real app in an iframe and drive each mode.
+ *
+ * Deliberately shallow. It exists to catch a mode whose wiring broke while its
+ * logic still passes - the one failure the logic tier structurally cannot see.
+ */
+async function runUi() {
+  const MODES = ['Build','Play','Combat','Shop','Roleplay','Chronicle','DM','Homebrew'];
+  const frame = document.createElement('iframe');
+  frame.src = '/index.html';
+  frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;height:900px;border:0';
+  document.body.append(frame);
+  await new Promise((r) => { frame.onload = r; setTimeout(r, 12000); });
+  await new Promise((r) => setTimeout(r, 2500));
+
+  const doc = frame.contentDocument;
+  const win = frame.contentWindow;
+  const errors = [];
+  win.addEventListener('error', (e) => errors.push(e.message));
+
+  const out = [];
+  for (const mode of MODES) {
+    const btn = [...doc.querySelectorAll('button')]
+      .find((b) => b.textContent.trim() === mode);
+    if (!btn) { out.push({ mode, ok: false, reason: 'nav button missing' }); continue; }
+    const before = errors.length;
+    btn.click();
+    await new Promise((r) => setTimeout(r, 1100));
+    const main = doc.querySelector('main');
+    const chars = (main?.textContent || '').trim().length;
+    const controls = main ? main.querySelectorAll('button,input,select,textarea').length : 0;
+    out.push({
+      mode,
+      chars, controls,
+      threwOnRender: errors.length > before,
+      // A mode is "rendering" if it produced real content AND something to
+      // interact with. Text alone can be a stuck loading message.
+      ok: chars > 60 && controls > 0 && errors.length === before,
+    });
+    log(`  ui ${mode}: ${chars} chars, ${controls} controls`);
+  }
+  frame.remove();
+  return out;
+}
+
+function drawBars(g) {
+  $('#bars').innerHTML = g.bars.map((b) => {
+    const pct = b.id === 'featuresCovered' || b.id === 'noThinScenarios';
+    const val = pct ? `${b.value}/${b.bar}` : `${(b.value * 100).toFixed(0)}%`;
+    return `<div class="bar ${b.ok ? 'ok' : 'bad'}">
+      <div class="k">${b.id.replace(/([A-Z])/g, ' $1')}</div>
+      <div class="v">${val}</div></div>`;
+  }).join('');
+}
+
+function drawSuites(suites) {
+  $('#out').innerHTML = suites.map((s) => `
+    <section class="suite">
+      <h2 style="font-family:var(--display,sans-serif);text-transform:uppercase;
+                 font-size:22px;margin:0 0 4px">${s.title}
+        <span class="n" style="font-size:12px">${s.passed}/${s.total} scenarios ·
+          ${s.checksPassed}/${s.checks} checks</span></h2>
+      <p class="why">${s.why}</p>
+      ${s.scenarios.map((sc) => `
+        <div class="sc ${sc.error ? 'err' : sc.ok ? 'ok' : 'bad'}">
+          <span class="tag">${sc.error ? 'ERROR' : sc.ok ? 'PASS' : 'FAIL'}</span>
+          <span style="flex:1">${sc.title}</span>
+          <span class="n">${sc.passed}/${sc.total} · ${sc.ms}ms</span>
+        </div>
+        ${sc.error ? `<div class="fail">${sc.error}</div>` : ''}
+        ${sc.empty ? '<div class="fail">asserted nothing - counted as a failure</div>' : ''}
+        ${sc.failures.map((f) => `<div class="fail">✗ ${f.label}${
+          f.detail ? ` — ${f.detail}` : ''}</div>`).join('')}
+      `).join('')}
+    </section>`).join('');
+}
+
+/** Checks-passed per suite, and pass rate over past runs. */
+function drawCharts(suites, history) {
+  const host = $('#charts');
+  host.innerHTML = '<h2 style="font-family:var(--display,sans-serif);'
+    + 'text-transform:uppercase;font-size:22px;margin:18px 0 8px">Graph</h2>';
+
+  // --- per-suite pass RATE, not raw check count.
+  //
+  // Plotting raw counts made this chart useless: the spells suite resolves
+  // every executable spell, so its 600-odd checks flattened every other suite
+  // into an invisible sliver. Rate is bounded 0-1 and therefore comparable
+  // across suites; the raw counts stay as labels, where they belong.
+  const c1 = document.createElement('canvas');
+  c1.width = 1000; c1.height = 300; host.append(c1);
+  const g = c1.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c1.width, c1.height);
+  const pad = 46;
+  const bw = (c1.width - pad * 2) / suites.length;
+  const plotH = c1.height - 100;
+  // The 100% line, so a shortfall is visible rather than merely inferable.
+  g.strokeStyle = '#1c2124'; g.setLineDash([4, 4]); g.beginPath();
+  g.moveTo(pad, c1.height - 50 - plotH); g.lineTo(c1.width - pad, c1.height - 50 - plotH);
+  g.stroke(); g.setLineDash([]);
+  suites.forEach((s, i) => {
+    const rate = s.checks ? s.checksPassed / s.checks : 0;
+    const h = rate * plotH;
+    const x = pad + i * bw + 6;
+    g.fillStyle = '#e4e7e5';
+    g.fillRect(x, c1.height - 50 - plotH, bw - 12, plotH);
+    g.fillStyle = rate === 1 ? '#2f6b62' : '#a3301a';
+    g.fillRect(x, c1.height - 50 - h, bw - 12, h);
+    g.fillStyle = '#1c2124'; g.font = '10px monospace'; g.textAlign = 'center';
+    g.fillText(s.id, x + (bw - 12) / 2, c1.height - 34);
+    g.fillText(`${s.checksPassed}/${s.checks}`, x + (bw - 12) / 2, c1.height - 22);
+  });
+  g.fillStyle = '#3a4247'; g.textAlign = 'left'; g.font = '12px monospace';
+  g.fillText('check pass rate per suite (dashed = 100%; counts labelled below)', pad, 24);
+
+  // --- history
+  if (history.length > 1) {
+    const c2 = document.createElement('canvas');
+    c2.width = 1000; c2.height = 220; host.append(c2);
+    const h2 = c2.getContext('2d');
+    h2.fillStyle = '#fff'; h2.fillRect(0, 0, c2.width, c2.height);
+    const pts = history.slice(-40);
+    const step = (c2.width - pad * 2) / Math.max(1, pts.length - 1);
+    h2.strokeStyle = '#b84a16'; h2.lineWidth = 2; h2.beginPath();
+    pts.forEach((p, i) => {
+      const y = c2.height - 40 - (p.checkPassRate || 0) * (c2.height - 70);
+      const x = pad + i * step;
+      if (i === 0) h2.moveTo(x, y); else h2.lineTo(x, y);
+    });
+    h2.stroke();
+    h2.strokeStyle = '#1c2124'; h2.setLineDash([4, 4]); h2.beginPath();
+    const bar = c2.height - 40 - 1.0 * (c2.height - 70);
+    h2.moveTo(pad, bar); h2.lineTo(c2.width - pad, bar); h2.stroke();
+    h2.setLineDash([]);
+    h2.fillStyle = '#3a4247'; h2.font = '12px monospace';
+    h2.fillText(`check pass rate over ${pts.length} runs (dashed = the 100% bar)`, pad, 24);
+  }
+}
+
+async function run(withUi) {
+  $('#log').textContent = '';
+  $('#run').disabled = $('#runui').disabled = true;
+  try {
+    const ctx = await buildCtx();
+    log('running logic tier…');
+    const suites = await runLogic(ctx, {
+      onProgress: ({ suite, scenario }) => log(`  ${suite}/${scenario}`),
+    });
+    let ui = null;
+    if (withUi) { log('running UI tier…'); ui = await runUi(); }
+    const g = grade(suites, ui);
+    lastRun = { suites, ui, grade: g, bars: BARS };
+    drawBars(g);
+    drawCharts(suites, await loadHistory());
+    drawSuites(suites);
+    $('#features').innerHTML = '<h2 style="font-family:var(--display,sans-serif);'
+      + 'text-transform:uppercase;font-size:18px">Features exercised ('
+      + `${g.features.length})</h2>`
+      + g.features.map((f) => `<span class="feat">${f}</span>`).join('');
+    if (ui) {
+      $('#features').innerHTML += '<h2 style="font-family:var(--display,sans-serif);'
+        + 'text-transform:uppercase;font-size:18px;margin-top:16px">UI tier</h2>'
+        + ui.map((m) => `<span class="feat" style="background:${
+          m.ok ? 'rgba(47,107,98,.2)' : 'rgba(163,48,26,.2)'}">${m.mode}: ${
+          m.ok ? 'ok' : (m.reason || 'no content')}</span>`).join('');
+    }
+    log(`\n${g.pass ? 'PASS' : 'FAIL'} — ${g.scenariosPassed}/${g.scenarios} scenarios, `
+      + `${g.checksPassed}/${g.checks} checks, ${g.features.length} features`);
+    for (const f of g.failures) log(`  ✗ ${f}`);
+    for (const e of g.errors) log(`  ! ${e}`);
+    window.__GYM = lastRun;
+  } catch (err) {
+    log(`harness error: ${err.stack || err.message}`);
+  } finally {
+    $('#run').disabled = $('#runui').disabled = false;
+  }
+}
+
+$('#run').onclick = () => run(false);
+$('#runui').onclick = () => run(true);
+$('#pub').onclick = async () => {
+  if (!lastRun) return log('run it first');
+  const g = lastRun.grade;
+  await publishRun({
+    checkPassRate: g.checks ? g.checksPassed / g.checks : 0,
+    scenarioPassRate: g.scenarios ? g.scenariosPassed / g.scenarios : 0,
+    scenarios: g.scenarios, checks: g.checks, features: g.features.length,
+    pass: g.pass, failures: g.failures, errors: g.errors,
+    suites: lastRun.suites.map((s) => ({ id: s.id, passed: s.passed,
+      total: s.total, checks: s.checks, checksPassed: s.checksPassed })),
+    ui: lastRun.ui,
+  });
+  log('published.');
+};
+</script>
+</body>
+</html>

@@ -49,6 +49,8 @@ library/_manifest.json
 # --- simulation output and generated reports -------------------------------
 data/sim/
 data/sheets/
+# Gym run history: machine-local measurements, not source.
+data/appgym.jsonl
 data/_*.txt
 
 # --- build inputs and generated copies -------------------------------------

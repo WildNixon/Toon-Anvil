@@ -249,4 +249,30 @@ python tools/grade.py       # grade a sweep
 python tools/charts.py      # render the report
 ```
 
-The emulator lives at `/sim/sim.html` when the server is running.
+Two harnesses run in the browser once the server is up:
+
+| Page | Asks |
+|---|---|
+| `/sim/sim.html` | **Is this subclass balanced?** Campaigns, ablation, auto-tune. |
+| `/sim/gym.html` | **Does the app work?** Graded integration tests across 11 suites. |
+
+### The application gym
+
+Press **Run the gym**. It exercises the real modules against a memory-backed
+store with a seeded RNG, then grades the result against bars written down
+*before* the run — currently 38 scenarios and 784 assertions across derivation,
+storage, the play loop, dice, combat, encounters, spells, the chronicle, the
+homebrew pipeline, cross-engine agreement, and integration journeys that span
+several features at once.
+
+Two rules keep it honest:
+
+- **A scenario that asserts nothing is a failure, not a pass.** That is the
+  oldest way a test suite reports green while testing nothing.
+- **The coverage bar rises when the suite grows.** A fixed bar goes green
+  forever while the ratio of tested to shipped quietly falls.
+
+**Include UI tier** additionally loads the real app in an iframe and drives all
+eight modes, which is the only way to catch a mode whose wiring broke while its
+logic still passes. **Publish result** appends to a local history so the pass
+rate can be graphed across runs.
