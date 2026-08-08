@@ -53,6 +53,7 @@
     <div class="btnrow">
       <button id="run" class="act">Run the gym</button>
       <button id="runui" class="act ghost">Include UI tier</button>
+      <button id="mut" class="act ghost">Mutation check</button>
       <button id="pub" class="act ghost">Publish result</button>
     </div>
     <div id="log" style="margin-top:12px"></div>
@@ -65,7 +66,8 @@
 </div>
 
 <script type="module">
-import { runLogic, grade, publishRun, loadHistory, BARS } from './appgym.js';
+import { runLogic, grade, publishRun, loadHistory, runMutations, BARS }
+  from './appgym.js';
 import { initDb, MemoryAdapter, db, KINDS, compendia, dataFile } from '../core/db.js';
 import * as engine from '../core/engine.js';
 import * as events from '../core/events.js';
@@ -291,6 +293,31 @@ async function run(withUi) {
     $('#run').disabled = $('#runui').disabled = false;
   }
 }
+
+$('#mut').onclick = async () => {
+  // Calibration, not testing: break the code on purpose and confirm the suite
+  // notices. A mutation that survives is a blind spot, not a success.
+  $('#mut').disabled = true;
+  $('#log').textContent = '';
+  try {
+    log('mutation check - injecting known defects…');
+    const ctx = await buildCtx();
+    const { results, escaped } = await runMutations(ctx, {
+      onProgress: (id) => log(`  mutated: ${id}`),
+    });
+    log('');
+    for (const r of results) {
+      log(`${r.caught ? 'CAUGHT ' : 'ESCAPED'} ${r.what}`);
+      if (r.caught) log(`         ${r.signals} signals — ${r.firstFailure}`);
+    }
+    log(`
+${escaped === 0 ? 'PASS' : 'FAIL'} — ${results.length - escaped}/${results.length} `
+      + `mutations detected${escaped ? `, ${escaped} ESCAPED (blind spots)` : ''}`);
+    window.__MUTATIONS = results;
+  } catch (err) {
+    log(`mutation harness error: ${err.stack || err.message}`);
+  } finally { $('#mut').disabled = false; }
+};
 
 $('#run').onclick = () => run(false);
 $('#runui').onclick = () => run(true);

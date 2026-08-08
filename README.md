@@ -276,3 +276,15 @@ Two rules keep it honest:
 eight modes, which is the only way to catch a mode whose wiring broke while its
 logic still passes. **Publish result** appends to a local history so the pass
 rate can be graphed across runs.
+
+**Mutation check** answers the question a green suite cannot answer about
+itself: *would it notice if something broke?* It injects five known defects —
+resistance that stops halving, hit points allowed to go negative, resource
+pools that never refuse, roll tables that pick an index instead of rolling the
+die, encounters that ignore the monster cap — and confirms the board goes red
+for each. Currently 5/5 detected. A mutation that survives is a blind spot, and
+the response is to write the missing assertion, not to enjoy the green.
+
+The roll-table mutation is not hypothetical: it is a bug this project actually
+shipped once, where a d20 table with 8 entries gave its last row 12% of the
+time instead of 65%.

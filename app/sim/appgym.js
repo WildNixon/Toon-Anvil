@@ -1215,6 +1215,88 @@ export function grade(suites, ui = null) {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* mutation check - does the gym actually detect breakage?             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Known defects, injected on purpose.
+ *
+ * A green suite proves nothing on its own: it might be detecting real
+ * correctness, or it might be asserting things that cannot fail. The only way
+ * to tell the two apart is to break the code deliberately and check that the
+ * suite goes red. A mutation that survives marks a blind spot, and the honest
+ * response is to write the missing assertion rather than to enjoy the green.
+ *
+ * Each mutation is patched into the CONTEXT rather than the module, so nothing
+ * on disk changes and the check is safe to run any time.
+ */
+export const MUTATIONS = [
+  {
+    id: 'no_resistance',
+    what: 'mitigate() stops halving resistant damage',
+    patch: (ctx) => ({ engine: { ...ctx.engine,
+      mitigate: (n) => ({ amount: n, applied: null }) } }),
+  },
+  {
+    id: 'negative_hp',
+    what: 'applyDamage() lets hit points go negative',
+    patch: (ctx) => ({ engine: { ...ctx.engine,
+      applyDamage: (s, d) => ({ hp: (s.hp?.current ?? 0) + d, temp: 0,
+        downed: false, events: [] }) } }),
+  },
+  {
+    id: 'infinite_resources',
+    what: 'spendResource() never refuses an overdraw',
+    patch: (ctx) => ({ engine: { ...ctx.engine,
+      spendResource: (ch, d, nm) => ({
+        resourceState: { ...(ch.resourceState || {}), [nm]: -999 }, events: [] }) } }),
+  },
+  {
+    id: 'table_index',
+    what: 'rollOnTable() picks an index instead of rolling the die',
+    // This is not hypothetical - it is the bug this project actually shipped
+    // once, where a d20 table with 8 entries gave the last row 12% of the time
+    // instead of 65%.
+    patch: (ctx) => ({ engine: { ...ctx.engine,
+      rollOnTable: (t, rng) => {
+        const i = rng.int(t.entries.length);
+        return { entry: t.entries[i], n: i + 1, short: false };
+      } } }),
+  },
+  {
+    id: 'unbounded_encounters',
+    what: 'buildEncounter() ignores the monster cap',
+    patch: (ctx) => ({ enc: { ...ctx.enc,
+      buildEncounter: (m, lv, rng) => ({
+        monsters: Array.from({ length: 9 },
+          (_, i) => ctx.enc.instantiate(m[i % m.length], i, rng)),
+        difficulty: 'high' }) } }),
+  },
+];
+
+/**
+ * Run every mutation and report which ones the suite caught.
+ *
+ * `escaped` is the number that ran without turning the board red. It should be
+ * zero; anything else names a defect class this gym cannot see.
+ */
+export async function runMutations(ctx, { onProgress = () => {} } = {}) {
+  const out = [];
+  for (const m of MUTATIONS) {
+    const g = grade(await runLogic({ ...ctx, ...m.patch(ctx) }));
+    out.push({
+      id: m.id,
+      what: m.what,
+      caught: !g.pass,
+      signals: g.failures.length + g.errors.length,
+      firstFailure: (g.failures[0] || g.errors[0] || '').slice(0, 120),
+    });
+    onProgress(m.id);
+  }
+  return { results: out, escaped: out.filter((r) => !r.caught).length };
+}
+
 /** Persist a graded run so the loop can be graphed over time. */
 export async function publishRun(payload) {
   const res = await fetch(`${serverBase()}/api/appgym`, {
