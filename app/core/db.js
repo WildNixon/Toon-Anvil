@@ -262,6 +262,27 @@ export async function initDb({ prefer, inject } = {}) {
   return adapter;
 }
 
+/**
+ * Open the REAL store alongside whatever is currently active.
+ *
+ * Exists for one job: a sandbox session runs on a MemoryAdapter, and "save
+ * this to my library" has to reach past it to the store the app would
+ * normally use. Returns a fresh adapter and deliberately does NOT replace the
+ * module-level one - a sandbox that quietly reattached itself to real storage
+ * would stop being a sandbox halfway through.
+ *
+ * Mirrors initDb()'s choice, minus the ephemeral option.
+ */
+export async function openRealStore() {
+  const choice = localStorage.getItem(PREF_KEY) || 'auto';
+  if (choice !== 'local') {
+    try {
+      return await new ServerAdapter(serverBase()).init();
+    } catch { /* fall through to local */ }
+  }
+  return new IndexedDBAdapter().init();
+}
+
 export function setDataSource(pref) {
   localStorage.setItem(PREF_KEY, pref);
 }

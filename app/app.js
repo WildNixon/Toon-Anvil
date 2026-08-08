@@ -6,7 +6,8 @@
  * export `title`.
  */
 
-import { initDb, db, compendia, getDataSource, setDataSource } from './core/db.js';
+import { initDb, db, compendia, getDataSource, setDataSource, openRealStore }
+  from './core/db.js';
 import { getState, setState, subscribe, watch, esc, $ } from './core/store.js';
 import { setContext } from './core/events.js';
 import { derive } from './core/derive.js';
@@ -246,17 +247,92 @@ function leaveSandbox(count) {
   location.href = url.toString();
 }
 
-/** Everything made in this session, as one importable bundle. */
-async function keepSandbox() {
-  const bundle = { kind: 'toon-anvil-sandbox', exported: new Date().toISOString() };
+const SANDBOX_KINDS = ['characters', 'homebrew', 'npcs', 'shops', 'campaigns'];
+
+/** Everything made in this session, by kind. */
+async function sandboxContents() {
+  const out = {};
   let total = 0;
-  for (const kind of ['characters', 'homebrew', 'npcs', 'shops', 'campaigns']) {
+  for (const kind of SANDBOX_KINDS) {
     // eslint-disable-next-line no-await-in-loop
     const rows = await db.list(kind).catch(() => []);
-    if (rows.length) { bundle[kind] = rows; total += rows.length; }
+    if (rows.length) { out[kind] = rows; total += rows.length; }
   }
+  return { out, total };
+}
+
+/**
+ * Write this session's work into the real library.
+ *
+ * Two things this must never do, because the whole point of a sandbox is that
+ * it cannot hurt what you already have:
+ *
+ *   - overwrite an existing record. Sandbox ids are generated the same way
+ *     real ones are, so a collision is possible; anything that clashes gets a
+ *     fresh id and is written ALONGSIDE the original rather than over it.
+ *   - happen without being asked. It is a write to real data initiated from a
+ *     session whose entire promise was that it writes nothing, so it confirms
+ *     first and says exactly what is about to land.
+ */
+async function keepSandbox() {
+  const { out, total } = await sandboxContents();
   if (!total) return setState({ toast: { message: 'Nothing made yet', kind: 'warn' } });
 
+  const summary = Object.entries(out)
+    .map(([kind, rows]) => `${rows.length} ${kind}`).join(', ');
+  const ok = window.confirm(
+    `Save to your library?\n\n${summary}\n\n`
+    + 'These are copied into your real saved data. Nothing already there is '
+    + 'replaced - anything with a clashing id is saved as a copy.',
+  );
+  if (!ok) return null;
+
+  let real;
+  try {
+    real = await openRealStore();
+  } catch (err) {
+    return setState({
+      toast: { message: `Could not reach your library: ${err.message}`, kind: 'bad' },
+    });
+  }
+
+  let written = 0;
+  let renamed = 0;
+  for (const [kind, rows] of Object.entries(out)) {
+    // eslint-disable-next-line no-await-in-loop
+    const existing = new Set((await real.list(kind).catch(() => [])).map((r) => r.id));
+    for (const row of rows) {
+      const record = { ...row };
+      if (existing.has(record.id)) {
+        record.id = `${record.id}-copy-${Math.random().toString(36).slice(2, 7)}`;
+        record.name = `${record.name || 'Untitled'} (copy)`;
+        renamed += 1;
+      }
+      existing.add(record.id);
+      // eslint-disable-next-line no-await-in-loop
+      await real.put(kind, record);
+      written += 1;
+    }
+  }
+
+  sandboxKept = true;
+  await refreshSandboxBar();
+  return setState({
+    toast: {
+      message: `Saved ${written} item(s) to your library`
+        + (renamed ? ` (${renamed} kept as a copy to avoid overwriting)` : ''),
+      kind: 'ok',
+    },
+  });
+}
+
+/** The same work as a file, for moving it to another machine. */
+async function downloadSandbox() {
+  const { out, total } = await sandboxContents();
+  if (!total) return setState({ toast: { message: 'Nothing made yet', kind: 'warn' } });
+  const bundle = {
+    kind: 'toon-anvil-sandbox', exported: new Date().toISOString(), ...out,
+  };
   const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -266,7 +342,7 @@ async function keepSandbox() {
   sandboxKept = true;
   await refreshSandboxBar();
   return setState({
-    toast: { message: `Saved ${total} item(s) - import them from Build`, kind: 'ok' },
+    toast: { message: `Downloaded ${total} item(s)`, kind: 'ok' },
   });
 }
 
@@ -293,7 +369,9 @@ async function refreshSandboxBar() {
     : 'Nothing is written to disk. Build, break and throw away as much as you like.';
   bar.querySelector('.keep').disabled = n === 0;
   bar.querySelector('.keep').textContent = sandboxKept && n
-    ? 'Save again' : 'Keep what I made';
+    ? 'Save again' : 'Save to my library';
+  const dl = bar.querySelector('.download');
+  if (dl) dl.disabled = n === 0;
   bar.dataset.count = String(n);
 }
 
@@ -307,15 +385,24 @@ function mountSandboxBar() {
 
   const keep = document.createElement('button');
   keep.className = 'keep';
-  keep.textContent = 'Keep what I made';
+  keep.textContent = 'Save to my library';
   keep.addEventListener('click', keepSandbox);
+
+  // Kept alongside the direct save because a file is still the only way to
+  // move work to another machine, and removing a working capability to add
+  // one is not an upgrade.
+  const dl = document.createElement('button');
+  dl.className = 'download';
+  dl.textContent = 'Download';
+  dl.title = 'Save as a JSON file instead - Build\'s Import JSON reads it back';
+  dl.addEventListener('click', downloadSandbox);
 
   const leave = document.createElement('button');
   leave.textContent = 'Leave sandbox';
   leave.addEventListener('click',
     () => leaveSandbox(Number(bar.dataset.count || 0)));
 
-  bar.append(keep, leave);
+  bar.append(keep, dl, leave);
   document.body.append(bar);
 
   // Keep the count honest as things are made, without polling hard.

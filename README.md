@@ -147,10 +147,17 @@ handing the app to somebody at the table without any of it reaching your saved
 work.
 
 A bar along the bottom says plainly that nothing is being saved and counts what
-you've made. **Keep what I made** downloads everything as one JSON bundle that
-Build's *Import JSON* reads straight back — so a sandbox is somewhere you can
-change your mind, not only somewhere you lose things. Leaving with unsaved work
-asks first, and so does closing the tab.
+you've made. If you decide you want to keep something:
+
+- **Save to my library** copies it straight into your real saved data. It asks
+  first and tells you exactly what's about to land. Nothing already there is
+  ever replaced — anything whose id happens to clash is saved as a separate
+  copy, so a sandbox can add to your library but never damage it.
+- **Download** writes the same thing to a JSON file instead, which is how you
+  move work to another machine. Build's *Import JSON* reads it back.
+
+So a sandbox is somewhere you can change your mind, not only somewhere you lose
+things. Leaving with unsaved work asks first, and so does closing the tab.
 
 You can also go straight there with `?storage=memory`.
 

@@ -518,10 +518,30 @@ export const FLOWS = [
       const n = Number(bar.dataset.count || 0);
       c.ok(n > 0, 'the bar counts what has been made here', `count ${n}`);
       const keep = bar.querySelector('.keep');
-      c.ok(keep && !keep.disabled, 'keeping is offered once there is something to keep');
+      c.ok(keep && !keep.disabled, 'saving is offered once there is something to save');
 
-      // The export has to be a real, importable bundle - a sandbox you can
-      // only lose things in would be worse than no sandbox.
+      // "Save to my library" writes to REAL storage, so this flow must never
+      // actually complete it - a test suite that files junk into the user's
+      // library on every run would be the exact harm the sandbox prevents.
+      // Assert the confirmation appears and DECLINE it: that exercises the
+      // guard, which is the part worth protecting, and writes nothing.
+      let asked = null;
+      const realConfirm = win.confirm;
+      win.confirm = (m) => { asked = String(m); return false; };
+      try {
+        keep.click();
+        await waitFor(() => (asked ? true : null), { timeout: 6000 });
+      } finally {
+        win.confirm = realConfirm;
+      }
+      c.ok(!!asked, 'saving to the real library asks first');
+      c.ok(/nothing already there is replaced/i.test(asked || ''),
+        'the confirmation promises not to overwrite anything');
+      c.ok(/\d+ characters?/i.test(asked || ''),
+        'the confirmation says what is about to be written', asked || '');
+
+      // The file path is safe to run for real, and is still the only way to
+      // move work between machines.
       let captured = null;
       const realCreate = win.URL.createObjectURL;
       win.URL.createObjectURL = (b) => {
@@ -529,12 +549,12 @@ export const FLOWS = [
         return 'blob:gym';
       };
       try {
-        keep.click();
+        bar.querySelector('.download')?.click();
         await waitFor(() => (captured ? true : null), { timeout: 8000 });
       } finally {
         win.URL.createObjectURL = realCreate;
       }
-      c.ok(!!captured, 'keeping produces a downloadable bundle');
+      c.ok(!!captured, 'downloading produces a bundle');
       if (captured) {
         let parsed = null;
         try { parsed = JSON.parse(captured); } catch { /* leave null */ }
