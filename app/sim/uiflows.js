@@ -298,6 +298,45 @@ export const FLOWS = [
   },
 
   {
+    id: 'sheet_tabs',
+    title: 'The sheet is four short pages instead of one long one',
+    async run(c, { doc }) {
+      c.feature('ui', 'play', 'tabs');
+      c.ok(await goToMode(doc, 'Play', 'Adjust HP'),
+        'Play opens on Overview, where the fight lives');
+      const tabbar = doc.querySelector('main .tabs');
+      c.ok(!!tabbar, 'a tab bar is present');
+
+      button(doc, 'Inventory')?.click();
+      const inv = await waitFor(() => (!/Adjust HP/.test(mainText(doc))
+        ? mainText(doc) : null), { timeout: 5000 });
+      c.ok(inv !== null, 'Inventory replaces the vitals rather than stacking below');
+      c.ok(/Carrying|Equipped|inventory/i.test(inv || ''),
+        'and shows inventory content', (inv || '').slice(0, 120));
+
+      // The place you were reading survives a trip to another mode.
+      c.ok(await goToMode(doc, 'Combat', 'encounter'), 'switch away to Combat');
+      c.ok(await goToMode(doc, 'Play', (d = doc) => !!d.querySelector('main .tabs')),
+        'and back to Play');
+      c.ok(!/Adjust HP/.test(mainText(doc)),
+        'the sheet remembers it was on Inventory');
+
+      button(doc, 'Spells')?.click();
+      await waitUntilSettled(doc);
+      const spells = mainText(doc);
+      c.ok(/spell|slots|No spells/i.test(spells),
+        'Spells shows spell content or says there is none', spells.slice(0, 100));
+
+      // Leave the sheet on Overview: every later flow (and a fresh player)
+      // expects the default page.
+      button(doc, 'Overview')?.click();
+      const back = await waitFor(() => (/Adjust HP/.test(mainText(doc)) ? true : null),
+        { timeout: 5000 });
+      c.ok(!!back, 'Overview brings the vitals back');
+    },
+  },
+
+  {
     id: 'shop_generate_and_buy',
     title: 'Generate a shop and buy something',
     async run(c, { doc }) {
@@ -674,6 +713,45 @@ export const FLOWS = [
       c.ok(!fields.some((i) => /key|token|secret|password/i.test(
         `${i.placeholder} ${i.name} ${i.type}`)),
       'there is no field to type a key into');
+    },
+  },
+
+  {
+    id: 'theme_toggle',
+    title: 'Choosing a theme applies it and survives the choice being stored',
+    async run(c, { doc, win }) {
+      c.feature('ui', 'settings', 'theme');
+      // The iframe shares this origin's localStorage, so clicking Candlelight
+      // in here writes the REAL preference. Save it, restore it in finally -
+      // the same discipline the sandbox flow uses for confirm().
+      const before = localStorage.getItem('toonanvil.theme');
+      try {
+        c.ok(await goToMode(doc, 'Settings', 'Appearance'),
+          'Settings shows the Appearance panel');
+
+        button(doc, 'Candlelight')?.click();
+        const dark = await waitFor(() => (
+          win.document.documentElement.dataset.theme === 'dark' ? true : null));
+        c.ok(!!dark, 'Candlelight sets data-theme=dark on the page');
+        c.eq(localStorage.getItem('toonanvil.theme'), 'dark',
+          'and the choice is stored, so a reload keeps it');
+
+        button(doc, 'Parchment')?.click();
+        const light = await waitFor(() => (
+          win.document.documentElement.dataset.theme === 'light' ? true : null));
+        c.ok(!!light, 'Parchment sets data-theme=light');
+        c.eq(localStorage.getItem('toonanvil.theme'), 'light', 'and stores it');
+
+        button(doc, 'System')?.click();
+        const cleared = await waitFor(() => (
+          !win.document.documentElement.dataset.theme ? true : null));
+        c.ok(!!cleared, 'System removes the attribute - the OS decides again');
+        c.eq(localStorage.getItem('toonanvil.theme'), null,
+          'and clears the stored choice rather than storing "system"');
+      } finally {
+        if (before === null) localStorage.removeItem('toonanvil.theme');
+        else localStorage.setItem('toonanvil.theme', before);
+      }
     },
   },
 

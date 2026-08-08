@@ -104,6 +104,7 @@ transmits it anywhere. Exported homebrew carries no Toon Anvil licence terms.
 
 ## Typefaces
 
-Archivo Black and IBM Plex Mono / IBM Plex Serif are bundled locally as woff2
-under the **SIL Open Font License 1.1**. They are self-hosted rather than loaded
-from a CDN so the app works fully offline.
+Cinzel (Natanael Gama), Alegreya (Juan Pablo del Peral / Huerta Tipográfica)
+and IBM Plex Mono (IBM) are bundled locally as woff2 under the
+**SIL Open Font License 1.1**. They are self-hosted rather than loaded from a
+CDN so the app works fully offline.

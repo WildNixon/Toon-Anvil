@@ -1,19 +1,37 @@
 /*
- * Toon Anvil design system.
+ * Toon Anvil design system - "parchment & candlelight".
  *
- * Lifted directly from the three homebrew pages in D:\Dnd rather than invented:
- * Archivo Black display caps, IBM Plex Mono eyebrows, IBM Plex Serif body, the
- * heavy 6px rule, letterpress panels with a hard top border and corner rivets,
- * the mono level badge. An ingested homebrew carries its own accent colour
- * through --accent, so a Ferrous subclass still reads molten-orange inside the
- * app.
+ * High-fantasy skin over the original letterpress structure: vellum panels,
+ * sepia ink, heraldic crimson, gilt ornament. Two themes - light parchment and
+ * dark candlelight - switched by data-theme on <html> (see ui/theme.js), with
+ * the OS preference as the default.
  *
- * Fonts are self-hosted (see tools/fetch_fonts.py) so the app works offline.
+ * TOKEN NAMES ARE HISTORIC. The raw palette still answers to its ferrous
+ * names (--steel, --iron, --molten...) because 13 mode files reference tokens
+ * inline; renaming them would touch every mode for zero benefit. The values
+ * are parchment now. New code should prefer the semantic names (--bg, --ink,
+ * --accent...).
+ *
+ * Fonts are self-hosted (see tools/fetch_fonts.py) so the app works offline:
+ * Cinzel for titling, Alegreya for body, IBM Plex Mono for the ledger voice -
+ * eyebrows, badges, numbers. All SIL OFL 1.1.
  */
 
 @font-face {
-  font-family: 'Archivo Black'; font-style: normal; font-weight: 400;
-  font-display: swap; src: url('../data/fonts/archivo-black.woff2') format('woff2');
+  font-family: 'Cinzel'; font-style: normal; font-weight: 700;
+  font-display: swap; src: url('../data/fonts/cinzel-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Alegreya'; font-style: normal; font-weight: 400;
+  font-display: swap; src: url('../data/fonts/alegreya-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Alegreya'; font-style: normal; font-weight: 600;
+  font-display: swap; src: url('../data/fonts/alegreya-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Alegreya'; font-style: italic; font-weight: 400;
+  font-display: swap; src: url('../data/fonts/alegreya-italic-400.woff2') format('woff2');
 }
 @font-face {
   font-family: 'Plex Mono'; font-style: normal; font-weight: 400;
@@ -23,25 +41,17 @@
   font-family: 'Plex Mono'; font-style: normal; font-weight: 600;
   font-display: swap; src: url('../data/fonts/plex-mono-600.woff2') format('woff2');
 }
-@font-face {
-  font-family: 'Plex Serif'; font-style: normal; font-weight: 400;
-  font-display: swap; src: url('../data/fonts/plex-serif-400.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'Plex Serif'; font-style: normal; font-weight: 600;
-  font-display: swap; src: url('../data/fonts/plex-serif-600.woff2') format('woff2');
-}
 
 :root {
-  /* Ferrous palette - the shared spine of all three homebrew pages */
-  --steel:     #d2d6d3;
-  --plate:     #c0c6c4;
-  --iron:      #1c2124;
-  --slag:      #3a4247;
-  --molten:    #b84a16;
-  --verdigris: #2f6b62;
-  --zinc:      #eef1ef;
-  --etch:      rgba(28, 33, 36, .2);
+  /* Raw palette - historic ferrous names, parchment values (see header). */
+  --steel:     #e9dfc6;   /* aged parchment page */
+  --plate:     #f4edda;   /* vellum sheet */
+  --iron:      #2e2418;   /* sepia ink */
+  --slag:      #6d5c43;   /* faded ink */
+  --molten:    #8e2a1c;   /* heraldic crimson */
+  --verdigris: #2f5d50;   /* deep pine */
+  --zinc:      #f7f1e3;   /* cream - stays constant; it is text-on-accent */
+  --etch:      rgba(46, 36, 24, .22);
 
   --bg:        var(--steel);
   --panel:     var(--plate);
@@ -49,46 +59,120 @@
   --muted:     var(--slag);
   --accent:    var(--molten);
   --accent-2:  var(--verdigris);
-  --paper:     var(--zinc);
+  --paper:     #faf5e7;
 
-  --ok:        #2f6b62;
-  --warn:      #9a6a12;
-  --bad:       #a3301a;
+  /* A colour that is a surface under cream text is too dark to read AS text
+     on a dark panel. These two exist so links and headings can brighten in
+     candlelight while buttons and chips keep their pigment. */
+  --accent-text: #8e2a1c;
+  --bad-text:    #9e2b17;
 
-  /* App chrome (top bar, level badges) stays dark-on-light in BOTH themes.
-     Using --ink/--paper here inverts it under prefers-color-scheme: dark,
-     which turns the bar light while its nav labels stay light - invisible. */
-  --chrome:     #1c2124;
-  --chrome-ink: #eef1ef;
-  --chrome-dim: rgba(238, 241, 239, .62);
-  --chrome-hover: rgba(238, 241, 239, .10);
+  --ok:        #2e6b46;
+  --warn:      #92600f;
+  --bad:       #9e2b17;
 
-  --display: 'Archivo Black', Impact, 'Haettenschweiler', sans-serif;
+  /* Gilt. Ornament only - rules, corner diamonds, separators. Never body
+     text: it fails contrast everywhere by design. */
+  --gold:      #8a6a24;
+  --gold-soft: rgba(138, 106, 36, .35);
+
+  --focus:     #2f5d50;
+
+  /* App chrome (top bar, ribbon, level badges) stays dark in BOTH themes:
+     waxed oak. Routing it through --ink/--paper inverts under dark mode and
+     leaves light labels on a light bar - invisible. */
+  --chrome:        #221a11;
+  --chrome-ink:    #f1e8d2;
+  --chrome-dim:    rgba(241, 232, 210, .62);
+  --chrome-hover:  rgba(241, 232, 210, .10);
+  --chrome-raised: #2b2117;
+  --chrome-gold:   #b18a3c;
+
+  --display: 'Cinzel', Georgia, 'Times New Roman', serif;
   --mono: 'Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  --serif: 'Plex Serif', Georgia, 'Times New Roman', serif;
+  --serif: 'Alegreya', Georgia, 'Times New Roman', serif;
 
   --rule: 6px;
   --radius: 2px;
-  --shadow: 0 2px 0 rgba(28, 33, 36, .16);
+  --shadow: 0 2px 0 rgba(46, 36, 24, .18);
+
+  /* Spacing for NEW css only; the older sections predate the scale. */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 14px; --sp-4: 20px;
+
+  /* Parchment fibre + corner blooms + a soft vignette. Pure CSS - no assets. */
+  --page-texture:
+    radial-gradient(ellipse at 18% 8%, rgba(138, 106, 36, .06), transparent 42%),
+    radial-gradient(ellipse at 85% 90%, rgba(120, 86, 40, .07), transparent 46%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, .14) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(72, 52, 24, .10));
+
+  /* The one ornament glyph: a diamond fleuron as a mask, so it can take any
+     colour from background-color. */
+  --fleuron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M5 0 10 5 5 10 0 5Z'/%3E%3C/svg%3E");
 }
 
+/* Candlelight, three ways in priority order:
+   1. OS prefers dark and the user has made no explicit choice.
+   2. data-theme='dark' - the user chose it (ui/theme.js).
+   3. data-theme='light' re-asserts parchment so an explicit choice beats a
+      dark OS. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg:    #14181a;
-    --panel: #20262a;
-    --ink:   #e6eae8;
-    --muted: #96a2a6;
-    --paper: #171b1e;
-    --etch:  rgba(230, 234, 232, .16);
+  :root:not([data-theme]) {
+    --bg:    #191411;
+    --panel: #241d16;
+    --ink:   #eadfc7;
+    --muted: #a5947a;
+    --paper: #16110d;
+    --etch:  rgba(234, 223, 199, .15);
+    --accent-2:   #6fa38e;
+    --accent-text: #d4694f;
+    --bad-text:    #e0785c;
+    --bad:   #b04a33;
+    --gold:      #d4a94f;
+    --gold-soft: rgba(212, 169, 79, .30);
+    --focus:     #6fa38e;
+    --shadow: 0 2px 0 rgba(0, 0, 0, .45);
+    --page-texture:
+      radial-gradient(ellipse at 50% -8%, rgba(255, 180, 80, .06), transparent 55%),
+      repeating-linear-gradient(90deg, rgba(255, 255, 255, .02) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(0, 0, 0, .42));
   }
 }
 :root[data-theme='dark'] {
-  --bg: #14181a; --panel: #20262a; --ink: #e6eae8;
-  --muted: #96a2a6; --paper: #171b1e; --etch: rgba(230, 234, 232, .16);
+  --bg:    #191411;
+  --panel: #241d16;
+  --ink:   #eadfc7;
+  --muted: #a5947a;
+  --paper: #16110d;
+  --etch:  rgba(234, 223, 199, .15);
+  --accent-2:   #6fa38e;
+  --accent-text: #d4694f;
+  --bad-text:    #e0785c;
+  --bad:   #b04a33;
+  --gold:      #d4a94f;
+  --gold-soft: rgba(212, 169, 79, .30);
+  --focus:     #6fa38e;
+  --shadow: 0 2px 0 rgba(0, 0, 0, .45);
+  --page-texture:
+    radial-gradient(ellipse at 50% -8%, rgba(255, 180, 80, .06), transparent 55%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, .02) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(0, 0, 0, .42));
 }
 :root[data-theme='light'] {
-  --bg: var(--steel); --panel: var(--plate); --ink: var(--iron);
-  --muted: var(--slag); --paper: var(--zinc); --etch: rgba(28, 33, 36, .2);
+  --bg:    var(--steel);
+  --panel: var(--plate);
+  --ink:   var(--iron);
+  --muted: var(--slag);
+  --paper: #faf5e7;
+  --etch:  rgba(46, 36, 24, .22);
+  --accent-2:   var(--verdigris);
+  --accent-text: #8e2a1c;
+  --bad-text:    #9e2b17;
+  --bad:   #9e2b17;
+  --gold:      #8a6a24;
+  --gold-soft: rgba(138, 106, 36, .35);
+  --focus:     #2f5d50;
+  --shadow: 0 2px 0 rgba(46, 36, 24, .18);
 }
 
 * { box-sizing: border-box; }
@@ -102,23 +186,21 @@ body {
   font-family: var(--serif);
   font-size: 16px;
   line-height: 1.6;
-  background-image:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, .10) 0 1px, transparent 1px 3px),
-    radial-gradient(circle at 82% 2%, rgba(184, 74, 22, .10), transparent 46%);
+  background-image: var(--page-texture);
   background-attachment: fixed;
 }
 
 h1, h2, h3, h4 {
   font-family: var(--display);
-  font-weight: 400;
-  line-height: 1.02;
+  font-weight: 700;
+  line-height: 1.08;
   text-transform: uppercase;
-  letter-spacing: -.01em;
+  letter-spacing: .03em;
   margin: 0;
 }
 
 p { margin: 0 0 1em; }
-a { color: var(--accent); }
+a { color: var(--accent-text); }
 
 /* ---------- shared atoms ---------- */
 
@@ -135,6 +217,12 @@ a { color: var(--accent); }
 .cost { font-family: var(--mono); font-size: .85em; font-weight: 600; color: var(--accent-2); }
 .muted { color: var(--muted); }
 
+/* Visually hidden, still read by assistive tech and textContent. */
+.vh {
+  position: absolute; width: 1px; height: 1px;
+  clip-path: inset(50%); overflow: hidden; white-space: nowrap;
+}
+
 .rule {
   height: var(--rule);
   background: var(--ink);
@@ -143,14 +231,20 @@ a { color: var(--accent); }
 }
 .rule::after {
   content: ''; position: absolute; right: 0; top: 0;
-  height: var(--rule); width: 22%; background: var(--accent);
+  height: var(--rule); width: 22%; background: var(--gold);
+}
+.rule::before {
+  content: ''; position: absolute; left: -2px; top: -3px;
+  width: 12px; height: 12px; background: var(--gold);
+  -webkit-mask: var(--fleuron) center / contain no-repeat;
+  mask: var(--fleuron) center / contain no-repeat;
 }
 
 .head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
 .head h2 { font-size: clamp(22px, 4vw, 32px); }
 .head .bar { flex: 1; height: 3px; background: var(--etch); }
 
-/* ---------- panel: the letterpress card ---------- */
+/* ---------- panel: the vellum card ---------- */
 
 .panel {
   background: var(--panel);
@@ -158,18 +252,20 @@ a { color: var(--accent); }
   margin-bottom: 16px;
   border-radius: var(--radius);
   border-top: 4px solid var(--ink);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow), inset 0 0 0 1px var(--etch);
   position: relative;
 }
+/* Historic name, new clothes: the rivet dots are gilt corner diamonds now.
+   Same pseudo-elements, so all 47 uses reskin without a markup change. */
 .panel.rivets::before,
 .panel.rivets::after {
-  content: ''; position: absolute; top: 11px; width: 7px; height: 7px;
-  border-radius: 50%; background: var(--muted); opacity: .5;
+  content: ''; position: absolute; top: 10px; width: 6px; height: 6px;
+  transform: rotate(45deg); background: var(--gold); opacity: .55;
 }
 .panel.rivets::before { left: 10px; }
 .panel.rivets::after { right: 10px; }
 .panel.accent { border-top-color: var(--accent); }
-.panel h3 { font-size: 21px; color: var(--accent); margin-bottom: 10px; }
+.panel h3 { font-size: 20px; color: var(--accent-text); margin-bottom: 10px; }
 
 .lvl {
   display: inline-block;
@@ -177,28 +273,36 @@ a { color: var(--accent); }
   font-size: 10px; font-weight: 600;
   letter-spacing: .18em; text-transform: uppercase;
   background: var(--chrome); color: var(--chrome-ink);
-  padding: 3px 9px; border-radius: var(--radius);
+  padding: 3px 14px 3px 9px; border-radius: var(--radius);
   margin-bottom: 8px;
+  /* Swallow-tail pennant. */
+  clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 50%, 100% 100%, 0 100%);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .3);
 }
-.lvl.accent { background: var(--accent); color: var(--chrome-ink); }
-.lvl.ghost { background: transparent; color: var(--muted); border: 1px solid var(--etch); }
+.lvl.accent { background: var(--accent); color: var(--zinc); }
+.lvl.ghost {
+  background: transparent; color: var(--muted); border: 1px solid var(--etch);
+  clip-path: none; padding: 3px 9px; text-shadow: none;
+}
 
 /* ---------- app shell ---------- */
 
 #app { min-height: 100vh; display: flex; flex-direction: column; }
+
+/* Topbar + hero ribbon stick together as one block. */
+.chrome { position: sticky; top: 0; z-index: 50; }
 
 .topbar {
   background: var(--chrome);
   color: var(--chrome-ink);
   padding: 10px 18px;
   display: flex; align-items: center; gap: 18px;
-  position: sticky; top: 0; z-index: 50;
-  border-bottom: 3px solid var(--accent);
+  border-bottom: 3px solid var(--chrome-gold);
 }
-.brand { font-family: var(--display); font-size: 20px; text-transform: uppercase; }
-.brand em { font-style: normal; color: var(--accent); }
+.brand { font-family: var(--display); font-weight: 700; font-size: 21px; text-transform: uppercase; letter-spacing: .04em; }
+.brand em { font-style: normal; color: var(--chrome-gold); }
 
-nav.modes { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
+nav.modes { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; align-items: center; }
 nav.modes button {
   font-family: var(--mono); font-size: 11px; font-weight: 600;
   letter-spacing: .12em; text-transform: uppercase;
@@ -209,14 +313,85 @@ nav.modes button {
 }
 nav.modes button:hover { color: var(--chrome-ink); background: var(--chrome-hover); }
 nav.modes button[aria-current='true'] {
-  background: var(--accent); color: var(--chrome-ink); border-color: var(--accent);
+  background: var(--accent); color: var(--zinc); border-color: var(--accent);
 }
 
+/* Grouped navigation: a gilt hairline between realms, a whispered label. */
+.navgroup { display: flex; align-items: center; gap: 4px; }
+.navgroup + .navgroup {
+  border-left: 1px solid var(--gold-soft);
+  padding-left: 10px; margin-left: 6px;
+}
+.navgroup-label {
+  font-family: var(--mono); font-size: 9px; font-weight: 600;
+  letter-spacing: .2em; text-transform: uppercase;
+  color: var(--chrome-dim); opacity: .75; margin-right: 2px;
+  user-select: none;
+}
+.gearbtn { margin-left: auto; }
+.gearbtn svg { display: block; width: 16px; height: 16px; }
+
+/* Legacy who block (pre-ribbon); harmless once the ribbon owns #who. */
 .topbar .who {
   font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
   color: var(--chrome-dim); text-align: right; line-height: 1.35;
 }
 .topbar .who strong { color: var(--chrome-ink); display: block; letter-spacing: .06em; }
+
+/* ---------- hero ribbon: your character, everywhere ---------- */
+
+.ribbon {
+  background: var(--chrome-raised);
+  color: var(--chrome-ink);
+  border-bottom: 2px solid var(--gold-soft);
+  display: flex; align-items: center; gap: 14px;
+  padding: 6px 18px;
+  min-height: 42px;
+  flex-wrap: wrap;
+}
+.ribbon[hidden] { display: none; }
+.rb-who { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; line-height: 1.3; }
+.rb-who strong { display: block; font-size: 12px; letter-spacing: .08em; }
+.rb-who .rb-line { color: var(--chrome-dim); }
+.rb-hp { display: flex; align-items: center; gap: 8px; }
+.hpbar {
+  width: clamp(90px, 18vw, 180px); height: 10px;
+  background: rgba(0, 0, 0, .4);
+  border: 1px solid var(--gold-soft); border-radius: 2px;
+  position: relative; overflow: hidden;
+}
+.hpbar .fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+.hpbar .temp { position: absolute; inset: 0 auto 0 0; background: var(--chrome-gold); opacity: .8; }
+.rb-num { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; }
+.rb-ac {
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  letter-spacing: .1em; padding: 3px 8px;
+  border: 1px solid var(--gold-soft); border-radius: 2px;
+  color: var(--chrome-ink);
+}
+.rb-adjust { display: flex; align-items: center; gap: 4px; }
+.rb-adjust input {
+  width: 52px; padding: 4px 6px;
+  font-family: var(--mono); font-size: 12px;
+  background: rgba(0, 0, 0, .35); color: var(--chrome-ink);
+  border: 1px solid var(--gold-soft); border-radius: 2px;
+}
+.rb-adjust button {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  width: 26px; height: 26px; line-height: 1;
+  border: 1px solid var(--gold-soft); border-radius: 2px;
+  background: transparent; color: var(--chrome-ink); cursor: pointer;
+}
+.rb-adjust button:hover { background: var(--chrome-hover); }
+.rb-conds { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.rb-switch select {
+  width: auto; max-width: 160px;
+  font-family: var(--mono); font-size: 11px;
+  padding: 4px 6px;
+  background: rgba(0, 0, 0, .35); color: var(--chrome-ink);
+  border: 1px solid var(--gold-soft); border-radius: 2px;
+}
+.rb-spacer { flex: 1; }
 
 main { flex: 1; width: 100%; max-width: 1180px; margin: 0 auto; padding: 24px 20px 96px; }
 
@@ -227,12 +402,14 @@ button.act {
   letter-spacing: .14em; text-transform: uppercase;
   padding: 10px 16px; border: 0; border-radius: var(--radius);
   cursor: pointer; background: var(--accent); color: var(--zinc);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), 0 1px 0 rgba(0, 0, 0, .25);
 }
 button.act:hover { filter: brightness(1.08); }
 button.act:disabled { opacity: .45; cursor: not-allowed; }
 button.act.ghost {
   background: transparent; color: var(--accent-2);
   border: 1px solid var(--accent-2);
+  box-shadow: none;
 }
 button.act.dark { background: var(--chrome); color: var(--chrome-ink); }
 button.act.small { padding: 6px 10px; font-size: 10px; }
@@ -256,7 +433,26 @@ input, select, textarea {
 textarea { min-height: 90px; resize: vertical; font-size: 14px; }
 input:focus-visible, select:focus-visible, textarea:focus-visible,
 button:focus-visible, [tabindex]:focus-visible {
-  outline: 3px solid var(--accent-2); outline-offset: 2px;
+  outline: 3px solid var(--focus); outline-offset: 2px;
+}
+
+/* ---------- tabs: parchment file-folders ---------- */
+
+.tabs {
+  display: flex; gap: 2px; flex-wrap: wrap;
+  border-bottom: 2px solid var(--etch);
+  margin-bottom: 14px;
+}
+.tabs .tab {
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  letter-spacing: .12em; text-transform: uppercase;
+  background: transparent; color: var(--muted);
+  border: 0; border-bottom: 3px solid transparent;
+  padding: 8px 12px; margin-bottom: -2px; cursor: pointer;
+}
+.tabs .tab:hover { color: var(--ink); }
+.tabs .tab[aria-selected='true'] {
+  color: var(--accent-text); border-bottom-color: var(--accent);
 }
 
 /* ---------- data display ---------- */
@@ -266,6 +462,7 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--etc
 th {
   font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
   text-transform: uppercase; color: var(--muted);
+  border-bottom: 2px solid var(--gold-soft);
 }
 
 .grid { display: grid; gap: 16px; }
@@ -282,10 +479,10 @@ th {
   font-family: var(--mono); font-size: 10px; letter-spacing: .16em;
   text-transform: uppercase; color: var(--muted);
 }
-.stat .v { font-family: var(--display); font-size: 26px; line-height: 1.1; }
+.stat .v { font-family: var(--display); font-weight: 700; font-size: 24px; line-height: 1.15; }
 .stat .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .stat.clickable { cursor: pointer; }
-.stat.clickable:hover { border-top-color: var(--accent); }
+.stat.clickable:hover { border-top-color: var(--gold); }
 
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
@@ -298,12 +495,47 @@ th {
 .chip.ok   { background: var(--ok);   color: var(--zinc); }
 .chip.warn { background: var(--warn); color: var(--zinc); }
 .chip.bad  { background: var(--bad);  color: var(--zinc); }
+.chip.prof   { background: var(--accent-2); color: var(--zinc); }
+.chip.expert { background: var(--accent);   color: var(--zinc); }
 
 .empty {
   color: var(--muted); font-style: italic;
   padding: 28px; text-align: center;
   border: 1px dashed var(--etch); border-radius: var(--radius);
 }
+
+/* ---------- welcome: the first-run seat choice ---------- */
+
+.welcome {
+  position: fixed; inset: 0; z-index: 950;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(20, 14, 8, .55);
+  padding: 20px;
+}
+.welcome-card {
+  background: var(--panel);
+  border-top: 4px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, .4), inset 0 0 0 1px var(--etch);
+  padding: 28px 26px 22px;
+  max-width: 560px; width: 100%;
+  text-align: center;
+}
+.welcome-card h2 { font-size: clamp(24px, 5vw, 34px); color: var(--accent-text); margin-bottom: 8px; }
+.welcome-card p { color: var(--muted); }
+.welcome-choices { display: flex; gap: 12px; justify-content: center; margin: 18px 0 10px; flex-wrap: wrap; }
+.welcome-choices button {
+  font-family: var(--display); font-weight: 700; font-size: 17px;
+  text-transform: uppercase; letter-spacing: .04em;
+  padding: 18px 26px; cursor: pointer;
+  border: 1px solid var(--etch); border-top: 3px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper); color: var(--ink);
+  box-shadow: var(--shadow);
+  min-width: 180px;
+}
+.welcome-choices button:hover { border-top-color: var(--gold); }
+.welcome-fine { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; color: var(--muted); }
 
 /* ---------- toast ---------- */
 
@@ -329,8 +561,22 @@ th {
 }
 
 @media (max-width: 720px) {
-  .topbar { flex-wrap: wrap; gap: 10px; }
+  .topbar { gap: 10px; }
+  /* Ten labels cannot wrap under a sticky bar without eating the screen:
+     the nav becomes one scrollable row instead. */
+  nav.modes {
+    flex-wrap: nowrap; overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+  nav.modes::-webkit-scrollbar { display: none; }
+  nav.modes button { scroll-snap-align: start; white-space: nowrap; }
+  .navgroup-label { display: none; }
   .topbar .who { text-align: left; }
+  .ribbon { gap: 10px; padding: 6px 12px; }
+  .rb-conds .chip { display: none; }
+  .rb-conds .chip.rb-more { display: inline-flex; }
+  .rb-switch select { max-width: 110px; }
   main { padding: 16px 12px 80px; }
 }
 
@@ -383,7 +629,7 @@ th {
 /* Keep the last panel clear of the fixed bar. */
 body.sandbox #view { padding-bottom: 86px; }
 
-.topbar .try {
+#chrome .try {
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: .1em;
@@ -391,9 +637,9 @@ body.sandbox #view { padding-bottom: 86px; }
   padding: 4px 9px;
   margin-left: 8px;
   border-radius: 2px;
-  border: 1px solid rgba(238, 241, 239, .45);
+  border: 1px solid rgba(241, 232, 210, .45);
   background: transparent;
   color: var(--chrome-ink);
   cursor: pointer;
 }
-.topbar .try:hover { background: rgba(238, 241, 239, .16); }
+#chrome .try:hover { background: rgba(241, 232, 210, .16); }

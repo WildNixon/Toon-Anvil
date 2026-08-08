@@ -18,6 +18,7 @@ import {
   capabilities, forget, generateText, BEDS, playBed, stopBed, nowPlaying,
 } from '../../core/providers.js';
 import { startSandbox } from '../../app.js';
+import * as theme from '../../ui/theme.js';
 
 export const title = 'Settings';
 
@@ -35,8 +36,34 @@ export async function render(root) {
 function draw() {
   container.innerHTML = '';
   container.append(storagePanel());
+  container.append(appearancePanel());
   container.append(connectorPanel());
   container.append(ambiencePanel());
+}
+
+/* ------------------------------------------------------------------ */
+
+function appearancePanel() {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Appearance'));
+  panel.append(el('h3', {}, 'Parchment or candlelight'));
+  panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
+    'Parchment is the daylight look; candlelight is for the evening session. '
+    + 'System follows your device.'));
+
+  const stored = theme.stored();
+  const row = el('div', { class: 'btnrow' });
+  for (const [value, label] of [
+    [null, 'System'], ['light', 'Parchment'], ['dark', 'Candlelight'],
+  ]) {
+    const on = stored === value;
+    row.append(el('button', {
+      class: `act ${on ? '' : 'ghost'} small`,
+      onClick: () => { theme.setTheme(value); draw(); },
+    }, label));
+  }
+  panel.append(row);
+  return panel;
 }
 
 /* ------------------------------------------------------------------ */

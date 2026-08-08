@@ -15,11 +15,16 @@ import {
 import {
   ABILITIES, ABILITY_NAMES, SKILLS, fromCopper, CONDITIONS,
 } from '../../core/rules2024.js';
-import { saveCharacter, go } from '../../app.js';
+import { saveCharacter, adjustHp as shellAdjustHp, go } from '../../app.js';
+import { tabs } from '../../ui/kit.js';
 
 export const title = 'Play';
 
 let container = null;
+// Which tab is open. Module-level so switching to Combat and back does not
+// lose your place; a reload starts at Overview, which is also what the UI
+// tests rely on (every frozen string lives there).
+let tab = 'overview';
 
 export async function render(root) {
   container = root;
@@ -37,16 +42,39 @@ function draw() {
     return;
   }
 
-  container.append(vitalsPanel(derived));
-  container.append(el('div', { class: 'grid two' },
-    abilitiesPanel(derived), skillsPanel(derived)));
-  container.append(attacksPanel(derived));
-  if (derived.resources.length || derived.toggles.length) {
-    container.append(resourcesPanel(derived));
+  // One long page became four short ones. Overview keeps everything a turn
+  // needs - vitals, abilities, skills, attacks - so mid-fight play never
+  // crosses a tab.
+  container.append(tabs({
+    items: [
+      { id: 'overview', label: 'Overview' },
+      { id: 'spells', label: 'Spells' },
+      { id: 'features', label: 'Features' },
+      { id: 'inventory', label: 'Inventory' },
+    ],
+    active: tab,
+    onSelect: (id) => { tab = id; draw(); },
+  }));
+
+  if (tab === 'overview') {
+    container.append(vitalsPanel(derived));
+    container.append(el('div', { class: 'grid two' },
+      abilitiesPanel(derived), skillsPanel(derived)));
+    container.append(attacksPanel(derived));
+  } else if (tab === 'spells') {
+    if (derived.resources.length || derived.toggles.length) {
+      container.append(resourcesPanel(derived));
+    }
+    if (derived.spellcasting) container.append(spellPanel(derived));
+    if (!derived.spellcasting && !derived.resources.length && !derived.toggles.length) {
+      container.append(el('div', { class: 'empty' },
+        'No spells or limited-use features yet.'));
+    }
+  } else if (tab === 'features') {
+    container.append(featuresPanel(derived));
+  } else {
+    container.append(inventoryPanel(derived));
   }
-  if (derived.spellcasting) container.append(spellPanel(derived));
-  container.append(featuresPanel(derived));
-  container.append(inventoryPanel(derived));
 }
 
 /* ------------------------------------------------------------------ */
@@ -115,7 +143,7 @@ function vitalsPanel(d) {
   panel.append(condRow);
 
   if (d.exhaustion > 0) {
-    panel.append(el('p', { class: 'mono', style: 'color:var(--bad);margin-top:10px' },
+    panel.append(el('p', { class: 'mono', style: 'color:var(--bad-text);margin-top:10px' },
       `Exhaustion ${d.exhaustion} - ${d.d20Penalty} on every d20 test`));
   }
   if (d.concentration) {
@@ -125,22 +153,10 @@ function vitalsPanel(d) {
   return panel;
 }
 
+// One HP rule for the whole app: the sheet and the hero ribbon call the
+// same shell function, so they cannot disagree about what 7 damage does.
 async function adjustHp(delta) {
-  const { derived } = getState();
-  if (!delta) return;
-  const res = engineApplyDamage(
-    { hp: derived.hp, hpMax: derived.hp.max, temp: derived.hp.temp,
-      concentrating: derived.concentration },
-    delta, { name: derived.name },
-  );
-  await saveCharacter((c) => {
-    c.hp = { ...c.hp, current: res.hp, temp: res.temp };
-    return c;
-  });
-  for (const ev of res.events) await log(ev.type, ev.payload);
-  if (res.concentrationDc) {
-    toast(`Concentration save: DC ${res.concentrationDc}`, 'warn');
-  }
+  await shellAdjustHp(delta);
   draw();
 }
 
@@ -209,9 +225,7 @@ function skillsPanel(d) {
       },
     });
     row.append(el('span', {
-      class: 'chip',
-      style: info.expertise ? 'background:var(--accent);color:var(--zinc)'
-        : info.proficient ? 'background:var(--accent-2);color:var(--zinc)' : '',
+      class: `chip${info.expertise ? ' expert' : info.proficient ? ' prof' : ''}`,
     }, info.expertise ? 'E' : info.proficient ? 'P' : '-'));
     row.append(el('span', { style: 'flex:1;font-size:14px' }, cap(skill)));
     row.append(el('span', { class: 'mono' }, sign(info.mod)));

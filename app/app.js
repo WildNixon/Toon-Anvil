@@ -13,6 +13,7 @@ import { setContext } from './core/events.js';
 import { derive } from './core/derive.js';
 import * as session from './core/session.js';
 import * as live from './core/live.js';
+import * as theme from './ui/theme.js';
 
 /**
  * `dmOnly` hides a mode from players at a table; `tableOnly` shows one only
@@ -65,6 +66,36 @@ export function recompute() {
     homebrew: homebrew || [],
   });
   return setState({ derived });
+}
+
+/**
+ * Damage or heal the active character. Negative is damage.
+ *
+ * Shell-level on purpose: the sheet's Damage button and the hero ribbon's
+ * quick adjust both call THIS, so there is exactly one rule for what 7 damage
+ * does - temp HP spent first, the floor at 0, concentration prompted. It runs
+ * through the same engine the simulator uses.
+ */
+export async function adjustHp(delta) {
+  const { derived } = getState();
+  if (!delta || !derived) return null;
+  const { applyDamage } = await import('./core/engine.js');
+  const res = applyDamage(
+    { hp: derived.hp, hpMax: derived.hp.max, temp: derived.hp.temp,
+      concentrating: derived.concentration },
+    delta, { name: derived.name },
+  );
+  await saveCharacter((c) => {
+    c.hp = { ...c.hp, current: res.hp, temp: res.temp };
+    return c;
+  });
+  const { log } = await import('./core/events.js');
+  for (const ev of res.events) await log(ev.type, ev.payload);
+  if (res.concentrationDc) {
+    const { toast } = await import('./core/store.js');
+    toast(`Concentration save: DC ${res.concentrationDc}`, 'warn');
+  }
+  return res;
 }
 
 /** Persist the active character and refresh its derived sheet. */
@@ -530,6 +561,9 @@ watch('mode', renderMode);
 /* ------------------------------------------------------------------ */
 
 async function boot() {
+  // Theme first: everything below renders under it.
+  theme.init();
+
   // ?storage=memory boots an ephemeral session: nothing is written to disk or
   // to the server, and everything is gone on reload. The UI test tier uses it
   // so that driving the real app cannot touch real characters or append to a

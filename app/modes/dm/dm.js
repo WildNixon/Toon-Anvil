@@ -16,6 +16,7 @@ import {
 } from '../../core/rules2024.js';
 import { go, saveCharacter } from '../../app.js';
 import { runnerPanel, publish, pull, adopt } from './runner.js';
+import { tabs } from '../../ui/kit.js';
 import { partyPanel } from './party.js';
 import { lootPanel, improvPanel } from './panels.js';
 import { addMonsters } from './runner.js';
@@ -109,17 +110,14 @@ function tabsPanel() {
   const panel = el('div', { class: 'panel rivets accent' });
   panel.append(el('span', { class: 'lvl accent' }, 'Dungeon Master'));
   panel.append(el('h3', {}, `${monsters.length} monsters · ${glossary.length} rules entries`));
-  const row = el('div', { class: 'btnrow' });
-  for (const [k, label] of Object.entries({
-    runner: 'Run a fight', party: 'Party', loot: 'Treasure', improv: 'Improvise',
-    encounter: 'Encounter builder', bestiary: 'Bestiary', reference: 'Rules reference',
-  })) {
-    row.append(el('button', {
-      class: `act ${tab === k ? '' : 'ghost'} small`,
-      onClick: () => { tab = k; draw(); },
-    }, label));
-  }
-  panel.append(row);
+  panel.append(tabs({
+    items: Object.entries({
+      runner: 'Run a fight', party: 'Party', loot: 'Treasure', improv: 'Improvise',
+      encounter: 'Encounter builder', bestiary: 'Bestiary', reference: 'Rules reference',
+    }).map(([id, label]) => ({ id, label })),
+    active: tab,
+    onSelect: (id) => { tab = id; draw(); },
+  }));
   return panel;
 }
 

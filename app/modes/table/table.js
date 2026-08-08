@@ -17,6 +17,7 @@ import { getState, el } from '../../core/store.js';
 import * as session from '../../core/session.js';
 import * as live from '../../core/live.js';
 import { runnerPanel, adopt, pull } from '../dm/runner.js';
+import { tabs } from '../../ui/kit.js';
 import { partyPanel } from '../dm/party.js';
 
 export const title = 'Table';
@@ -82,13 +83,10 @@ function tabsPanel() {
   const me = session.me();
   panel.append(el('h3', {}, me ? `Playing as ${me.name}` : 'At the table'));
 
-  const row = el('div', { class: 'btnrow' });
-  for (const [k, label] of [['fight', 'The fight'], ['party', 'The party']]) {
-    row.append(el('button', {
-      class: `act ${tab === k ? '' : 'ghost'} small`,
-      onClick: () => { tab = k; draw(); },
-    }, label));
-  }
-  panel.append(row);
+  panel.append(tabs({
+    items: [{ id: 'fight', label: 'The fight' }, { id: 'party', label: 'The party' }],
+    active: tab,
+    onSelect: (id) => { tab = id; draw(); },
+  }));
   return panel;
 }

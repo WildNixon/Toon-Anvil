@@ -5,7 +5,7 @@ breaks the moment the app is offline - and "works on a plane / in a basement"
 is a requirement here. Self-hosting also removes a third-party request from
 every page load.
 
-Fonts: Archivo Black (SIL OFL 1.1), IBM Plex Mono / IBM Plex Serif (SIL OFL 1.1).
+Fonts: Cinzel (SIL OFL 1.1), Alegreya (SIL OFL 1.1), IBM Plex Mono (SIL OFL 1.1).
 Redistribution is permitted under the OFL; see ATTRIBUTION.md.
 
     python tools/fetch_fonts.py [--force]
@@ -32,11 +32,12 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
 WANTED = [
-    ("archivo-black.woff2",  "Archivo+Black:wght@400",  "400"),
-    ("plex-mono-400.woff2",  "IBM+Plex+Mono:wght@400",  "400"),
-    ("plex-mono-600.woff2",  "IBM+Plex+Mono:wght@600",  "600"),
-    ("plex-serif-400.woff2", "IBM+Plex+Serif:wght@400", "400"),
-    ("plex-serif-600.woff2", "IBM+Plex+Serif:wght@600", "600"),
+    ("cinzel-700.woff2",          "Cinzel:wght@700",           "700"),
+    ("alegreya-400.woff2",        "Alegreya:wght@400",         "400"),
+    ("alegreya-600.woff2",        "Alegreya:wght@600",         "600"),
+    ("alegreya-italic-400.woff2", "Alegreya:ital,wght@1,400",  "400"),
+    ("plex-mono-400.woff2",       "IBM+Plex+Mono:wght@400",    "400"),
+    ("plex-mono-600.woff2",       "IBM+Plex+Mono:wght@600",    "600"),
 ]
 
 

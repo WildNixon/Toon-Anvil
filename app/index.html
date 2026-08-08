@@ -5,18 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Toon Anvil</title>
 <meta name="description" content="Build, play and log D&amp;D 2024 characters, with first-class homebrew.">
-<meta name="theme-color" content="#1c2124">
+<meta name="theme-color" content="#221a11">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<!-- Apply the chosen theme before the stylesheet paints, or a candlelight
+     user gets one parchment flash on every load. ui/theme.js owns the rest. -->
+<script>try{var t=localStorage.getItem('toonanvil.theme');
+if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="stylesheet" href="./ui/design.css">
 </head>
 <body>
 <div id="app">
-  <header class="topbar">
-    <div class="brand">Toon<em>Anvil</em></div>
-    <nav class="modes" id="modes" aria-label="Modes"></nav>
-    <div class="who" id="who"></div>
-  </header>
+  <div id="chrome" class="chrome">
+    <header class="topbar">
+      <div class="brand">Toon<em>Anvil</em></div>
+      <nav class="modes" id="modes" aria-label="Modes"></nav>
+      <div class="who" id="who"></div>
+    </header>
+    <div id="ribbon" class="ribbon" hidden></div>
+  </div>
   <main id="view" tabindex="-1">
     <div class="empty">Loading&hellip;</div>
   </main>
