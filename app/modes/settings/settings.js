@@ -17,7 +17,8 @@ import { getDataSource, setDataSource } from '../../core/db.js';
 import {
   capabilities, forget, generateText, BEDS, playBed, stopBed, nowPlaying,
 } from '../../core/providers.js';
-import { startSandbox } from '../../app.js';
+import { startSandbox, refreshChrome } from '../../app.js';
+import * as session from '../../core/session.js';
 import * as theme from '../../ui/theme.js';
 
 export const title = 'Settings';
@@ -37,6 +38,7 @@ function draw() {
   container.innerHTML = '';
   container.append(storagePanel());
   container.append(appearancePanel());
+  container.append(seatPanel());
   container.append(connectorPanel());
   container.append(ambiencePanel());
 }
@@ -102,6 +104,41 @@ function storagePanel() {
       class: 'act ghost', style: 'margin-top:10px', onClick: startSandbox,
     }, 'Open a sandbox session'));
   }
+  return panel;
+}
+
+/* ------------------------------------------------------------------ */
+
+function seatPanel() {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Seat'));
+  panel.append(el('h3', {}, 'Player or Dungeon Master'));
+
+  if (session.isOpen()) {
+    // At a table, the table decides; a local switch would be a lie the
+    // server ignores.
+    panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
+      'A table is open - your seat there decides. '
+      + `You are ${session.isDm() ? 'the Dungeon Master' : 'a player'}.`));
+    return panel;
+  }
+
+  const dm = session.isDm();
+  panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
+    `This device is ${dm ? "in the DM's seat: the DM screen and the homebrew "
+      + 'analyser are in the menu' : "in a player's seat: the menu stays "
+      + 'about playing'}. This tidies the menu, nothing more - at a real `
+    + 'table the server decides what you may change.'));
+
+  panel.append(el('button', {
+    class: 'act' + (dm ? ' ghost' : ''),
+    onClick: async () => {
+      session.setLocalRole(dm ? 'player' : 'dm');
+      toast(dm ? "Back to the player's seat" : "You have the DM's seat", 'ok');
+      await refreshChrome();
+      draw();
+    },
+  }, dm ? "Return to the player's seat" : "Take the DM's seat"));
   return panel;
 }
 

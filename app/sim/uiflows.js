@@ -996,6 +996,95 @@ async function openProbe(doc, name) {
     reason: onProbe ? '' : 'Play opened on a different character', hp };
 }
 
+/**
+ * The seat gate, in its own sandbox.
+ *
+ * Boots ?storage=memory&seat=ask - the one sandbox variant that shows the
+ * first-run welcome - and walks the whole gate: choose Player, see a player's
+ * menu; take the DM's seat in Settings, see the DM's. The ordinary sandbox
+ * never shows this screen (it opens in the DM's seat so everything is
+ * tryable), which is why this flow cannot share the main frame.
+ *
+ * The sandbox seat must never persist: trying the DM screen today must not
+ * change what the real session shows tomorrow. Asserted against a snapshot
+ * because the REAL key may legitimately exist - it belongs to whoever owns
+ * this browser profile.
+ */
+export async function runRoleGate(CheckClass) {
+  const check = new CheckClass('role_gate');
+  const t0 = performance.now();
+  let error = null;
+  let frame = null;
+  const realRoleBefore = localStorage.getItem('toonanvil.role');
+  try {
+    check.feature('ui', 'seat', 'permissions');
+
+    // The welcome only appears with no table open - an open table decides
+    // the seat itself. A table left behind by an earlier run would make this
+    // flow fail for the wrong reason, so close defensively.
+    try {
+      await fetch('/api/table/close', { method: 'POST' });
+    } catch { /* no server: memory boot cannot see a table anyway */ }
+
+    frame = document.createElement('iframe');
+    frame.src = '/index.html?storage=memory&seat=ask';
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;'
+      + 'height:1000px;border:0';
+    document.body.append(frame);
+    await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
+    const doc = frame.contentDocument;
+    await waitFor(() => (doc.querySelector('main') ? true : null), { timeout: 15000 });
+
+    const overlay = await waitFor(() => doc.querySelector('.welcome') || null,
+      { timeout: 8000 });
+    check.ok(!!overlay, 'a fresh device is asked who is holding it');
+    check.ok(!!button(doc, 'Dungeon Master'), 'Dungeon Master is one answer');
+
+    button(doc, 'Player')?.click();
+    const gone = await waitFor(() => (!doc.querySelector('.welcome') ? true : null),
+      { timeout: 5000 });
+    check.ok(!!gone, 'answering dismisses the welcome');
+
+    const labels = () => [...doc.querySelectorAll('#modes button')]
+      .map((b) => b.textContent.trim());
+    check.ok(!labels().includes('DM') && !labels().includes('Homebrew'),
+      "a player's menu is about playing", labels().join(', '));
+    check.ok(labels().includes('Play') && labels().includes('Build'),
+      'and still owns their character fully');
+
+    check.ok(await goToMode(doc, 'Settings', 'Seat'), 'Settings shows the Seat panel');
+    button(doc, "Take the DM's seat")?.click();
+    const dmNav = await waitFor(() => (labels().includes('DM') ? true : null),
+      { timeout: 5000 });
+    check.ok(!!dmNav, "taking the DM's seat reveals the DM screen");
+    check.ok(labels().includes('Homebrew'), 'and the homebrew analyser');
+
+    button(doc, "Return to the player's seat")?.click();
+    const back = await waitFor(() => (!labels().includes('DM') ? true : null),
+      { timeout: 5000 });
+    check.ok(!!back, 'and the seat can be handed back');
+
+    check.eq(localStorage.getItem('toonanvil.role'), realRoleBefore,
+      'a sandbox seat never touches the real preference');
+  } catch (err) {
+    error = `${err.name}: ${err.message}`;
+  } finally {
+    frame?.remove();
+  }
+  return {
+    id: 'role_gate',
+    title: "The DM's seat is chosen, remembered, and swappable",
+    passed: check.passed,
+    total: check.total,
+    failures: check.failures,
+    features: [...check.touched],
+    error,
+    empty: !error && check.total === 0,
+    ok: !error && check.total > 0 && check.failures.length === 0,
+    ms: +(performance.now() - t0).toFixed(0),
+  };
+}
+
 export async function runTwoClient(CheckClass) {
   const check = new CheckClass('two_clients_stay_in_step');
   const t0 = performance.now();
@@ -1291,6 +1380,8 @@ export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
 
   // Last, and outside the shared ephemeral frame: this one needs the real
   // server, so it manages its own clients and cleans up after itself.
+  results.push(await runRoleGate(CheckClass));
+  onProgress({ flow: 'role_gate' });
   results.push(await runTwoClient(CheckClass));
   onProgress({ flow: 'two_clients_stay_in_step' });
   results.push(await runPlayerView(CheckClass));

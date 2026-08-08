@@ -66,9 +66,66 @@ export function current() { return cached; }
 export function isOpen() { return Boolean(cached?.open); }
 export function me() { return cached?.me || null; }
 
-/** Everyone is the DM until a table says otherwise - solo play is admin. */
-export function isDm() { return !isOpen() || cached?.me?.role === 'dm'; }
-export function isPlayer() { return isOpen() && cached?.me?.role === 'player'; }
+/* ------------------------------------------------------------------ */
+/* the seat: player or Dungeon Master                                  */
+/* ------------------------------------------------------------------ */
+
+const ROLE_KEY = 'toonanvil.role';
+
+// A sandbox seat lives here and only here - trying the DM screen in a
+// sandbox must not change what the real session shows tomorrow.
+let roleMemory = null;
+
+/** The sandbox's seat rule, or null when this is not a sandbox. */
+function ephemeralSeat() {
+  const p = new URLSearchParams(location.search);
+  if (p.get('storage') !== 'memory') return null;
+  // Default DM: a sandbox exists to try everything. ?seat=player narrows it,
+  // ?seat=ask shows the first-run welcome (the gym uses this to test it).
+  return p.get('seat') || 'dm';
+}
+
+/** The seat chosen on THIS device, before any table has a say. */
+export function localRole() {
+  const eph = ephemeralSeat();
+  if (eph === 'dm' || eph === 'player') return roleMemory ?? eph;
+  if (eph === 'ask') return roleMemory;
+  try { return localStorage.getItem(ROLE_KEY); } catch { return null; }
+}
+
+export function setLocalRole(role) {
+  if (ephemeralSeat()) { roleMemory = role; return; }
+  try {
+    if (role) localStorage.setItem(ROLE_KEY, role);
+    else localStorage.removeItem(ROLE_KEY);
+  } catch { /* private mode: the seat lasts as long as the tab */ }
+}
+
+/**
+ * Who is the DM, as one pure rule.
+ *
+ * The table's seat always wins: joining somebody's game as a player makes you
+ * a player there no matter what this device remembers. With no table, the
+ * remembered local seat decides. This chooses which SCREENS exist - it is
+ * navigation, not security. The server refuses a player's writes regardless
+ * of what any browser believes about itself.
+ */
+export function resolveSeat({ tableOpen, tableRole, localRole: local }) {
+  if (tableOpen) return tableRole === 'dm' ? 'dm' : 'player';
+  return local === 'dm' ? 'dm' : 'player';
+}
+
+export function isDm() {
+  return resolveSeat({
+    tableOpen: isOpen(),
+    tableRole: cached?.me?.role || null,
+    localRole: localRole(),
+  }) === 'dm';
+}
+export function isPlayer() { return !isDm(); }
+
+/** No table, no chosen seat: the first-run welcome should ask. */
+export function needsSeat() { return !isOpen() && !localRole(); }
 
 /** Joined, or looking at a table we have not been let into yet. */
 export function needsJoin() { return isOpen() && !cached?.me; }

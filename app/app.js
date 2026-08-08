@@ -226,6 +226,18 @@ export function go(mode) {
   location.hash = `#${mode}`;
 }
 
+/**
+ * Rebuild everything above <main> after something changed which modes exist -
+ * a seat flip in Settings, joining a table. If the mode on screen just
+ * stopped existing for this browser, renderMode's own guard bounces to one
+ * that does.
+ */
+export async function refreshChrome() {
+  renderNav();
+  renderWho();
+  if (!visibleModes().some((m) => m.id === getState().mode)) await renderMode();
+}
+
 function renderNav() {
   const nav = $('#modes');
   const { mode } = getState();
@@ -606,6 +618,14 @@ async function boot() {
   renderNav();
   renderWho();
   await renderMode();
+
+  // First run on this device, no table to answer for us: ask who is holding
+  // it. Everything above already rendered under the calmer player default,
+  // so choosing DM only has to refresh the chrome.
+  if (session.needsSeat()) {
+    const welcome = await import('./ui/welcome.js');
+    welcome.mount({ onChoose: () => refreshChrome() });
+  }
 
   watchTheTable();
 

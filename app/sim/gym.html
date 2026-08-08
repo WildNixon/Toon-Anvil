@@ -87,6 +87,7 @@ import * as dmGen from '../modes/dm/generators.js';
 import * as parseContent from '../homebrew/parse-content.js';
 import * as providers from '../core/providers.js';
 import * as session from '../core/session.js';
+import * as theme from '../ui/theme.js';
 
 const $ = (s) => document.querySelector(s);
 const log = (m) => { $('#log').textContent += `${m}\n`;
@@ -117,6 +118,7 @@ async function buildCtx() {
     content: { ...parseContent, compendiumWithCustom },
     providers,
     session,
+    theme,
     dbTokenKey: 'toonanvil.token',
     // Raw HTTP on purpose. Going through ServerAdapter would test the client;
     // the whole question here is what the SERVER refuses.

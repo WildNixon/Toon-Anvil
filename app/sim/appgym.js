@@ -1694,6 +1694,87 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- chrome: seat + theme ----------------------------- */
+  {
+    id: 'chrome',
+    title: 'Who is the DM, and what colour is the page',
+    why: 'Both rules are pure functions precisely so they can be tested as '
+       + 'tables. The seat decides which screens exist; getting it wrong '
+       + 'either hides a DM\'s own tools or hands a player screens full of '
+       + 'controls the server will refuse.',
+    scenarios: [
+      {
+        id: 'seat_truth_table',
+        title: 'The table seat always beats the local one',
+        run(c, { session }) {
+          c.feature('seat', 'table');
+          const cases = [
+            // At a table, the table decides - whatever the device remembers.
+            [{ tableOpen: true, tableRole: 'dm', localRole: 'player' }, 'dm',
+              'the table DM is the DM even on a player-seat device'],
+            [{ tableOpen: true, tableRole: 'player', localRole: 'dm' }, 'player',
+              'joining as a player makes you a player, whatever this device thinks'],
+            [{ tableOpen: true, tableRole: null, localRole: 'dm' }, 'player',
+              'at a table but not joined: a spectator is not the DM'],
+            // Solo, the remembered seat decides.
+            [{ tableOpen: false, tableRole: null, localRole: 'dm' }, 'dm',
+              'solo with the DM seat chosen'],
+            [{ tableOpen: false, tableRole: null, localRole: 'player' }, 'player',
+              'solo with the player seat chosen'],
+            [{ tableOpen: false, tableRole: null, localRole: null }, 'player',
+              'no choice yet defaults to the calmer seat'],
+          ];
+          for (const [input, want, label] of cases) {
+            c.eq(session.resolveSeat(input), want, label);
+          }
+        },
+      },
+      {
+        id: 'theme_resolution',
+        title: 'An explicit choice beats the operating system, in both directions',
+        run(c, { theme }) {
+          c.feature('theme');
+          const cases = [
+            [null, false, 'light', 'no choice on a light machine follows it'],
+            [null, true, 'dark', 'no choice on a dark machine follows it'],
+            ['light', true, 'light', 'choosing parchment beats a dark OS'],
+            ['dark', false, 'dark', 'choosing candlelight beats a light OS'],
+            ['light', false, 'light', 'agreeing with the OS still works'],
+            ['dark', true, 'dark', 'in both directions'],
+          ];
+          for (const [choice, sysDark, want, label] of cases) {
+            c.eq(theme.resolve(choice, sysDark), want, label);
+          }
+        },
+      },
+      {
+        id: 'seat_persists_on_this_device',
+        title: 'The chosen seat is remembered, and clearable',
+        run(c, { session }) {
+          c.feature('seat');
+          // This page is NOT a sandbox, so setLocalRole writes the real key -
+          // save and restore it, the same discipline the theme flow uses.
+          const before = localStorage.getItem('toonanvil.role');
+          try {
+            session.setLocalRole('dm');
+            c.eq(localStorage.getItem('toonanvil.role'), 'dm',
+              'taking the DM seat stores it');
+            c.eq(session.localRole(), 'dm', 'and the module reads it back');
+            session.setLocalRole('player');
+            c.eq(localStorage.getItem('toonanvil.role'), 'player',
+              'switching seats overwrites rather than accumulates');
+            session.setLocalRole(null);
+            c.eq(localStorage.getItem('toonanvil.role'), null,
+              'clearing the seat removes the key entirely');
+          } finally {
+            if (before === null) localStorage.removeItem('toonanvil.role');
+            else localStorage.setItem('toonanvil.role', before);
+          }
+        },
+      },
+    ],
+  },
+
   /* ---------------- live state -------------------------------------- */
   {
     id: 'live',
@@ -2200,7 +2281,9 @@ export const BARS = {
   // landed. A coverage bar that never moves as the suite grows stops being a
   // bar and becomes decoration - it would read green forever while the ratio
   // of things tested to things shipped quietly fell.
-  minFeaturesCovered: 30,
+  // Raised 30 -> 32 with the seat and theme work. The ratchet only means
+  // something if it moves when the app grows.
+  minFeaturesCovered: 32,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.
@@ -2377,6 +2460,20 @@ export const MUTATIONS = [
     // hit points indefinitely while looking perfectly healthy.
     patch: (ctx) => ({ table: { ...ctx.table,
       changes: async (since) => ({ ...(await ctx.table.changes(since)), gap: false }) } }),
+  },
+  {
+    id: 'seat_rule_inverted',
+    what: 'resolveSeat() lets the local seat beat the table seat',
+    // The failure that matters: a device remembered as DM joins somebody
+    // else's table as a player and still shows the DM screens. Harmless for
+    // writes (the server refuses), corrosive for trust.
+    patch: (ctx) => ({ session: { ...ctx.session,
+      resolveSeat: ({ localRole }) => (localRole === 'dm' ? 'dm' : 'player') } }),
+  },
+  {
+    id: 'theme_choice_ignored',
+    what: 'theme.resolve() always answers light',
+    patch: (ctx) => ({ theme: { ...ctx.theme, resolve: () => 'light' } }),
   },
   {
     id: 'hp_hidden_in_ui_only',
