@@ -10,17 +10,14 @@ import { db } from '../../core/db.js';
 import { log } from '../../core/events.js';
 import {
   ABILITIES, ABILITY_NAMES, SKILLS, abilityMod, proficiencyBonus,
-  parseStartingEquipment,
+  parseStartingEquipment, pointBuySpend, arrayAssignment,
+  POINT_BUY_BUDGET, STANDARD_ARRAY,
 } from '../../core/rules2024.js';
 import { rollAbilityScores } from '../../core/dice.js';
 import { saveCharacter, selectCharacter, recompute, go } from '../../app.js';
 import * as session from '../../core/session.js';
 
 export const title = 'Build';
-
-const POINT_BUY_COST = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 };
-const STANDARD_ARRAY = [15, 14, 13, 12, 10, 8];
-const POINT_BUY_BUDGET = 27;
 
 let container = null;
 
@@ -473,17 +470,30 @@ function abilitiesPanel(ch) {
   panel.append(methods);
 
   if (method === 'pointbuy') {
-    const spent = ABILITIES.reduce(
-      (n, a) => n + (POINT_BUY_COST[ch.abilities?.[a]] ?? 0), 0,
-    );
-    const over = spent > POINT_BUY_BUDGET;
+    const { spent, over, outOfRange } = pointBuySpend(ch.abilities);
     panel.append(el('p', { class: 'mono', style: `color:${over ? 'var(--bad)' : 'var(--muted)'}` },
       `${spent} / ${POINT_BUY_BUDGET} points spent${over ? ' - over budget' : ''}`));
+    if (outOfRange.length) {
+      // Scores that predate enforcement (rolled, imported, manual). Named,
+      // not silently priced at zero - and never auto-rewritten.
+      panel.append(el('p', { class: 'mono', style: 'color:var(--warn);font-size:12px' },
+        `Outside point buy's 8-15: ${outOfRange.map((a) => a.toUpperCase())
+          .join(', ')} - bring them into range, or Manual keeps them.`));
+    }
   }
 
   if (method === 'array') {
     panel.append(el('p', { class: 'muted' },
       `Assign ${STANDARD_ARRAY.join(', ')} across the six abilities.`));
+    panel.append(el('div', { class: 'btnrow', style: 'margin-bottom:10px' },
+      el('button', {
+        class: 'act ghost small',
+        title: '15 to Strength down through 8 to Charisma - a starting point',
+        onClick: () => update((c) => {
+          ABILITIES.forEach((a, i) => { c.abilities[a] = STANDARD_ARRAY[i]; });
+          return c;
+        }),
+      }, 'Assign in order')));
   }
 
   if (method === 'roll') {
@@ -501,20 +511,69 @@ function abilitiesPanel(ch) {
   }
 
   const grid = el('div', { class: 'grid stats' });
+  const assign = method === 'array' ? arrayAssignment(ch.abilities) : null;
   for (const ab of ABILITIES) {
     const score = ch.abilities?.[ab] ?? 10;
     const bonus = ch.abilityBonuses?.[ab] ?? 0;
     const total = score + bonus;
     const cell = el('div', { class: 'stat' });
     cell.append(el('div', { class: 'k' }, ABILITY_NAMES[ab]));
-    cell.append(el('input', {
-      type: 'number', min: '1', max: '30', value: String(score),
-      style: 'font-family:var(--display);font-size:22px;text-align:center;padding:4px',
-      onChange: (e) => {
-        const v = Math.max(1, Math.min(30, parseInt(e.target.value, 10) || 10));
-        update((c) => { c.abilities[ab] = v; return c; });
-      },
-    }));
+
+    if (method === 'array') {
+      // The array is a multiset: each value assignable once. The select
+      // offers only what remains (plus the current value), so duplicates
+      // cannot be CREATED here - pre-existing ones show red, never
+      // auto-rewritten.
+      const sel = el('select', {
+        'aria-label': `${ABILITY_NAMES[ab]} assigned value`,
+        style: 'font-family:var(--display);font-size:20px;text-align:center;'
+          + 'padding:4px;width:100%',
+      });
+      const offered = [...new Set([score, ...assign.remaining])]
+        .sort((a, b) => b - a);
+      for (const v of offered) {
+        sel.append(el('option', { value: String(v), selected: v === score },
+          String(v)));
+      }
+      if (assign.duplicates.includes(ab) || assign.unassigned.includes(ab)) {
+        sel.style.color = 'var(--bad)';
+        sel.title = 'Not available from the standard array';
+      }
+      sel.addEventListener('change', () => {
+        update((c) => { c.abilities[ab] = Number(sel.value); return c; });
+      });
+      cell.append(sel);
+    } else {
+      const isPB = method === 'pointbuy';
+      cell.append(el('input', {
+        type: 'number', min: isPB ? '8' : '1', max: isPB ? '15' : '30',
+        value: String(score),
+        'aria-label': `${ABILITY_NAMES[ab]} score`,
+        style: 'font-family:var(--display);font-size:22px;text-align:center;padding:4px',
+        onChange: (e) => {
+          let v = parseInt(e.target.value, 10);
+          if (!Number.isFinite(v)) v = score;
+          if (isPB) {
+            // Enforce, don't advise: out-of-range and over-budget changes
+            // revert. Manual is the named escape hatch.
+            if (v < 8 || v > 15) {
+              toast("Point buy runs 8-15 - Manual keeps anything.", 'warn');
+              e.target.value = String(score);
+              return;
+            }
+            const check = pointBuySpend({ ...ch.abilities, [ab]: v });
+            if (check.spent > POINT_BUY_BUDGET) {
+              toast(`That would spend ${check.spent} of ${POINT_BUY_BUDGET} points`, 'warn');
+              e.target.value = String(score);
+              return;
+            }
+          }
+          v = Math.max(1, Math.min(30, v));
+          update((c) => { c.abilities[ab] = v; return c; });
+        },
+      }));
+    }
+
     cell.append(el('div', { class: 'sub' },
       `${sign(abilityMod(total))}${bonus ? ` (${sign(bonus)} bonus)` : ''}`));
     grid.append(cell);

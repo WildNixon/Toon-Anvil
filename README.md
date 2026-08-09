@@ -92,9 +92,11 @@ reports each one where it matters.
    armour, and sets the purse to the option's own gold. What the price list
    can't name (a Monk's instrument) is still granted, marked unresolved.
    Skipping keeps the 15 GP stake; the Market remains the other road.
-3. **Ability-score methods advise rather than enforce.** Standard array tells
-   you the numbers but doesn't assign or validate them; point buy shows your
-   spend and turns red over budget rather than blocking it.
+3. **Ability-score methods enforce.** Point buy blocks over-budget and
+   out-of-range changes, and names pre-existing offenders instead of
+   silently pricing them at zero; standard array assigns through selects
+   that offer only unclaimed values. Manual remains the named escape hatch
+   for tables that roll their own rules.
 4. **Reactions are never simulated.** The mapper understands them, and they are
    the second most common mechanic in the test corpus, but the simulator has no
    trigger model — so a reaction contributes nothing to any measured number.

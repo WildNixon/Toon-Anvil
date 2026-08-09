@@ -2286,11 +2286,52 @@ export const SUITES = [
   /* ---------------- character generation ----------------------------- */
   {
     id: 'chargen',
-    title: 'Starting equipment',
-    why: 'A new character began with nothing and AC 10 - the second-biggest '
-       + 'gap on the README\'s own list. The parser reads the SRD\'s '
-       + 'sentences, so a grammar drift must fail loudly, not grant nothing.',
+    title: 'Character creation',
+    why: 'A new character began with nothing and AC 10, and the ability '
+       + 'methods advised without enforcing - both from the README\'s own '
+       + 'list. The parsers read the SRD\'s sentences, so a grammar drift '
+       + 'must fail loudly, not grant nothing.',
     scenarios: [
+      {
+        id: 'point_buy_spend',
+        title: 'Point buy prices every score, and names what it cannot price',
+        run(c, { rules }) {
+          c.feature('chargen', 'abilities');
+          const flat = { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
+          c.eq(rules.pointBuySpend(flat).spent, 12, 'all tens spend 12');
+          const maxed = { str: 15, dex: 15, con: 15, int: 8, wis: 8, cha: 8 };
+          const m = rules.pointBuySpend(maxed);
+          c.eq(m.spent, 27, 'three fifteens and three eights spend exactly 27');
+          c.ok(!m.over, 'and that is not over budget');
+          const cheat = rules.pointBuySpend({ ...flat, str: 18 });
+          c.same(cheat.outOfRange, ['str'],
+            'an 18 is named out of range - the old sum priced it at ZERO');
+          c.eq(cheat.spent, 10, 'and its cost is excluded, not invented');
+          const over = rules.pointBuySpend({ str: 15, dex: 15, con: 15,
+            int: 9, wis: 8, cha: 8 });
+          c.ok(over.over, '28 points is over the 27 budget');
+        },
+      },
+      {
+        id: 'array_assignment',
+        title: 'The standard array is a multiset - each value assignable once',
+        run(c, { rules }) {
+          c.feature('chargen', 'abilities');
+          const good = rules.arrayAssignment(
+            { str: 15, dex: 14, con: 13, int: 12, wis: 10, cha: 8 });
+          c.ok(good.complete && good.valid, 'a clean assignment is complete');
+          c.eq(good.remaining.length, 0, 'with nothing left over');
+          const dup = rules.arrayAssignment(
+            { str: 15, dex: 15, con: 13, int: 12, wis: 10, cha: 8 });
+          c.ok(!dup.valid, 'two fifteens are not valid');
+          c.same(dup.duplicates, ['dex'],
+            'the second claimant is the named duplicate');
+          const off = rules.arrayAssignment(
+            { str: 15, dex: 14, con: 13, int: 12, wis: 10, cha: 9 });
+          c.same(off.unassigned, ['cha'],
+            'a value the array never offered is named too');
+        },
+      },
       {
         id: 'equipment_grammar',
         title: 'Every class and background package parses, quantities intact',
@@ -3258,6 +3299,24 @@ export const MUTATIONS = [
             label: 'HIDDEN leak', revealed: false }];
         }
         return r;
+      } } }),
+  },
+  {
+    id: 'pointbuy_free_above_15',
+    what: 'pointBuySpend prices an 18 at zero again - the pre-fix behaviour',
+    patch: (ctx) => ({ rules: { ...ctx.rules,
+      pointBuySpend: (ab) => {
+        const out = ctx.rules.pointBuySpend(ab);
+        return { ...out, outOfRange: [] };
+      } } }),
+  },
+  {
+    id: 'array_allows_duplicates',
+    what: 'arrayAssignment stops noticing a value claimed twice',
+    patch: (ctx) => ({ rules: { ...ctx.rules,
+      arrayAssignment: (ab, arr) => {
+        const out = ctx.rules.arrayAssignment(ab, arr);
+        return { ...out, duplicates: [], valid: true };
       } } }),
   },
   {

@@ -91,7 +91,9 @@ import * as theme from '../ui/theme.js';
 import { weatherFor, forecastFor } from '../core/weather.js';
 import { newCampaign, newRegion, stampDay } from '../core/campaign.js';
 import { unitPrice, sellBack } from '../modes/shop/pricing.js';
-import { parseStartingEquipment } from '../core/rules2024.js';
+import {
+  parseStartingEquipment, pointBuySpend, arrayAssignment,
+} from '../core/rules2024.js';
 import { FIXTURE_NAME, fixturePdfBytes } from './fixtures.js';
 
 const $ = (s) => document.querySelector(s);
@@ -126,7 +128,7 @@ async function buildCtx() {
     theme,
     campaign: { weatherFor, forecastFor, newCampaign, newRegion, stampDay,
       unitPrice, sellBack },
-    rules: { parseStartingEquipment },
+    rules: { parseStartingEquipment, pointBuySpend, arrayAssignment },
     dbTokenKey: 'toonanvil.token',
     // Raw HTTP on purpose. Going through ServerAdapter would test the client;
     // the whole question here is what the SERVER refuses.

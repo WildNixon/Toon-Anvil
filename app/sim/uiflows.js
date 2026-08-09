@@ -238,6 +238,70 @@ export const FLOWS = [
   },
 
   {
+    id: 'ability_enforcement',
+    title: 'The methods now enforce what they preach',
+    async run(c, { doc }) {
+      c.feature('ui', 'build', 'abilities');
+      c.ok(await goToMode(doc, 'Build', 'Ability scores'), 'Build mode opens');
+      button(doc, 'Point buy')?.click();
+      await waitUntilSettled(doc);
+
+      const input = (name) => doc.querySelector(
+        `main input[aria-label="${name} score"]`);
+      c.ok(!!input('Strength'), 'ability inputs carry their names now');
+      if (!input('Strength')) return;
+
+      // The previous flow leaves ROLLED scores behind; zero everything
+      // first so the arithmetic below is deterministic.
+      const put = async (name, v) => {
+        setField(input(name), String(v));
+        await waitUntilSettled(doc);
+      };
+      for (const n of ['Strength', 'Dexterity', 'Constitution',
+        'Intelligence', 'Wisdom', 'Charisma']) await put(n, 10);
+
+      setField(input('Strength'), '18');
+      await waitUntilSettled(doc);
+      c.ok(input('Strength')?.value !== '18',
+        'an 18 does not survive point buy', input('Strength')?.value);
+
+      // Spend to the last point, then the 28th is refused outright.
+      await put('Strength', 15);
+      await put('Dexterity', 15);
+      await put('Intelligence', 11);
+      const brim = await waitFor(() => (/27 \/ 27 points spent/
+        .test(mainText(doc)) ? true : null), { timeout: 6000 });
+      c.ok(!!brim, 'the budget can be spent to the last point');
+      setField(input('Wisdom'), '11');
+      await waitUntilSettled(doc);
+      c.eq(input('Wisdom')?.value, '10',
+        'the 28th point is refused, not just reddened');
+
+      // Standard array: selects offer only what remains.
+      button(doc, 'Standard array')?.click();
+      await waitUntilSettled(doc);
+      c.ok(mainText(doc).includes('15, 14, 13'),
+        'the sentence still states the numbers');
+      button(doc, 'Assign in order')?.click();
+      await waitUntilSettled(doc);
+      const sel = doc.querySelector(
+        'main select[aria-label="Strength assigned value"]');
+      c.ok(!!sel, 'array mode assigns by select');
+      c.eq(sel?.value, '15', 'assign-in-order landed the 15 on Strength');
+
+      // Restore the bench: manual, all tens, back to point buy.
+      button(doc, 'Manual')?.click();
+      await waitUntilSettled(doc);
+      for (const n of ['Strength', 'Dexterity', 'Constitution',
+        'Intelligence', 'Wisdom', 'Charisma']) await put(n, 10);
+      button(doc, 'Point buy')?.click();
+      const fresh = await waitFor(() => (/12 \/ 27 points spent/
+        .test(mainText(doc)) ? true : null), { timeout: 6000 });
+      c.ok(!!fresh, 'back to the fresh 12 / 27');
+    },
+  },
+
+  {
     id: 'build_equipment',
     title: 'A new character can leave Build armed and armoured',
     async run(c, { doc }) {

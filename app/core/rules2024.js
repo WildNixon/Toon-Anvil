@@ -341,3 +341,54 @@ function resolveEquipment(rawName, pool) {
   }
   return pool.find((it) => it.name.toLowerCase().startsWith(name)) || null;
 }
+
+/* ------------------------------------------------------------------ */
+/* ability-score methods                                               */
+/* ------------------------------------------------------------------ */
+
+export const POINT_BUY_COST = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 };
+export const POINT_BUY_BUDGET = 27;
+export const STANDARD_ARRAY = [15, 14, 13, 12, 10, 8];
+
+/**
+ * Point-buy arithmetic, honestly. Scores outside 8-15 are NOT free - the
+ * old inline sum coalesced their cost to zero, so a typed 18 read as a
+ * bargain. They are listed in outOfRange and excluded from spent, and the
+ * UI both blocks new ones and names existing ones.
+ */
+export function pointBuySpend(abilities = {}) {
+  let spent = 0;
+  const outOfRange = [];
+  for (const a of ABILITIES) {
+    const v = Number(abilities?.[a]);
+    if (POINT_BUY_COST[v] === undefined) outOfRange.push(a);
+    else spent += POINT_BUY_COST[v];
+  }
+  return { spent, over: spent > POINT_BUY_BUDGET, outOfRange };
+}
+
+/**
+ * How a set of scores measures against the standard array, as a multiset:
+ * each array value may be claimed once. `duplicates` are abilities claiming
+ * a value more times than the array supplies; `unassigned` hold values the
+ * array never offered.
+ */
+export function arrayAssignment(abilities = {}, array = STANDARD_ARRAY) {
+  const remaining = [...array];
+  const duplicates = [];
+  const unassigned = [];
+  for (const a of ABILITIES) {
+    const v = Number(abilities?.[a]);
+    const at = remaining.indexOf(v);
+    if (at >= 0) remaining.splice(at, 1);
+    else if (array.includes(v)) duplicates.push(a);
+    else unassigned.push(a);
+  }
+  return {
+    remaining,
+    duplicates,
+    unassigned,
+    complete: !remaining.length && !duplicates.length && !unassigned.length,
+    valid: !duplicates.length,
+  };
+}
