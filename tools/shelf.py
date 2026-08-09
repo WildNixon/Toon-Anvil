@@ -36,6 +36,7 @@ import json
 import re
 import shutil
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,6 +47,12 @@ SHELF = LIBRARY / "shelf"
 MANIFEST = LIBRARY / "_manifest.json"
 
 CATEGORIES = ("settings", "adventures", "options", "bestiaries", "unsorted")
+
+# EVERY manifest writer takes this lock - shelve_file, seed_existing, and
+# serve.py's autosplit_inbox import it too. Two locks over one file is the
+# same as no lock. Held only around the read-modify-write, never across a
+# split (a big book takes minutes).
+MANIFEST_LOCK = threading.Lock()
 
 
 def default_paths() -> dict:
@@ -261,7 +268,8 @@ def _run_split(pdf: Path, extracted_root: Path) -> dict:
 
 
 def shelve_file(src: Path, category: str | None = None, *,
-                origin: str, paths: dict | None = None) -> dict:
+                origin: str, name: str | None = None,
+                paths: dict | None = None) -> dict:
     """File one PDF onto the shelf. Idempotent by content hash, two notches:
 
     - hash known AND its shelf copy exists  -> no-op, alreadyKnown
@@ -278,19 +286,24 @@ def shelve_file(src: Path, category: str | None = None, *,
         raise ValueError(f"unknown category '{category}'")
 
     digest = file_hash(src)
-    man = read_manifest(paths)
-    done = man.setdefault("processed", {})
-    entry = done.get(digest)
+    with MANIFEST_LOCK:
+        entry = read_manifest(paths).get("processed", {}).get(digest)
 
     shelf_path = Path(entry["shelfPath"]) if entry and entry.get("shelfPath") else None
     if entry and entry.get("category") and shelf_path and shelf_path.exists():
         return {**entry, "alreadyKnown": True}
 
+    # The book's identity is the caller's name for it, not whatever staging
+    # name the file arrived under - the upload route stages bytes as
+    # ".incoming/<hash>-<name>", and letting that leak into the shelf once
+    # gave a book a hash-prefixed title and a hash-prefixed slug.
+    true_name = name or src.name
+
     # What is it?
     if category is None:
         try:
             pages = sniff_pdf(src)
-            category, confidence, evidence = detect_book(src.name, pages)
+            category, confidence, evidence = detect_book(true_name, pages)
         except Exception as exc:                           # noqa: BLE001
             category, confidence = "unsorted", 0.0
             evidence = [f"unreadable: {type(exc).__name__}: {exc}"]
@@ -300,7 +313,7 @@ def shelve_file(src: Path, category: str | None = None, *,
     # Move it home.
     dest_dir = paths["shelf"] / category
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / src.name
+    dest = dest_dir / true_name
     if src.resolve() != dest.resolve():
         dest = _unique_dest(dest)
         shutil.move(str(src), str(dest))
@@ -328,8 +341,12 @@ def shelve_file(src: Path, category: str | None = None, *,
         "shelfPath": str(dest), "at": now_iso(),
         "origin": new_entry.get("origin", origin),
     })
-    done[digest] = new_entry
-    write_manifest(man, paths)
+    # Re-read under the lock: another thread may have shelved a DIFFERENT
+    # book while our split ran, and a stale write would erase its entry.
+    with MANIFEST_LOCK:
+        man = read_manifest(paths)
+        man.setdefault("processed", {})[digest] = new_entry
+        write_manifest(man, paths)
     return {**new_entry, "alreadyKnown": False}
 
 
@@ -339,6 +356,11 @@ def seed_existing(files, paths: dict | None = None) -> list[dict]:
     the six pre-shelf extractions were made via explicit CLI paths and the
     manifest never learned their hashes."""
     paths = paths or default_paths()
+    with MANIFEST_LOCK:
+        return _seed_locked(files, paths)
+
+
+def _seed_locked(files, paths: dict) -> list[dict]:
     man = read_manifest(paths)
     done = man.setdefault("processed", {})
     out = []

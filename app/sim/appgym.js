@@ -2049,6 +2049,76 @@ export const SUITES = [
         },
       },
       {
+        id: 'shelf_http',
+        title: 'A dropped book is detected, filed, idempotent, and removable',
+        async run(c, { table, shelf }) {
+          c.feature('shelf', 'detector', 'library', 'permissions');
+          await table.close();
+          const bytes = shelf.fixtureBytes();
+          const name = shelf.fixtureName;
+          // A crashed earlier run may have left the fixture shelved (perhaps
+          // refiled). The hash is just sha256 of the bytes - compute it and
+          // sweep first, so this scenario owns its whole lifecycle.
+          const digest = [...new Uint8Array(
+            await crypto.subtle.digest('SHA-256', bytes))]
+            .map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+          await shelf.remove(digest);
+
+          const up = await shelf.upload(name, bytes);
+          c.eq(up.status, 200, 'the upload lands');
+          c.eq(up.category, 'settings', 'the detector reads it as a setting');
+          c.ok((up.confidence ?? 0) >= 0.4, 'with real confidence');
+          c.ok((up.evidence || []).length >= 1, 'and says why');
+          c.ok(!up.error, 'the split succeeded');
+          c.eq(up.hash, digest, 'keyed by the content hash');
+          // The book keeps ITS name. The upload stages bytes under a
+          // hash-prefixed temp name, and that prefix leaked into the shelf
+          // once - title, slug and all. Substring checks let it slip; an
+          // exact match cannot.
+          c.eq(up.name, name, 'the book keeps its own name');
+          c.eq(up.slug, 'Gym-Fixture-Gazetteer', 'and a clean slug');
+
+          const again = await shelf.upload(name, bytes);
+          c.eq(again.alreadyKnown, true,
+            're-dropping the same bytes is a no-op');
+
+          const listed = await shelf.list();
+          c.ok((listed.categories?.settings || [])
+            .some((r) => r.hash === digest),
+          'the shelf lists it under settings');
+
+          const secs = await shelf.sections(up.slug);
+          c.ok((secs.sections || []).length >= 2,
+            'sections arrive for the Deck');
+          c.ok((secs.sections || []).every(
+            (s, i, a) => !i || a[i - 1].page <= s.page),
+          'in reading order');
+
+          const moved = await shelf.refile(digest, 'adventures');
+          c.eq(moved.status, 200, 'refiled by hand');
+          const listed2 = await shelf.list();
+          c.ok((listed2.categories?.adventures || [])
+            .some((r) => r.hash === digest),
+          'and the listing follows the move');
+
+          // Auth posture: the moment a table exists, filing is the DM's.
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          const refused = await shelf.refile(digest, 'settings', kim.token);
+          c.eq(refused.status, 403, 'a player cannot refile');
+          const asDm2 = await shelf.refile(digest, 'settings', dm.token);
+          c.eq(asDm2.status, 200, 'the DM can');
+          await table.close();
+
+          const gone = await shelf.remove(digest);
+          c.eq(gone.status, 200, 'an uploaded book can be removed');
+          const listed3 = await shelf.list();
+          c.ok(!Object.values(listed3.categories || {}).flat()
+            .some((r) => r.hash === digest),
+          'and it is gone from every category');
+        },
+      },
+      {
         id: 'price_choke_pure',
         title: 'One arithmetic for every price the Market shows or takes',
         run(c, { campaign }) {
@@ -2813,7 +2883,8 @@ export const BARS = {
   // Raised again (34 -> 38) with the shells, the Deck, the weather, the map
   // and the economy. The ratchet only means something if it moves when the
   // app grows.
-  minFeaturesCovered: 38,
+  // And again (38 -> 40) with the shelf and its book detector.
+  minFeaturesCovered: 40,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.
@@ -3044,6 +3115,34 @@ export const MUTATIONS = [
             label: 'HIDDEN leak', revealed: false }];
         }
         return r;
+      } } }),
+  },
+  {
+    id: 'shelf_detector_blind',
+    what: 'the detector shrugs at every book: unsorted, no confidence, no why',
+    // A detector that stops detecting fails soft - files still land SOMEWHERE
+    // - so only an assertion on the verdict itself can notice.
+    patch: (ctx) => ({ shelf: { ...ctx.shelf,
+      upload: async (...a) => ({ ...(await ctx.shelf.upload(...a)),
+        category: 'unsorted', confidence: 0, evidence: [] }) } }),
+  },
+  {
+    id: 'shelf_forgets_hashes',
+    what: 'a re-dropped book claims to be new every time',
+    // The manifest skip breaking would re-split a 354-page book on every
+    // drop and overwrite its output; alreadyKnown is the only visible tell.
+    patch: (ctx) => ({ shelf: { ...ctx.shelf,
+      upload: async (...a) => ({ ...(await ctx.shelf.upload(...a)),
+        alreadyKnown: false }) } }),
+  },
+  {
+    id: 'shelf_sections_shuffled',
+    what: 'sections arrive in arbitrary order instead of reading order',
+    // The Deck would show a book back to front and nothing would error.
+    patch: (ctx) => ({ shelf: { ...ctx.shelf,
+      sections: async (...a) => {
+        const r = await ctx.shelf.sections(...a);
+        return { ...r, sections: [...(r.sections || [])].reverse() };
       } } }),
   },
   {

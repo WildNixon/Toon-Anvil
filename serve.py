@@ -52,6 +52,9 @@ LIBRARY = ROOT / "library"
 EXTRACTED = LIBRARY / "extracted"
 CORPUS = LIBRARY / "corpus"
 MANIFEST = LIBRARY / "_manifest.json"
+# Where the user's source PDFs LIVE, one category folder each - the inbox is
+# only a doorway. tools/shelf.py owns the layout; the routes here just call it.
+SHELF = LIBRARY / "shelf"
 EXAMPLES = ROOT / "examples"
 
 DROP_SUFFIXES = {".html", ".htm", ".json", ".md", ".markdown", ".pdf", ".txt"}
@@ -89,9 +92,9 @@ def autosplit_inbox() -> list[dict]:
     """
     if not INBOX.exists():
         return []
-    man = read_manifest()
-    done = man.setdefault("processed", {})
+    done = read_manifest().get("processed", {})
     results = []
+    fresh = {}
 
     for path in sorted(INBOX.iterdir()):
         if not path.is_file() or path.suffix.lower() != ".pdf":
@@ -100,13 +103,13 @@ def autosplit_inbox() -> list[dict]:
             digest = file_hash(path)
         except OSError:
             continue
-        if digest in done:
+        if digest in done or digest in fresh:
             continue
         try:
             sys.path.insert(0, str(ROOT / "tools"))
             from split_pdf import split as split_pdf_file      # noqa: PLC0415
             report = split_pdf_file(path)
-            done[digest] = {
+            fresh[digest] = {
                 "file": path.name,
                 "at": now_iso(),
                 "outputDir": report.get("outputDir"),
@@ -114,10 +117,21 @@ def autosplit_inbox() -> list[dict]:
             }
             results.append(report)
         except Exception as exc:                               # noqa: BLE001
-            done[digest] = {"file": path.name, "at": now_iso(),
-                            "error": f"{type(exc).__name__}: {exc}"}
+            fresh[digest] = {"file": path.name, "at": now_iso(),
+                             "error": f"{type(exc).__name__}: {exc}"}
             results.append({"file": path.name, "error": str(exc)})
-    write_manifest(man)
+
+    # Write only when something actually changed - this used to rewrite the
+    # manifest on EVERY /api/library call, which would clobber entries a CLI
+    # organise wrote in between our read and our write. And take the shelf's
+    # lock: every manifest writer shares the one lock or none of them count.
+    if fresh:
+        sys.path.insert(0, str(ROOT / "tools"))
+        from shelf import MANIFEST_LOCK                        # noqa: PLC0415
+        with MANIFEST_LOCK:
+            man = read_manifest()
+            man.setdefault("processed", {}).update(fresh)
+            write_manifest(man)
     return results
 
 # --------------------------------------------------------------------------
@@ -187,6 +201,10 @@ def changes_since(since: int) -> tuple[int, list[dict], bool]:
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,180}$")
 _write_lock = threading.Lock()
+# Book uploads currently being split, by content hash. A double-drop of the
+# same 300-page PDF must not run two pdfplumber passes into one output dir;
+# the second request gets a 409 and the toast says so.
+_shelving: set[str] = set()
 
 
 def safe_name(raw: str) -> bool:
@@ -261,7 +279,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
         self.send_header("Access-Control-Allow-Headers",
-                 "Content-Type,Authorization,X-Toon-Token")
+                 "Content-Type,Authorization,X-Toon-Token,X-Filename")
 
     def _send_json(self, payload, status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -353,6 +371,34 @@ class Handler(SimpleHTTPRequestHandler):
         except (json.JSONDecodeError, UnicodeDecodeError):
             return None
 
+    def _read_bytes(self, cap: int = 64 * 1024 * 1024):
+        """Raw request body. _read_json cannot carry a PDF: it utf-8-decodes,
+        and base64-inside-JSON under the 32MB cap tops out below a real
+        Monster Manual. 64MB covers every book on the shelf with room."""
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return None
+        if n <= 0 or n > cap:
+            return None
+        raw = self.rfile.read(n)
+        return raw if len(raw) == n else None
+
+    def _shelf_guard(self):
+        """(allowed, response_tuple). The forge posture exactly: with no table
+        open the door is open - solo must not grow a login - and the moment a
+        table exists, filing books is strictly the DM's token. Deliberately no
+        local-machine bypass: every browser on the DM's machine is local."""
+        mod = self._table()
+        if mod is None or not mod.read().get("open"):
+            return True, None
+        who = mod.whoami(self._token())
+        if not who:
+            return False, ({"error": "join first", "needsJoin": True}, 401)
+        if who.get("role") != "dm":
+            return False, ({"error": "only the DM files books on the shelf"}, 403)
+        return True, None
+
     def end_headers(self) -> None:
         # App source must never be cached by the dev server, or edits appear not
         # to take. "no-cache" only forces revalidation - the browser's ES module
@@ -428,6 +474,153 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+
+        if parsed.path == "/api/shelf":
+            # A book arrives: detect what it is, file it under
+            # library/shelf/<category>/, extract it. Raw PDF body + X-Filename
+            # header; synchronous - the threading server keeps every other
+            # route live while a big book splits, and the client shows a busy
+            # toast rather than pretending this is instant.
+            # Body FIRST, verdicts after: an early return that leaves the body
+            # unread poisons the keep-alive socket - the next request parses
+            # as '{"hash":...}POST' and 501s. Every route here drains before
+            # judging.
+            raw = self._read_bytes()
+            allowed, err = self._shelf_guard()
+            if not allowed:
+                return self._send_json(*err)
+            name = (self.headers.get("X-Filename") or "").strip()
+            if not safe_name(name) or not name.lower().endswith(".pdf"):
+                return self._send_json(
+                    {"error": "X-Filename must be a .pdf file name"}, 400)
+            if raw is None:
+                return self._send_json(
+                    {"error": "body must be the PDF bytes, 64MB or less"}, 400)
+            if not raw.startswith(b"%PDF-"):
+                return self._send_json({"error": "that is not a PDF"}, 400)
+
+            sys.path.insert(0, str(ROOT / "tools"))
+            import shelf as shelf_mod                          # noqa: PLC0415
+            q = parse_qs(parsed.query)
+            category = (q.get("category") or [None])[0]
+            if category is not None and category not in shelf_mod.CATEGORIES:
+                return self._send_json({"error": "unknown category"}, 400)
+
+            digest = hashlib.sha256(raw).hexdigest()[:16]
+            with _write_lock:
+                if digest in _shelving:
+                    return self._send_json(
+                        {"busy": True,
+                         "error": "that book is already being filed"}, 409)
+                _shelving.add(digest)
+            try:
+                incoming = SHELF / ".incoming"
+                incoming.mkdir(parents=True, exist_ok=True)
+                tmp = incoming / f"{digest}-{name}"
+                tmp.write_bytes(raw)
+                entry = shelf_mod.shelve_file(tmp, category, origin="upload",
+                                              name=name)
+                # alreadyKnown returns early without moving; drop the temp.
+                if tmp.exists():
+                    tmp.unlink()
+                return self._send_json({
+                    "ok": True, "alreadyKnown": entry.get("alreadyKnown", False),
+                    "name": entry.get("file"), "hash": entry.get("hash", digest),
+                    "category": entry.get("category"),
+                    "confidence": entry.get("confidence"),
+                    "evidence": entry.get("evidence", []),
+                    "slug": shelf_mod.slug_for(entry.get("file", name)),
+                    "written": entry.get("written", {}),
+                    "pages": entry.get("pages"),
+                    "error": entry.get("error"),
+                })
+            except Exception as exc:                           # noqa: BLE001
+                return self._send_json(
+                    {"error": f"{type(exc).__name__}: {exc}"}, 500)
+            finally:
+                with _write_lock:
+                    _shelving.discard(digest)
+
+        if parsed.path == "/api/shelf/refile":
+            # The unsorted rescue, and the fix for a wrong guess: move a book
+            # between category folders. Works even when extraction failed.
+            payload = self._read_json()          # drain before judging
+            allowed, err = self._shelf_guard()
+            if not allowed:
+                return self._send_json(*err)
+            if payload is None:
+                return self._send_json({"error": "bad json body"}, 400)
+            sys.path.insert(0, str(ROOT / "tools"))
+            import shelf as shelf_mod                          # noqa: PLC0415
+            digest = str(payload.get("hash") or "")
+            category = str(payload.get("category") or "")
+            if category not in shelf_mod.CATEGORIES:
+                return self._send_json({"error": "unknown category"}, 400)
+            with shelf_mod.MANIFEST_LOCK:
+                man = read_manifest()
+                entry = man.get("processed", {}).get(digest)
+                if not entry or not entry.get("shelfPath"):
+                    return self._send_json(
+                        {"error": "no such book on the shelf"}, 404)
+                src = Path(entry["shelfPath"])
+                if SHELF.resolve() not in src.resolve().parents:
+                    return self._send_json(
+                        {"error": "manifest path is not under the shelf"}, 500)
+                if not src.exists():
+                    return self._send_json(
+                        {"error": "the shelf copy is missing"}, 404)
+                dest_dir = SHELF / category
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest = dest_dir / src.name
+                if src.resolve() != dest.resolve():
+                    shutil.move(str(src), str(dest))
+                entry.update({"category": category, "shelfPath": str(dest),
+                              "confidence": 1.0,
+                              "evidence": ["refiled by hand"],
+                              "at": now_iso()})
+                write_manifest(man)
+            return self._send_json({"ok": True, "hash": digest,
+                                    "category": category})
+
+        if parsed.path == "/api/shelf/remove":
+            # Undo an accidental drop. ONLY for uploads: an uploaded file's
+            # source still sits wherever the user dragged it from, but a book
+            # the CLI organised onto the shelf IS the user's only copy.
+            payload = self._read_json()          # drain before judging
+            allowed, err = self._shelf_guard()
+            if not allowed:
+                return self._send_json(*err)
+            if payload is None:
+                return self._send_json({"error": "bad json body"}, 400)
+            sys.path.insert(0, str(ROOT / "tools"))
+            import shelf as shelf_mod                          # noqa: PLC0415
+            digest = str(payload.get("hash") or "")
+            with shelf_mod.MANIFEST_LOCK:
+                man = read_manifest()
+                done = man.get("processed", {})
+                entry = done.get(digest)
+                if not entry or not entry.get("shelfPath"):
+                    return self._send_json(
+                        {"error": "no such book on the shelf"}, 404)
+                if entry.get("origin") != "upload":
+                    return self._send_json(
+                        {"error": "this book was organised from your files - "
+                                  "the shelf copy is the only copy, so remove "
+                                  "it by hand if you really mean to"}, 403)
+                removed = []
+                src = Path(entry["shelfPath"]).resolve()
+                if SHELF.resolve() in src.parents and src.exists():
+                    src.unlink()
+                    removed.append("pdf")
+                out_dir = entry.get("outputDir")
+                if out_dir:
+                    out = Path(out_dir).resolve()
+                    if EXTRACTED.resolve() in out.parents and out.exists():
+                        shutil.rmtree(out)
+                        removed.append("extraction")
+                del done[digest]
+                write_manifest(man)
+            return self._send_json({"ok": True, "removed": removed})
 
         if parsed.path == "/api/vectors":
             payload = self._read_json()
@@ -833,6 +1026,49 @@ class Handler(SimpleHTTPRequestHandler):
                 "events": EVENT_LOG.stat().st_size if EVENT_LOG.exists() else 0,
             })
 
+        if parts == ["api", "shelf"]:
+            # The whole collection grouped by what each book IS. Deliberately
+            # its own route: /api/library triggers the inbox autosplit on
+            # every call, and the Deck needs a cheap, side-effect-free poll.
+            sys.path.insert(0, str(ROOT / "tools"))
+            import shelf as shelf_mod                          # noqa: PLC0415
+            cats: dict[str, list] = {c: [] for c in shelf_mod.CATEGORIES}
+            for digest, e in read_manifest().get("processed", {}).items():
+                if not e.get("category"):
+                    continue        # inbox / seeded entries are not shelved
+                sp = e.get("shelfPath")
+                cats.setdefault(e["category"], []).append({
+                    "name": e.get("file"), "hash": digest,
+                    "slug": shelf_mod.slug_for(e.get("file", "")),
+                    "category": e["category"],
+                    "confidence": e.get("confidence"),
+                    "evidence": e.get("evidence", []),
+                    "written": e.get("written", {}),
+                    "pages": e.get("pages"),
+                    "origin": e.get("origin"),
+                    "present": bool(sp and Path(sp).exists()),
+                    "extractedOk": bool(e.get("outputDir")) and not e.get("error"),
+                    "error": e.get("error"),
+                    "at": e.get("at"),
+                })
+            for rows in cats.values():
+                rows.sort(key=lambda r: (r.get("name") or "").lower())
+            return self._send_json({"shelfDir": str(SHELF), "categories": cats})
+
+        if len(parts) == 4 and parts[:3] == ["api", "shelf", "sections"]:
+            # A shelved book in reading order, ready for the Deck's review
+            # rows. Statblock kinds stay out unless ?all=1 - they surface
+            # one-by-one in the workshop, not as a thousand-row ingest.
+            slug = unquote(parts[3])
+            if not safe_name(slug):
+                return self._send_json({"error": "bad document name"}, 400)
+            sys.path.insert(0, str(ROOT / "tools"))
+            import shelf as shelf_mod                          # noqa: PLC0415
+            include_all = (parse_qs(parsed.query).get("all") or ["0"])[0] == "1"
+            rows = shelf_mod.sections_for(slug, include_all=include_all)
+            return self._send_json({"slug": slug, "total": len(rows),
+                                    "sections": rows})
+
         if parts == ["api", "library"] or parts == ["api", "drop"]:
             # One structured view of everything the app can see, grouped by
             # where it came from. The old flat list mixed 118 generated files
@@ -854,6 +1090,13 @@ class Handler(SimpleHTTPRequestHandler):
                         "kind": p.suffix.lower().lstrip("."),
                         "url": f"/library/inbox/{p.name}",
                     })
+
+            # Which shelf category (if any) each extraction belongs to, so the
+            # workshop can badge a document without a second request.
+            cat_by_doc = {}
+            for e in read_manifest().get("processed", {}).values():
+                if e.get("category") and e.get("outputDir"):
+                    cat_by_doc[Path(e["outputDir"]).name] = e["category"]
 
             documents = []
             if EXTRACTED.exists():
@@ -902,6 +1145,7 @@ class Handler(SimpleHTTPRequestHandler):
                         "document": d.name,
                         "source": report.get("file", d.name),
                         "pages": report.get("pages"),
+                        "category": cat_by_doc.get(d.name),
                         "contents": contents,
                         "subclasses": report.get("subclasses", []),
                         "other": other,

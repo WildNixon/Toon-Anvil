@@ -91,6 +91,7 @@ import * as theme from '../ui/theme.js';
 import { weatherFor } from '../core/weather.js';
 import { newCampaign, newRegion } from '../core/campaign.js';
 import { unitPrice, sellBack } from '../modes/shop/pricing.js';
+import { FIXTURE_NAME, fixturePdfBytes } from './fixtures.js';
 
 const $ = (s) => document.querySelector(s);
 const log = (m) => { $('#log').textContent += `${m}\n`;
@@ -176,6 +177,40 @@ async function buildCtx() {
           src.onerror = () => { if (!got.length) done('stream never opened'); };
           setTimeout(() => done(), ms);
         }),
+      };
+    })(),
+    // The shelf, same raw-HTTP posture as `table` above - plus the frozen
+    // fixture PDF, so every tier re-uploads byte-identical books.
+    shelf: (() => {
+      const base = () => location.origin;
+      const jcall = async (path, opts = {}, token = undefined) => {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['X-Toon-Token'] = token;
+        const res = await fetch(base() + path, { headers, ...opts });
+        let body = {};
+        try { body = await res.json(); } catch { /* no body */ }
+        return { status: res.status, body, ...body };
+      };
+      return {
+        fixtureName: FIXTURE_NAME,
+        fixtureBytes: fixturePdfBytes,
+        upload: async (name, bytes, { category, token } = {}) => {
+          const headers = { 'Content-Type': 'application/pdf', 'X-Filename': name };
+          if (token) headers['X-Toon-Token'] = token;
+          const q = category ? `?category=${encodeURIComponent(category)}` : '';
+          const res = await fetch(`${base()}/api/shelf${q}`,
+            { method: 'POST', headers, body: bytes });
+          let body = {};
+          try { body = await res.json(); } catch { /* no body */ }
+          return { status: res.status, body, ...body };
+        },
+        list: () => jcall('/api/shelf'),
+        sections: (slug, all = false) => jcall(
+          `/api/shelf/sections/${encodeURIComponent(slug)}${all ? '?all=1' : ''}`),
+        refile: (hash, category, token) => jcall('/api/shelf/refile',
+          { method: 'POST', body: JSON.stringify({ hash, category }) }, token),
+        remove: (hash, token) => jcall('/api/shelf/remove',
+          { method: 'POST', body: JSON.stringify({ hash }) }, token),
       };
     })(),
     hb: {
