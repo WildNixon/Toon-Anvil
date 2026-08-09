@@ -368,7 +368,11 @@ nav.modes button[aria-current='true'] {
   letter-spacing: .1em; padding: 3px 8px;
   border: 1px solid var(--gold-soft); border-radius: 2px;
   color: var(--chrome-ink);
+  /* Also worn by a <button> (the empty-state "Create a character"), which
+     would otherwise take the UA's light default background under cream text. */
+  background: transparent;
 }
+button.rb-ac:hover { background: var(--chrome-hover); }
 .rb-adjust { display: flex; align-items: center; gap: 4px; }
 .rb-adjust input {
   width: 52px; padding: 4px 6px;
@@ -384,6 +388,7 @@ nav.modes button[aria-current='true'] {
 }
 .rb-adjust button:hover { background: var(--chrome-hover); }
 .rb-conds { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.rb-conds .rb-more { display: none; }
 .rb-switch select {
   width: auto; max-width: 160px;
   font-family: var(--mono); font-size: 11px;

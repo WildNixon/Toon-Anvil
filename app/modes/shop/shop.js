@@ -12,7 +12,7 @@ import { d20, fmt } from '../../core/dice.js';
 import { fromCopper, toCopper, COIN_CP } from '../../core/rules2024.js';
 import { saveCharacter, go } from '../../app.js';
 
-export const title = 'Shop';
+export const title = 'Market';
 
 const SHOP_TYPES = {
   general:   { label: 'General store', kinds: ['gear'], markup: 1.0 },
@@ -65,7 +65,7 @@ function draw() {
 
 function generatorPanel() {
   const panel = el('div', { class: 'panel rivets accent' });
-  panel.append(el('span', { class: 'lvl accent' }, 'Shop'));
+  panel.append(el('span', { class: 'lvl accent' }, 'Market'));
   panel.append(el('h3', {}, shop ? shop.name : 'Generate a shop'));
 
   const row = el('div', {

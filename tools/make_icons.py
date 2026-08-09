@@ -15,12 +15,15 @@ from PIL import Image, ImageDraw
 
 OUT = Path(__file__).resolve().parent.parent / "app" / "icons"
 
-IRON = (28, 33, 36, 255)
-MOLTEN = (184, 74, 22, 255)
-STEEL = (210, 214, 211, 255)
-PLATE = (192, 198, 196, 255)
-SLAG = (58, 66, 71, 255)
-VERDIGRIS = (47, 107, 98, 255)
+# Parchment & candlelight palette - keep in step with app/icons/icon.svg.
+# Names are historic (the drawing code below refers to them).
+IRON = (34, 26, 17, 255)        # waxed-oak canvas
+INK = (46, 36, 24, 255)         # sepia d20 body
+MOLTEN = (142, 42, 28, 255)     # heraldic crimson
+STEEL = (244, 237, 218, 255)    # vellum page
+PLATE = (229, 217, 186, 255)    # aged page edge
+SLAG = (109, 92, 67, 255)       # sepia facets
+VERDIGRIS = (212, 169, 79, 255) # gold facets
 
 SS = 4  # supersample factor - draw big, downscale for clean edges
 
@@ -69,7 +72,7 @@ def draw_icon(size: int, maskable: bool = False) -> Image.Image:
     cy = (y0 + y1) / 2 + inner * 0.02
     r = inner * 0.235
     hexa = hexagon(cx, cy, r)
-    d.polygon(hexa, fill=IRON)
+    d.polygon(hexa, fill=INK)
 
     top = (cx, cy - r)
     ur = (cx + r * 0.866, cy - r * 0.5)

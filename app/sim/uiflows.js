@@ -337,11 +337,66 @@ export const FLOWS = [
   },
 
   {
+    id: 'ribbon_damage_heal',
+    title: 'The hero ribbon follows you and its damage is the same damage',
+    async run(c, { doc }) {
+      c.feature('ui', 'ribbon', 'damage');
+      const ribbon = () => doc.querySelector('#ribbon');
+      const caption = () => ribbon()?.querySelector('.rb-num')?.textContent || '';
+      const current = () => {
+        const m = /^(\d+)\/(\d+)/.exec(caption());
+        return m ? Number(m[1]) : null;
+      };
+
+      // The ribbon is the point of not being on the sheet: check it in the
+      // Market and in Combat, the screens a player actually switches between.
+      c.ok(await goToMode(doc, 'Market', 'Generate stock'), 'the Market opens');
+      c.ok(ribbon() && !ribbon().hidden, 'the ribbon is present in the Market');
+      const whoText = doc.querySelector('#who')?.textContent || '';
+      c.ok(whoText.length > 0, 'and names the active character', whoText.slice(0, 60));
+
+      c.ok(await goToMode(doc, 'Combat', 'encounter'), 'Combat opens');
+      c.ok(ribbon() && !ribbon().hidden, 'the ribbon is present in Combat');
+
+      const start = current();
+      c.ok(Number.isFinite(start) && start > 0,
+        'the ribbon shows hit points as a number', caption());
+      if (!Number.isFinite(start)) return;
+
+      const amount = ribbon().querySelector('input[type=number]');
+      c.ok(!!amount, 'there is an amount field');
+      setField(amount, '3');
+      ribbon().querySelector('button[aria-label="Damage"]')?.click();
+      const hurt = await waitFor(() => (current() === start - 3 ? true : null),
+        { timeout: 6000 });
+      c.ok(!!hurt, 'three damage moves the ribbon by exactly three',
+        `${start} -> ${current()}`);
+
+      // The claim that matters: the ribbon and the sheet share one HP rule,
+      // so the sheet must agree without ever having been touched.
+      c.ok(await goToMode(doc, 'Play', 'Adjust HP'), 'the sheet opens');
+      const sheetHp = await waitFor(() => {
+        const n = readNumberAfter(doc, 'HP');
+        return Number.isFinite(n) ? n : null;
+      });
+      c.eq(sheetHp, start - 3, 'the sheet shows the same number');
+
+      // Heal it back from the ribbon while ON the sheet - the vitals repaint.
+      setField(ribbon().querySelector('input[type=number]'), '3');
+      ribbon().querySelector('button[aria-label="Heal"]')?.click();
+      const healed = await waitFor(() => (readNumberAfter(doc, 'HP') === start
+        ? true : null), { timeout: 6000 });
+      c.ok(!!healed, 'healing from the ribbon repaints the open sheet',
+        `sheet reads ${readNumberAfter(doc, 'HP')}`);
+    },
+  },
+
+  {
     id: 'shop_generate_and_buy',
     title: 'Generate a shop and buy something',
     async run(c, { doc }) {
       c.feature('ui', 'shop', 'inventory');
-      c.ok(await goToMode(doc, 'Shop', 'Generate stock'), 'Shop mode opens');
+      c.ok(await goToMode(doc, 'Market', 'Generate stock'), 'Shop mode opens');
       const gen = button(doc, 'Generate stock');
       c.ok(!!gen, 'there is a way to generate stock');
       gen?.click();

@@ -6,8 +6,8 @@
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#d2d6d3",
-  "theme_color": "#1c2124",
+  "background_color": "#e9dfc6",
+  "theme_color": "#221a11",
   "categories": [
     "games",
     "utilities"
@@ -40,16 +40,16 @@
   ],
   "shortcuts": [
     {
+      "name": "Play",
+      "url": "./index.html#sheet"
+    },
+    {
       "name": "Combat",
       "url": "./index.html#combat"
     },
     {
       "name": "Chronicle",
       "url": "./index.html#chronicle"
-    },
-    {
-      "name": "Homebrew",
-      "url": "./index.html#homebrew"
     }
   ]
 }

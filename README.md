@@ -71,7 +71,7 @@ Everything below was exercised by hand before release — not "it renders", but
 | **Build** | Roster, identity, class / level / multiclass, four ability methods, proficiencies. |
 | **Play** | AC, HP, proficiency, initiative, passive Perception, all 13 conditions, damage / heal, short and long rest, resource pools, attacks, features, inventory. |
 | **Combat** | Encounters, initiative order, adding your character, SRD monsters, or custom combatants. |
-| **Shop** | Generates stock at SRD prices with per-shop variance. |
+| **Market** | Generates shop stock at SRD prices with per-shop variance. |
 | **Roleplay** | Structured beats — promises, secrets, choices, people met — recorded through an in-app form. |
 | **Chronicle** | Event log with export to Markdown, printable HTML and raw JSON, plus open-thread tracking. |
 | **DM** | Seven tools: live encounter runner, party dashboard, treasure, improv generators, XP budgeter, bestiary, rules reference. All offline. |
@@ -89,7 +89,7 @@ reports each one where it matters.
    This is the biggest gap for playing a caster.
 2. **Equipment is managed in Play, not Build.** A new character starts with
    nothing, so its AC is 10 until you add armour via Play → Inventory or buy
-   some in Shop.
+   some in the Market.
 3. **Ability-score methods advise rather than enforce.** Standard array tells
    you the numbers but doesn't assign or validate them; point buy shows your
    spend and turns red over budget rather than blocking it.
@@ -129,6 +129,30 @@ reports each one where it matters.
 
 **Not planned:** anything that reads D&D Beyond, and any bulk crawl of a
 homebrew site.
+
+## The look, and finding your way
+
+Two themes, both offline like everything else: **parchment** (aged page, sepia
+ink, heraldic crimson, gilt ornament) and **candlelight** (soot brown, ember
+and gold, for the evening session). Settings → Appearance switches them; the
+default follows your device. Type is Cinzel and Alegreya with IBM Plex Mono
+for numbers — all SIL OFL, bundled as woff2, no CDN.
+
+Navigation is grouped by what you are doing: **Your Hero** (Play, Build) ·
+**Adventure** (Combat, Roleplay, Market, Chronicle) · **Table** (when one is
+open) · **Dungeon Master** (DM, Homebrew — only in the DM's seat), with
+Settings behind the gear. A **hero ribbon** under the top bar follows you
+across every player screen: name, an HP bar with quick damage/heal, AC,
+conditions, and a character switcher. Its damage button calls the same engine
+rule as the sheet's, so the two can never disagree.
+
+**Seats.** First run asks whether this device belongs to a player or the
+Dungeon Master, and remembers. A player's menu is about playing — no DM
+screen, no homebrew analyser — while Build and Play stay, because a player
+owns their character fully. Switch any time in Settings ("Take the DM's
+seat"). At a table, your seat there wins no matter what the device remembers.
+This tidies the menu, nothing more: the server decides what you may actually
+change, exactly as before.
 
 ## Install
 
@@ -263,7 +287,7 @@ ask for anything and a hidden button proves nothing.
 
 ## Try things without saving them
 
-Press **Try a sandbox** in the top bar. The whole app runs against an in-memory
+Press **Try a sandbox** in the hero ribbon. The whole app runs against an in-memory
 store: characters, homebrew, NPCs and the event log live for exactly as long as
 the tab does, and your real library is untouched.
 
@@ -280,6 +304,10 @@ you've made. If you decide you want to keep something:
   copy, so a sandbox can add to your library but never damage it.
 - **Download** writes the same thing to a JSON file instead, which is how you
   move work to another machine. Build's *Import JSON* reads it back.
+
+A sandbox opens in the DM's seat — it exists to try everything — and its seat
+lives in memory only, so trying the DM screen today does not change what your
+real session shows tomorrow.
 
 So a sandbox is somewhere you can change your mind, not only somewhere you lose
 things. Leaving with unsaved work asks first, and so does closing the tab.

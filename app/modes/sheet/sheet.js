@@ -441,7 +441,7 @@ function inventoryPanel(d) {
     + `attuned ${d.attuned}/${d.attunementLimit}`));
 
   if (!d.inventory.length) {
-    panel.append(el('p', { class: 'muted' }, 'Nothing carried. Visit the Shop.'));
+    panel.append(el('p', { class: 'muted' }, 'Nothing carried. Visit the Market.'));
     return panel;
   }
   const wrap = el('div', { class: 'scroll-x' });

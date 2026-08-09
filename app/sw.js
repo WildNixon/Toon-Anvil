@@ -18,7 +18,7 @@
  * between "installed" and "actually usable on a train".
  */
 
-const VERSION = 'toon-anvil-v3';
+const VERSION = 'toon-anvil-v4';
 
 /** Immutable between releases: safe to serve from cache without asking. */
 const IMMUTABLE = /\/(data\/fonts|data\/compendium|icons)\//;
@@ -29,12 +29,20 @@ const SHELL = [
   './manifest.webmanifest',
   './icons/icon.svg',
   './ui/design.css',
+  './ui/theme.js',
+  './ui/kit.js',
+  './ui/ribbon.js',
+  './ui/welcome.js',
   './core/store.js',
   './core/db.js',
   './core/events.js',
   './core/derive.js',
   './core/dice.js',
   './core/rules2024.js',
+  './core/engine.js',
+  './core/session.js',
+  './core/live.js',
+  './core/rng.js',
   './homebrew/effects.js',
   './homebrew/ingest.js',
   './homebrew/mapping.js',
@@ -53,6 +61,7 @@ const SHELL = [
   './modes/dm/panels.js',
   './modes/dm/generators.js',
   './modes/settings/settings.js',
+  './modes/table/table.js',
   './core/providers.js',
   './homebrew/parse-content.js',
   './data/dm-tables.json',
@@ -68,11 +77,12 @@ const SHELL = [
   './data/compendium/conditions.json',
   './data/compendium/glossary.json',
   './data/compendium/_meta.json',
-  './data/fonts/archivo-black.woff2',
+  './data/fonts/cinzel-700.woff2',
+  './data/fonts/alegreya-400.woff2',
+  './data/fonts/alegreya-600.woff2',
+  './data/fonts/alegreya-italic-400.woff2',
   './data/fonts/plex-mono-400.woff2',
   './data/fonts/plex-mono-600.woff2',
-  './data/fonts/plex-serif-400.woff2',
-  './data/fonts/plex-serif-600.woff2',
 ];
 
 self.addEventListener('install', (event) => {

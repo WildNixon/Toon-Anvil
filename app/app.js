@@ -26,19 +26,27 @@ import * as theme from './ui/theme.js';
  * rather than one with the DM's tools greyed out in it.
  */
 const MODES = [
-  { id: 'build',     label: 'Build',     load: () => import('./modes/build/build.js') },
-  { id: 'sheet',     label: 'Play',      load: () => import('./modes/sheet/sheet.js') },
-  { id: 'table',     label: 'Table',     tableOnly: true,
+  { id: 'sheet',     label: 'Play',      group: 'Your Hero', ribbon: true,
+    load: () => import('./modes/sheet/sheet.js') },
+  { id: 'build',     label: 'Build',     group: 'Your Hero', ribbon: true,
+    load: () => import('./modes/build/build.js') },
+  { id: 'combat',    label: 'Combat',    group: 'Adventure', ribbon: true,
+    load: () => import('./modes/combat/combat.js') },
+  { id: 'rp',        label: 'Roleplay',  group: 'Adventure', ribbon: true,
+    load: () => import('./modes/rp/rp.js') },
+  { id: 'shop',      label: 'Market',    group: 'Adventure', ribbon: true,
+    load: () => import('./modes/shop/shop.js') },
+  { id: 'chronicle', label: 'Chronicle', group: 'Adventure', ribbon: true,
+    load: () => import('./modes/chronicle/chronicle.js') },
+  { id: 'table',     label: 'Table',     group: 'Table', tableOnly: true, ribbon: true,
     load: () => import('./modes/table/table.js') },
-  { id: 'combat',    label: 'Combat',    load: () => import('./modes/combat/combat.js') },
-  { id: 'shop',      label: 'Shop',      load: () => import('./modes/shop/shop.js') },
-  { id: 'rp',        label: 'Roleplay',  load: () => import('./modes/rp/rp.js') },
-  { id: 'chronicle', label: 'Chronicle', load: () => import('./modes/chronicle/chronicle.js') },
-  { id: 'dm',        label: 'DM',        dmOnly: true,
+  { id: 'dm',        label: 'DM',        group: 'Dungeon Master', dmOnly: true,
     load: () => import('./modes/dm/dm.js') },
-  { id: 'homebrew',  label: 'Homebrew',  dmOnly: true,
+  { id: 'homebrew',  label: 'Homebrew',  group: 'Dungeon Master', dmOnly: true,
     load: () => import('./homebrew/homebrew-ui.js') },
-  { id: 'settings',  label: 'Settings',  load: () => import('./modes/settings/settings.js') },
+  // No group: rendered as the gear pinned to the right.
+  { id: 'settings',  label: 'Settings',  gear: true,
+    load: () => import('./modes/settings/settings.js') },
 ];
 
 /** Which modes belong in the nav for whoever is using this browser. */
@@ -238,43 +246,78 @@ export async function refreshChrome() {
   if (!visibleModes().some((m) => m.id === getState().mode)) await renderMode();
 }
 
+// A cog, drawn inline so it inherits currentColor and ships no asset.
+const GEAR_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/>'
+  + '<path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1'
+  + 'M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>';
+
 function renderNav() {
   const nav = $('#modes');
   const { mode } = getState();
   nav.innerHTML = '';
-  for (const m of visibleModes()) {
+
+  const makeButton = (m) => {
     const b = document.createElement('button');
-    b.textContent = m.label;
+    if (m.gear) {
+      b.className = 'gearbtn';
+      // The word stays in textContent (visually hidden) so the button still
+      // answers to "Settings" - for screen readers and for the UI tests,
+      // which find buttons by their text.
+      b.innerHTML = `${GEAR_SVG}<span class="vh">Settings</span>`;
+      b.title = 'Settings';
+    } else {
+      b.textContent = m.label;
+    }
     b.setAttribute('aria-current', String(m.id === mode));
     b.addEventListener('click', () => go(m.id));
-    nav.append(b);
+    return b;
+  };
+
+  // Group labels are spans, never buttons - they must not be clickable and
+  // must never collide with a button-by-label lookup.
+  let currentGroup = null;
+  let groupBox = null;
+  for (const m of visibleModes()) {
+    if (m.gear) continue;
+    if (m.group !== currentGroup) {
+      currentGroup = m.group;
+      groupBox = document.createElement('div');
+      groupBox.className = 'navgroup';
+      const label = document.createElement('span');
+      label.className = 'navgroup-label';
+      label.textContent = m.group;
+      groupBox.append(label);
+      nav.append(groupBox);
+    }
+    groupBox.append(makeButton(m));
   }
+  const gear = MODES.find((m) => m.gear);
+  if (gear) nav.append(makeButton(gear));
 }
 
-function renderWho() {
-  const { character, derived, dataSource, ephemeral } = getState();
-  const src = ephemeral ? 'sandbox'
-    : dataSource === 'server' ? 'shared' : 'this device';
-  const who = $('#who');
-  who.innerHTML = character
-    ? `<strong>${esc(character.name || 'Unnamed')}</strong>`
-      + `${esc(describeClasses(character))} &middot; AC ${derived?.ac ?? '--'}`
-      + ` &middot; ${esc(src)}`
-    : `<strong>No character</strong>Storage: ${esc(src)}`;
+// The corner readout became the hero ribbon (ui/ribbon.js), mounted at boot.
+// This stays as the one call site the rest of the shell knows about.
+let ribbonModule = null;
 
-  // Offer the sandbox here rather than only as a URL you have to know about.
-  // Hidden while you are already in one - the bar at the bottom owns that
-  // state, and two controls for the same thing in two places is how people
-  // end up unsure which session they are in.
-  if (!ephemeral) {
-    const btn = document.createElement('button');
-    btn.className = 'try';
-    btn.textContent = 'Try a sandbox';
-    btn.title = 'Open a throwaway session. Nothing you do in it is saved, and '
-      + 'your real characters are untouched.';
-    btn.addEventListener('click', startSandbox);
-    who.append(btn);
-  }
+function renderWho() { ribbonModule?.refresh(); }
+
+async function mountRibbon() {
+  ribbonModule = await import('./ui/ribbon.js');
+  ribbonModule.mount($('#ribbon'), {
+    ribbonModes: MODES.filter((m) => m.ribbon).map((m) => m.id),
+    describeClasses,
+    adjustHp,
+    selectCharacter,
+    go,
+    startSandbox,
+    // A ribbon heal repaints only the modes that display vitals; anything
+    // else keeps its half-typed state.
+    rerenderVitals: () => {
+      if (['sheet', 'combat', 'table'].includes(getState().mode)) renderMode();
+    },
+    rerenderMode: () => renderMode(),
+  });
 }
 
 function describeClasses(ch) {
@@ -564,8 +607,7 @@ watch('toast', (state) => {
   node.textContent = state.toast.message;
 });
 
-watch('character', renderWho);
-watch('derived', renderWho);
+// The ribbon watches the store itself; nothing else needs these hooks now.
 watch('mode', renderMode);
 
 /* ------------------------------------------------------------------ */
@@ -616,7 +658,7 @@ async function boot() {
   await session.refresh();
 
   renderNav();
-  renderWho();
+  await mountRibbon();
   await renderMode();
 
   // First run on this device, no table to answer for us: ask who is holding
