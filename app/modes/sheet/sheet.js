@@ -16,6 +16,7 @@ import {
   ABILITIES, ABILITY_NAMES, SKILLS, fromCopper, CONDITIONS,
 } from '../../core/rules2024.js';
 import { saveCharacter, adjustHp as shellAdjustHp, go } from '../../app.js';
+import * as session from '../../core/session.js';
 import { tabs } from '../../ui/kit.js';
 
 export const title = 'Play';
@@ -57,6 +58,19 @@ function draw() {
   }));
 
   if (tab === 'overview') {
+    // A waiting grant is the one piece of DM state a player must not miss.
+    const cap = session.isOpen() && !session.isDm()
+      ? session.myGrant(character.id) : null;
+    if (cap !== null) {
+      const banner = el('div', { class: 'panel accent rivets' });
+      banner.append(el('span', { class: 'lvl accent' }, 'Level up'));
+      banner.append(el('p', { style: 'margin:0 0 8px;font-size:14px' },
+        `The DM has granted a level-up - you can reach level ${cap}.`));
+      banner.append(el('button', {
+        class: 'act', onClick: () => go('build'),
+      }, 'To the forge'));
+      container.append(banner);
+    }
     container.append(vitalsPanel(derived));
     container.append(el('div', { class: 'grid two' },
       abilitiesPanel(derived), skillsPanel(derived)));

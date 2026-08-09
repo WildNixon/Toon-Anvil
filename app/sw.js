@@ -59,6 +59,7 @@ const SHELL = [
   './modes/dm/world.js',
   './modes/dm/story.js',
   './modes/dm/setup.js',
+  './ui/joingate.js',
   './modes/dm/runner.js',
   './modes/dm/party.js',
   './modes/dm/loot.js',

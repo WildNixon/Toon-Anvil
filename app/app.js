@@ -382,6 +382,9 @@ async function watchTheTable() {
       // Build's locks read them, so the visible mode repaints. Rare events;
       // nothing worth protecting is typed on those screens.
       else if (['sheet', 'build'].includes(getState().mode)) await renderMode();
+      // And it can be the table opening or closing around a browser that
+      // never joined - the gate appears and disappears live.
+      await mountGates();
     }
 
     if (touchedMe && mine) {
@@ -394,6 +397,44 @@ async function watchTheTable() {
     }
     renderWho();
   });
+}
+
+/**
+ * Mount whichever body-level overlay this browser's situation calls for.
+ *
+ * Called at boot and again on every table change, so a table opening while
+ * somebody browses solo invites them in live, and a table closing takes the
+ * gate away again.
+ */
+async function mountGates() {
+  const { ephemeral } = getState();
+  const gate = await import('./ui/joingate.js');
+  const welcome = await import('./ui/welcome.js');
+
+  if (!ephemeral && session.isOpen() && session.needsJoin()) {
+    welcome.unmount();
+    gate.mount({
+      onDone: async (picked) => {
+        await session.refresh();
+        await refreshChrome();
+        if (picked === 'new') go('build');
+        else if (picked) await selectCharacter(picked);
+        await renderMode();
+      },
+    });
+    return;
+  }
+  // Only a CLOSED table removes a mounted gate. Joining flips needsJoin
+  // mid-conversation - the join itself bumps the table, this function runs,
+  // and tearing the overlay down here would rip the claim step out from
+  // under the person using it. The gate unmounts itself when they finish.
+  if (!session.isOpen()) gate.unmount();
+
+  if (session.needsSeat()) {
+    welcome.mount({ onChoose: () => refreshChrome() });
+  } else {
+    welcome.unmount();
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -672,19 +713,22 @@ async function boot() {
   // here", which is what solo play already assumed.
   await session.refresh();
 
+  // Watch BEFORE anything renders. The watcher baselines on the current
+  // revision the moment it starts; putting it after the first paint left a
+  // window where a change landing mid-boot - a forge closing, a grant - was
+  // never delivered, because the baseline was taken after it. A screen that
+  // exists must already be listening.
+  await watchTheTable();
+
   renderNav();
   await mountRibbon();
   await renderMode();
 
-  // First run on this device, no table to answer for us: ask who is holding
-  // it. Everything above already rendered under the calmer player default,
-  // so choosing DM only has to refresh the chrome.
-  if (session.needsSeat()) {
-    const welcome = await import('./ui/welcome.js');
-    welcome.mount({ onChoose: () => refreshChrome() });
-  }
-
-  watchTheTable();
+  // Overlays, in rank order. A table being open outranks the seat question:
+  // the table decides the seat, so asking "player or DM?" under a join gate
+  // would be noise. Neither appears in a sandbox - its whole point is being
+  // free of ceremony.
+  await mountGates();
 
   // Register the service worker last so a failure here never blocks boot.
   // file:// and the extension's own origin do not support it; that is fine,

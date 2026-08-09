@@ -418,7 +418,11 @@ class Handler(SimpleHTTPRequestHandler):
             # made the write - the DM levelling a player's sheet consumes too.
             mod = self._table()
             if mod and mod.consume_grant(rid, payload):
-                bump("table", rid, self._client())
+                # Deliberately authorless: the WRITER's own client must see
+                # this too (their Build has to disappear), and clients drop
+                # changes carrying their own id as echoes of their own writes.
+                # The grant clearing is the server's act, not the client's.
+                bump("table", rid, None)
         return self._send_json({"ok": True, "id": rid, "rev": rev,
                                 "updatedAt": payload["updatedAt"]})
 

@@ -13,6 +13,7 @@ import {
 } from '../../core/rules2024.js';
 import { rollAbilityScores } from '../../core/dice.js';
 import { saveCharacter, selectCharacter, recompute, go } from '../../app.js';
+import * as session from '../../core/session.js';
 
 export const title = 'Build';
 
@@ -31,16 +32,76 @@ function draw() {
   const { characters, character, compendium, homebrew } = getState();
   container.innerHTML = '';
 
-  container.append(rosterPanel(characters, character));
-  if (!character) {
+  // At a table, a player's Build is THEIR bench: their characters only, and
+  // only as editable as the forge and the grants allow. Solo (owned === null)
+  // none of this exists.
+  const owned = session.ownedCharacterIds();
+  const mine = owned === null ? characters
+    : characters.filter((c) => owned.has(c.id));
+  const active = character && (owned === null || owned.has(character.id))
+    ? character : null;
+
+  container.append(rosterPanel(mine, active));
+  if (!active) {
     container.append(el('div', { class: 'empty' },
-      'Create a character above, or import one, to start building.'));
+      owned === null
+        ? 'Create a character above, or import one, to start building.'
+        : 'No character of yours is selected. Claim one at the table, or '
+          + 'create one while the forge is open.'));
     return;
   }
-  container.append(identityPanel(character, compendium, homebrew));
-  container.append(abilitiesPanel(character));
-  container.append(skillsPanel(character, compendium));
+
+  const gate = buildGate(active);
+  if (gate.banner) container.append(gate.banner);
+  container.append(identityPanel(active, compendium, homebrew));
+  container.append(abilitiesPanel(active));
+  container.append(skillsPanel(active, compendium));
   container.append(featuresPanel());
+  if (gate.locked) lockInputs(container);
+}
+
+/**
+ * What may THIS browser do to THIS character right now?
+ *
+ * Mirrors the server's rule for the screen's sake - the server still refuses
+ * regardless. Locked means every identity input renders disabled; a grant
+ * unlocks the sheet up to its level cap.
+ */
+function buildGate(ch) {
+  if (session.ownedCharacterIds() === null) return { locked: false, banner: null };
+  if (session.forgeOpen()) {
+    const banner = el('div', { class: 'panel accent rivets' });
+    banner.append(el('span', { class: 'lvl accent' }, 'The forge is open'));
+    banner.append(el('p', { style: 'margin:0;font-size:14px' },
+      'Build freely - name, species, class, everything. The DM closes the '
+      + 'forge when the campaign starts.'));
+    return { locked: false, banner };
+  }
+  const grantCap = session.myGrant(ch.id);
+  if (grantCap !== null) {
+    const banner = el('div', { class: 'panel accent rivets' });
+    banner.append(el('span', { class: 'lvl accent' }, 'Level up'));
+    banner.append(el('p', { style: 'margin:0;font-size:14px' },
+      `The DM has granted a level-up: you can reach level ${grantCap}. `
+      + 'Raise your class level and take what comes with it.'));
+    return { locked: false, cap: grantCap, banner };
+  }
+  const banner = el('div', { class: 'panel rivets' });
+  banner.append(el('span', { class: 'lvl' }, 'Sealed'));
+  banner.append(el('p', { style: 'margin:0;font-size:14px;color:var(--muted)' },
+    'Your sheet is set at the forge. Ask the DM to open it, or to grant a '
+    + 'level-up - until then this page is read-only.'));
+  return { locked: true, banner };
+}
+
+/** Disable every control below the roster - the sheet is sealed. */
+function lockInputs(root) {
+  for (const elmt of root.querySelectorAll(
+    '.panel:not(:first-child) input, .panel:not(:first-child) select, '
+    + '.panel:not(:first-child) button:not(.tab)',
+  )) {
+    elmt.disabled = true;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -52,14 +113,22 @@ function rosterPanel(characters, active) {
   panel.append(el('span', { class: 'lvl' }, 'Roster'));
 
   const row = el('div', { class: 'btnrow', style: 'margin-bottom:14px' });
-  row.append(el('button', { class: 'act', onClick: createCharacter }, 'New character'));
-  row.append(el('button', { class: 'act ghost', onClick: importCharacter }, 'Import JSON'));
+  // Creation and retirement are forge acts at a table; the server refuses
+  // them anyway, so offering the buttons would only manufacture error toasts.
+  const atTable = session.ownedCharacterIds() !== null;
+  const mayForge = !atTable || session.forgeOpen();
+  if (mayForge) {
+    row.append(el('button', { class: 'act', onClick: createCharacter }, 'New character'));
+    row.append(el('button', { class: 'act ghost', onClick: importCharacter }, 'Import JSON'));
+  }
   if (active) {
     row.append(el('button', { class: 'act ghost', onClick: exportCharacter }, 'Export'));
-    row.append(el('button', {
-      class: 'act ghost',
-      onClick: () => deleteCharacter(active),
-    }, 'Delete'));
+    if (mayForge) {
+      row.append(el('button', {
+        class: 'act ghost',
+        onClick: () => deleteCharacter(active),
+      }, 'Delete'));
+    }
   }
   panel.append(row);
 
@@ -110,6 +179,11 @@ async function createCharacter() {
     createdAt: new Date().toISOString(),
   };
   await db.put('characters', character);
+  // At a table, claim what you just made. Without this the character sits
+  // unowned, and the player's very next save hits the server's "no owner
+  // yet" refusal - a trap that used to be unreachable only because no join
+  // UI existed.
+  if (session.isOpen() && session.me()) await session.claim(id);
   setState({ characters: await db.list('characters') });
   await selectCharacter(id);
   await log('journal', { text: `Created ${character.name}` }, { characterId: id });

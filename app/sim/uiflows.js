@@ -1162,6 +1162,245 @@ export async function runRoleGate(CheckClass) {
   };
 }
 
+/**
+ * The join gate, driven the way a player at the door would.
+ *
+ * Opens a real table from the gym page (localhost, so the code is readable),
+ * boots a tokenless client, and walks: gate appears -> wrong code refused
+ * inline -> right code admits -> claim a waiting character -> the app is a
+ * player's app with that character open.
+ */
+export async function runJoinGate(CheckClass) {
+  const check = new CheckClass('join_gate');
+  const t0 = performance.now();
+  let error = null;
+  let frame = null;
+  let dmToken = null;
+  try {
+    check.feature('ui', 'table', 'join');
+
+    await api('/api/table/close', { method: 'POST' });
+    const opened = await api('/api/table/open', {
+      method: 'POST', body: JSON.stringify({ name: 'Gym DM' }),
+    });
+    dmToken = opened.body.token;
+    const code = opened.body.code;
+    check.ok(!!code, 'the DM opened a table', code);
+
+    // A character waiting to be claimed.
+    await api('/api/characters/gym-gate-probe', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Toon-Token': dmToken },
+      body: JSON.stringify({ id: 'gym-gate-probe', name: 'Gate Probe',
+        classes: [{ class: 'fighter', subclass: null, level: 2 }],
+        abilities: { str: 14, dex: 12, con: 14, int: 10, wis: 10, cha: 10 } }),
+    });
+
+    frame = document.createElement('iframe');
+    frame.src = '/index.html';
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;'
+      + 'height:1000px;border:0';
+    document.body.append(frame);
+    // No token seeded: this browser is a stranger at the door.
+    frame.contentWindow?.localStorage?.removeItem('toonanvil.token');
+    await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
+    const doc = frame.contentDocument;
+
+    const gate = await waitFor(() => doc.querySelector('.welcome') || null,
+      { timeout: 10000 });
+    check.ok(!!gate, 'a browser with no seat is offered the join gate');
+    check.ok(/A table is open/.test(gate?.textContent || ''),
+      'and told why', (gate?.textContent || '').slice(0, 60));
+
+    const codeInput = gate.querySelector('input[aria-label="Join code"]');
+    const nameInput = gate.querySelector('input[aria-label="Your name"]');
+    check.ok(!!codeInput && !!nameInput, 'code and name fields are offered');
+
+    setField(codeInput, 'ANVIL-ZZZZ');
+    setField(nameInput, 'Gym Player');
+    button(doc, 'Join', { within: gate })?.click();
+    const refused = await waitFor(() => (/does not match/
+      .test(gate.textContent) ? true : null), { timeout: 6000 });
+    check.ok(!!refused, 'a wrong code is refused, inline, without closing the gate');
+
+    setField(codeInput, code);
+    button(doc, 'Join', { within: gate })?.click();
+    const claim = await waitFor(() => button(doc, 'Play as Gate Probe'),
+      { timeout: 8000 });
+    check.ok(!!claim, 'the right code admits, and the waiting character is offered');
+
+    claim?.click();
+    const seated = await waitFor(() => (!doc.querySelector('.welcome')
+      && (doc.querySelector('#who')?.textContent || '').includes('Gate Probe')
+      ? true : null), { timeout: 10000 });
+    check.ok(!!seated, 'claiming seats them: the gate closes and the ribbon '
+      + 'carries the character');
+
+    const labels = [...doc.querySelectorAll('#modes button')]
+      .map((b) => b.textContent.trim());
+    check.ok(labels.includes('Party') && !labels.includes('DM'),
+      "and the menu is a player's menu", labels.join(', '));
+  } catch (err) {
+    error = `${err.name}: ${err.message}`;
+  } finally {
+    frame?.remove();
+    try {
+      await api('/api/characters/gym-gate-probe', {
+        method: 'DELETE', headers: { 'X-Toon-Token': dmToken } });
+      await api('/api/table/close', { method: 'POST' });
+    } catch { /* the server went away */ }
+  }
+  return {
+    id: 'join_gate',
+    title: 'A stranger at the door joins, claims, and is seated',
+    passed: check.passed,
+    total: check.total,
+    failures: check.failures,
+    features: [...check.touched],
+    error,
+    empty: !error && check.total === 0,
+    ok: !error && check.total > 0 && check.failures.length === 0,
+    ms: +(performance.now() - t0).toFixed(0),
+  };
+}
+
+/**
+ * The whole level-up ceremony, across two roles.
+ *
+ * A joined player with a sealed sheet: no Build in the nav, no banner. The
+ * DM grants a level over HTTP -> Build and the banner appear LIVE -> the
+ * player levels 2 -> 3 -> the grant is consumed, Build leaves again -> a raw
+ * PUT to 4 is refused by the server. The flow is the claim "character
+ * creation is DM-activated at level-ups" made executable.
+ */
+export async function runLevelUpFlow(CheckClass) {
+  const check = new CheckClass('level_up_flow');
+  const t0 = performance.now();
+  let error = null;
+  let frame = null;
+  let dmToken = null;
+  try {
+    check.feature('ui', 'grants', 'build', 'permissions');
+
+    await api('/api/table/close', { method: 'POST' });
+    const opened = await api('/api/table/open', {
+      method: 'POST', body: JSON.stringify({ name: 'Gym DM' }),
+    });
+    dmToken = opened.body.token;
+    const joined = await api('/api/table/join', {
+      method: 'POST',
+      body: JSON.stringify({ code: opened.body.code, name: 'Gym Lever' }),
+    });
+    check.ok(joined.body.ok, 'a player joined over HTTP');
+    const pt = joined.body.token;
+
+    // Their character, claimed, then the forge closes: campaign running.
+    await api('/api/characters/gym-lvl-probe', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Toon-Token': pt },
+      body: JSON.stringify({ id: 'gym-lvl-probe', name: 'Lever',
+        classes: [{ class: 'rogue', subclass: null, level: 2 }],
+        abilities: { str: 10, dex: 16, con: 12, int: 10, wis: 10, cha: 10 } }),
+    });
+    await api('/api/table/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Toon-Token': pt },
+      body: JSON.stringify({ characterId: 'gym-lvl-probe' }),
+    });
+    await api('/api/table/forge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Toon-Token': dmToken },
+      body: JSON.stringify({ open: false }),
+    });
+
+    frame = document.createElement('iframe');
+    frame.src = '/index.html';
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;'
+      + 'height:1000px;border:0';
+    document.body.append(frame);
+    await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
+    frame.contentWindow.localStorage.setItem('toonanvil.token', pt);
+    // The banner and the level field read the SELECTED character; an earlier
+    // flow may have left lastCharacter pointing at somebody else's.
+    frame.contentWindow.localStorage.setItem('toonanvil.lastCharacter', 'gym-lvl-probe');
+    frame.contentWindow.location.reload();
+    await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
+    const doc = frame.contentDocument;
+    await waitFor(() => (doc.querySelector('main') && button(doc, 'Play')
+      ? true : null), { timeout: 15000 });
+
+    const labels = () => [...doc.querySelectorAll('#modes button')]
+      .map((b) => b.textContent.trim());
+    check.ok(!labels().includes('Build'),
+      'a sealed sheet means no Build in the nav', labels().join(', '));
+
+    check.ok(await goToMode(doc, 'Play', 'Adjust HP'), 'their sheet opens');
+    check.ok(!/granted a level-up/i.test(mainText(doc)),
+      'and carries no banner before the grant');
+
+    // The DM grants, from wherever they are.
+    await api('/api/table/grant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Toon-Token': dmToken },
+      body: JSON.stringify({ characterId: 'gym-lvl-probe' }),
+    });
+
+    const banner = await waitFor(() => (/you can reach level 3/i
+      .test(mainText(doc)) ? true : null), { timeout: 12000 });
+    check.ok(!!banner, 'the banner arrives on the open sheet, live');
+    const buildBack = await waitFor(() => (labels().includes('Build')
+      ? true : null), { timeout: 8000 });
+    check.ok(!!buildBack, 'and Build walks back into the nav');
+
+    button(doc, 'To the forge')?.click();
+    await waitUntilSettled(doc);
+    const lvl = await waitFor(() => [...doc.querySelectorAll('main input[type=number]')]
+      .find((i) => i.value === '2') || null, { timeout: 8000 });
+    check.ok(!!lvl, 'Build opens on their character with the level field');
+    setField(lvl, '3');
+    const saved = await waitFor(() => (/Level 3/.test(mainText(doc)) ? true : null),
+      { timeout: 8000 });
+    check.ok(!!saved, 'level 3 saves - the grant covers it');
+
+    const buildGone = await waitFor(() => (!labels().includes('Build')
+      ? true : null), { timeout: 12000 });
+    check.ok(!!buildGone, 'the grant is consumed by arriving: Build leaves again');
+
+    // Belt and braces, past the UI entirely.
+    const raw = await fetch('/api/characters/gym-lvl-probe', {
+      headers: { 'X-Toon-Token': pt } }).then((r) => r.json());
+    raw.classes = [{ class: 'rogue', subclass: null, level: 4 }];
+    const beyond = await fetch('/api/characters/gym-lvl-probe', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Toon-Token': pt },
+      body: JSON.stringify(raw),
+    });
+    check.eq(beyond.status, 403,
+      'a raw PUT past the granted level is refused by the server');
+  } catch (err) {
+    error = `${err.name}: ${err.message}`;
+  } finally {
+    frame?.remove();
+    try {
+      await api('/api/characters/gym-lvl-probe', {
+        method: 'DELETE', headers: { 'X-Toon-Token': dmToken } });
+      await api('/api/table/close', { method: 'POST' });
+    } catch { /* the server went away */ }
+  }
+  return {
+    id: 'level_up_flow',
+    title: 'The level-up ceremony: granted, taken, consumed, sealed again',
+    passed: check.passed,
+    total: check.total,
+    failures: check.failures,
+    features: [...check.touched],
+    error,
+    empty: !error && check.total === 0,
+    ok: !error && check.total > 0 && check.failures.length === 0,
+    ms: +(performance.now() - t0).toFixed(0),
+  };
+}
+
 export async function runTwoClient(CheckClass) {
   const check = new CheckClass('two_clients_stay_in_step');
   const t0 = performance.now();
@@ -1366,9 +1605,12 @@ export async function runPlayerView(CheckClass) {
     // The screen not drawing it is half the claim. This is the other half.
     const asPlayer = await fetch('/api/encounters/current', {
       headers: { 'X-Toon-Token': joined.body.token },
-    }).then((r) => r.text());
-    check.ok(!asPlayer.includes('59'),
-      'and was never sent to this browser at all', asPlayer.slice(0, 200));
+    }).then((r) => r.json());
+    // Combatants only: the record's server-stamped updatedAt contains "59"
+    // whenever the clock reads minute or second 59.
+    const wire = JSON.stringify(asPlayer.combatants || []);
+    check.ok(!wire.includes('59'),
+      'and was never sent to this browser at all', wire.slice(0, 200));
 
     // --- and it is read-only ----------------------------------------------
     const main = doc.querySelector('main');
@@ -1474,6 +1716,10 @@ export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
   // server, so it manages its own clients and cleans up after itself.
   results.push(await runRoleGate(CheckClass));
   onProgress({ flow: 'role_gate' });
+  results.push(await runJoinGate(CheckClass));
+  onProgress({ flow: 'join_gate' });
+  results.push(await runLevelUpFlow(CheckClass));
+  onProgress({ flow: 'level_up_flow' });
   results.push(await runTwoClient(CheckClass));
   onProgress({ flow: 'two_clients_stay_in_step' });
   results.push(await runPlayerView(CheckClass));

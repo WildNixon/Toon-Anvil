@@ -2363,10 +2363,12 @@ export const SUITES = [
 
           // The point of doing this on the server. A UI that merely declines
           // to draw the number leaves it sitting in the payload, where the
-          // network tab shows it to anyone curious.
-          const wire = JSON.stringify(asPlayer);
+          // network tab shows it to anyone curious. Scoped to the combatants:
+          // the record also carries updatedAt, and at minute or second 59 the
+          // TIMESTAMP contains "59" - this check failed on the clock once.
+          const wire = JSON.stringify(asPlayer.combatants);
           c.ok(!wire.includes('59'),
-            'the hidden number is nowhere in what was sent', wire.slice(0, 200));
+            'the hidden number is nowhere in the combatants sent', wire.slice(0, 200));
 
           // Player characters keep their numbers: everyone at a real table can
           // see their own sheet and says "I'm on 22" out loud.

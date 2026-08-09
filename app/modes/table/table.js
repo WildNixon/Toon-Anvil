@@ -46,7 +46,7 @@ export async function render(root) {
   // stack listeners - each mode is re-rendered on mode switches and on live
   // updates - so the previous one is dropped first.
   if (unsubscribe) unsubscribe();
-  unsubscribe = live.subscribe(['encounters', 'table'], async () => {
+  unsubscribe = live.subscribe(['encounters', 'table', 'characters'], async () => {
     // Only redraw if this screen is still the one mounted. A stale listener
     // writing into a detached node is invisible until it is not.
     if (!container.isConnected) { unsubscribe?.(); unsubscribe = null; return; }
