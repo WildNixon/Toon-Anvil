@@ -104,7 +104,15 @@ function importPanel() {
       row.append(el('button', {
         class: 'act small',
         title: 'Settings and adventures are Deck material - regions, factions, lore',
-        onClick: () => go('dm-deck'),
+        onClick: () => {
+          // Stash the slug so the Deck can highlight this book's row.
+          // Highlight only - auto-opening anything from here would yank
+          // the DM into a review they did not ask for.
+          try {
+            sessionStorage.setItem('toonanvil.deckOpenBook', lastShelved.slug);
+          } catch { /* private mode */ }
+          go('dm-deck');
+        },
       }, 'Open in the Deck'));
     }
     panel.append(row);

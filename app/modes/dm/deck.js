@@ -45,6 +45,49 @@ let ingest = null;   // { source, sections: [{ title, body, filedAs }] }
 // GET /api/shelf result; null means "fetch on next draw". The Deck reads it
 // lazily so an offline solo Deck still renders everything else.
 let shelfListing = null;
+let shelfFetching = false;
+// Book slug stashed by the workshop's "Open in the Deck" bridge - read once,
+// used to highlight (never auto-open) the matching row.
+let highlightSlug = null;
+
+/** One in-flight shelf fetch, however many panels ask in a single draw. */
+function ensureShelfListing() {
+  if (shelfListing !== null || shelfFetching) return;
+  shelfFetching = true;
+  listShelf().then((r) => {
+    shelfFetching = false;
+    shelfListing = r;
+    if (container?.dataset.rendered === 'dm-deck') draw();
+  });
+}
+
+/** The Deck-material books: what a campaign can begin from. */
+function deckBooks() {
+  const cats = shelfListing?.categories || {};
+  return ['settings', 'adventures'].flatMap((c) => cats[c] || []);
+}
+
+/** 'Plane-Shift_Kaladesh.pdf' -> 'Plane Shift Kaladesh'. */
+function cleanTitle(name) {
+  return String(name || '').replace(/\.pdf$/i, '')
+    .replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function beginFromBook(book, typedName = '') {
+  const c = newCampaign(typedName || cleanTitle(book.name));
+  c.sourceSlug = book.slug;
+  c.sourceName = book.name;
+  c.active = all.length === 0;
+  await saveCampaign(c);
+  await setActive(c.id);
+  await refresh();
+  await log('campaign_founded', { name: c.name, source: book.name },
+    { campaignId: c.id });
+  toast(`${c.name} begins - the book is open`, 'ok');
+  // Straight into the review rows: founding from a book IS the setup flow.
+  await ingestFromShelf(book.slug, book.name);
+  if (!ingest) draw();
+}
 
 export async function render(root) {
   container = root;
@@ -52,6 +95,10 @@ export async function render(root) {
   // Entering the mode re-reads the shelf: it is server state another surface
   // (the workshop drop, the CLI) may have grown since the Deck last looked.
   shelfListing = null;
+  try {
+    highlightSlug = sessionStorage.getItem('toonanvil.deckOpenBook');
+    sessionStorage.removeItem('toonanvil.deckOpenBook');
+  } catch { highlightSlug = null; }
   await refresh();
   draw();
 
@@ -80,14 +127,33 @@ function draw() {
     return;
   }
   container.append(dialsPanel());
+  // A review in progress is THE current work - it jumps to the top rather
+  // than living six panels down where nobody found it. A fresh book-founded
+  // campaign that has not been ingested yet gets a one-line nudge instead.
+  if (ingest) container.append(ingestPanel());
+  else if (campaign.sourceSlug && !(campaign.regions || []).length) {
+    container.append(bookNudge());
+  }
   container.append(mapPanel());
   const columns = el('div', { class: 'grid two' });
   columns.append(factionsPanel());
   columns.append(economyPanel());
   container.append(columns);
   container.append(regionsPanel());
-  container.append(ingestPanel());
+  if (!ingest) container.append(ingestPanel());
   container.append(campaignPanel());
+}
+
+function bookNudge() {
+  const strip = el('div', { class: 'strip' });
+  strip.append(el('span', { class: 'grow' },
+    `The book is on the shelf — ingest ${cleanTitle(campaign.sourceName)} `
+    + 'to lay out regions and factions.'));
+  strip.append(el('button', {
+    class: 'act small',
+    onClick: () => ingestFromShelf(campaign.sourceSlug, campaign.sourceName),
+  }, 'Open the book'));
+  return strip;
 }
 
 /* ------------------------------------------------------------------ */
@@ -117,6 +183,13 @@ function dialsPanel() {
   dials.append(statTile('Table', session.isOpen()
     ? `${players.length} joined` : 'solo',
   session.isOpen() ? 'open' : 'open one in Setup'));
+  if (campaign.sourceSlug) {
+    // Last tile on purpose: the frozen flow regexes read the first 'Day'
+    // and the first 'The sky' in text order, and those live above.
+    dials.append(statTile('The book', cleanTitle(campaign.sourceName),
+      'ingest it again any time',
+      () => ingestFromShelf(campaign.sourceSlug, campaign.sourceName)));
+  }
   panel.append(dials);
 
   if (sky?.event) {
@@ -685,12 +758,7 @@ function shelfBlock() {
   box.append(el('span', { class: 'eyebrow' }, 'On the shelf'));
 
   if (!shelfListing) {
-    listShelf().then((r) => {
-      shelfListing = r;
-      // Same guard as the live subscription: never paint a view another
-      // mode owns by the time this resolves.
-      if (container?.dataset.rendered === 'dm-deck') draw();
-    });
+    ensureShelfListing();
     box.append(el('p', { class: 'muted', style: 'font-size:12px;margin:4px 0 0' },
       'Looking at the shelf...'));
     return box;
@@ -778,6 +846,7 @@ async function fileAsRegion(s) {
   campaign.regions.push(region);
   if (!campaign.currentRegionId) campaign.currentRegionId = region.id;
   await saveCampaign(campaign);
+  await logFiled(s, 'region');
   toast(`${s.title} is a region`, 'ok');
 }
 
@@ -787,6 +856,7 @@ async function fileAsFaction(s) {
   f.agenda = s.body.slice(0, 500);
   campaign.factions.push(f);
   await saveCampaign(campaign);
+  await logFiled(s, 'faction');
   toast(`${s.title} is a faction (agenda private)`, 'ok');
 }
 
@@ -797,6 +867,7 @@ async function fileAsNpc(s) {
     firstMet: new Date().toISOString(),
     notes: [s.body.slice(0, 500)],
   });
+  await logFiled(s, 'npc');
   toast(`${s.title} is an NPC`, 'ok');
 }
 
@@ -804,7 +875,14 @@ async function fileAsLore(s) {
   campaign.lore = campaign.lore || [];
   campaign.lore.push({ title: s.title, text: s.body, source: 'ingest' });
   await saveCampaign(campaign);
+  await logFiled(s, 'lore');
   toast(`${s.title} kept as lore`, 'ok');
+}
+
+/** The Story feed sees the setup happen - quiet rows, but on the record. */
+function logFiled(s, as) {
+  return log('section_filed', { title: s.title, as, source: ingest?.source },
+    { campaignId: campaign.id });
 }
 
 /** A light keyword nudge for the terrain select - a default, not a verdict. */
@@ -838,7 +916,8 @@ function campaignPanel() {
     });
     row.append(el('strong', { style: 'flex:1' }, c.name));
     row.append(el('span', { class: 'mono muted', style: 'font-size:11px' },
-      `day ${c.day} · seed ${c.seed}`));
+      `day ${c.day} · seed ${c.seed}`
+      + (c.sourceName ? ` · from ${c.sourceName}` : '')));
     if (c.active) row.append(el('span', { class: 'chip accent' }, 'active'));
     else {
       row.append(el('button', {
@@ -849,7 +928,7 @@ function campaignPanel() {
     panel.append(row);
   }
 
-  panel.append(newCampaignRow());
+  panel.append(campaignStartBlock());
   panel.append(el('p', { class: 'welcome-fine', style: 'margin-top:10px' },
     'The seed is public and predicts nothing but the sky - players compute '
     + 'the same weather you do. Agendas are the secrets, and those never '
@@ -860,19 +939,75 @@ function campaignPanel() {
 function newCampaignPanel() {
   const panel = el('div', { class: 'panel rivets accent' });
   panel.append(el('span', { class: 'lvl accent' }, 'The Deck'));
-  panel.append(el('h3', {}, 'No campaign yet'));
+  panel.append(el('h3', {}, 'Start a campaign'));
   panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
     'A campaign is the world the Deck drives: its calendar, its skies, its '
-    + 'regions and prices, its factions. Name it and take the wheel.'));
-  panel.append(newCampaignRow());
+    + 'regions and prices, its factions. Begin from a book on your shelf - '
+    + 'its sections open for filing the moment the campaign exists - or '
+    + 'start blank and take the wheel.'));
+  panel.append(campaignStartBlock({ hero: true }));
   return panel;
 }
 
-function newCampaignRow() {
+/**
+ * The one place a campaign is born. `hero: true` (the empty Deck) leads
+ * with a full row per shelf book; the compact form (campaign panel) offers
+ * a picker instead. The blank-start row - the 'Campaign name' input and
+ * 'Found the campaign' button - renders SYNCHRONOUSLY and unconditionally:
+ * the gym's fallbacks (and a DM with no books) depend on it existing even
+ * while the shelf is still being fetched.
+ */
+function campaignStartBlock({ hero = false } = {}) {
+  const box = el('div', {});
   const name = el('input', {
     type: 'text', placeholder: 'Campaign name...',
     'aria-label': 'Campaign name', style: 'max-width:240px',
   });
+
+  const books = deckBooks().filter((b) => b.extractedOk);
+  if (hero) {
+    box.append(el('span', { class: 'eyebrow' }, 'From a book on your shelf'));
+    if (shelfListing === null) {
+      ensureShelfListing();
+      box.append(el('p', { class: 'muted', style: 'font-size:12px;margin:4px 0 8px' },
+        'Looking at the shelf...'));
+    } else if (!books.length) {
+      box.append(el('p', { class: 'muted', style: 'font-size:13px;margin:4px 0 8px' },
+        'No settings or adventures on the shelf yet. Drop a .pdf book in '
+        + 'Setup and it files itself; then it appears here.'));
+    } else {
+      let toHighlight = null;
+      for (const b of books) {
+        const row = el('div', {
+          style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;'
+            + 'padding:7px 0;border-bottom:1px solid var(--etch)'
+            + (b.slug === highlightSlug ? ';outline:2px solid var(--accent);'
+              + 'outline-offset:3px' : ''),
+        });
+        row.append(el('strong', { style: 'flex:1;min-width:170px' },
+          cleanTitle(b.name)));
+        row.append(el('span', { class: 'mono muted', style: 'font-size:11px' },
+          `${b.pages || '?'} pages · ${Object.values(b.written || {})
+            .reduce((n, x) => n + x, 0)} sections`));
+        row.append(el('button', {
+          class: 'act small',
+          title: 'Found a campaign named for this book (or type a name first) '
+            + 'and open its sections for filing',
+          onClick: () => beginFromBook(b, name.value.trim()),
+        }, 'Begin this campaign'));
+        if (b.slug === highlightSlug) toHighlight = row;
+        box.append(row);
+      }
+      if (toHighlight) {
+        setTimeout(() => toHighlight.scrollIntoView({ block: 'center' }), 60);
+        highlightSlug = null;
+      }
+    }
+    box.append(el('span', {
+      class: 'eyebrow', style: 'display:block;margin-top:12px',
+    }, 'Or start blank'));
+  }
+
   const row = el('div', { class: 'btnrow', style: 'margin-top:8px' });
   row.append(name);
   row.append(el('button', {
@@ -885,10 +1020,33 @@ function newCampaignRow() {
       await saveCampaign(c);
       await setActive(c.id);
       await refresh();
+      await log('campaign_founded', { name: c.name }, { campaignId: c.id });
       draw();
       toast(`${c.name} begins`, 'ok');
       return null;
     },
   }, 'Found the campaign'));
-  return row;
+  box.append(row);
+
+  // The compact path to a second book campaign, next to the blank row.
+  if (!hero) {
+    if (shelfListing === null) ensureShelfListing();
+    if (books.length) {
+      const prow = el('div', { class: 'btnrow', style: 'margin-top:8px' });
+      const sel = el('select', {
+        'aria-label': 'Book to begin from', style: 'width:auto',
+      });
+      for (const b of books) sel.append(el('option', { value: b.slug }, b.name));
+      prow.append(sel);
+      prow.append(el('button', {
+        class: 'act ghost',
+        onClick: () => {
+          const b = books.find((x) => x.slug === sel.value);
+          if (b) beginFromBook(b, name.value.trim());
+        },
+      }, 'Begin from this book'));
+      box.append(prow);
+    }
+  }
+  return box;
 }

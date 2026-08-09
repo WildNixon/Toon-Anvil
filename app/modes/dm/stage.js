@@ -20,10 +20,12 @@ import { partyPanel } from './party.js';
 
 let box = null;
 let ctx = null;
+let campaign = null;
 
-export function render(root, context) {
+export function render(root, context, activeCamp = null) {
   box = root;
   ctx = context;
+  campaign = activeCamp;
   draw();
 }
 
@@ -54,8 +56,18 @@ const totalLevel = (ch) => Math.max(1, (ch?.classes || [])
 function tableStrip() {
   if (!session.isOpen()) {
     // Solo: one quiet line, not a panel shouting about something that does
-    // not exist. The fight below is the point of this screen.
+    // not exist. The fight below is the point of this screen - unless there
+    // is no campaign at all, in which case the most important thing a DM
+    // can do is start one, and Stage is where they land first.
     const strip = el('div', { class: 'strip' });
+    if (!campaign) {
+      strip.append(el('span', { class: 'grow' },
+        'No campaign on the Deck yet. Start one from a book on your shelf.'));
+      strip.append(el('button', {
+        class: 'act small', onClick: () => ctx.goToLens('deck'),
+      }, 'Go to the Deck'));
+      return strip;
+    }
     strip.append(el('span', { class: 'grow' },
       'Prepping solo. When the players arrive, open a table in Setup.'));
     strip.append(el('button', {

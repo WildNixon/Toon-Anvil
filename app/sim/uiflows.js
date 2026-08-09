@@ -1042,6 +1042,87 @@ export const FLOWS = [
   },
 
   {
+    id: 'campaign_from_book',
+    title: 'A campaign begins from a book, and the book opens itself',
+    async run(c, { doc }) {
+      c.feature('ui', 'deck', 'shelf', 'setup');
+      const bytes = fixturePdfBytes();
+      const hash = await shelfHash(bytes);
+      const up = await fetch('/api/shelf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/pdf',
+          'X-Filename': FIXTURE_NAME },
+        body: bytes,
+      }).then((r) => r.json()).catch(() => ({}));
+      c.ok(up.category === 'settings' || up.alreadyKnown === true,
+        'the fixture book is on the shelf', up.category);
+
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'Deck', 'campaign'), 'the Deck opens');
+      // Gym Realm exists from the earlier deck flows; found it if isolated.
+      if (!/Gym Realm/.test(mainText(doc))) {
+        const name = doc.querySelector('main input[aria-label="Campaign name"]');
+        if (name) {
+          setField(name, 'Gym Realm');
+          button(doc, 'Found the campaign')?.click();
+          await waitUntilSettled(doc);
+        }
+      }
+
+      // The campaign panel's picker - the second-campaign path. Target the
+      // fixture by NAME, never by position: the real shelf holds the
+      // user's own books.
+      const sel = await waitFor(() => doc.querySelector(
+        'main select[aria-label="Book to begin from"]'), { timeout: 8000 });
+      c.ok(!!sel, 'the campaign panel offers the shelf');
+      if (!sel) return;
+      const opt = [...sel.options]
+        .find((o) => o.textContent.includes('Gym-Fixture'));
+      c.ok(!!opt, 'the fixture book is among the options');
+      if (!opt) return;
+      setField(sel, opt.value);
+      button(doc, 'Begin from this book')?.click();
+
+      const opened = await waitFor(() => (/sections from Gym-Fixture/
+        .test(mainText(doc)) ? true : null), { timeout: 10000 });
+      c.ok(!!opened, 'the review rows open on their own');
+      c.ok(/Gym Fixture Gazetteer/.test(mainText(doc)),
+        'the campaign is named for the book');
+      c.ok(mainText(doc).includes('The book'),
+        'the dials carry the book');
+
+      // Close the review unfiled: the Deck must keep a way back in.
+      button(doc, 'Done - clear the bench')?.click();
+      const nudge = await waitFor(() => (/The book is on the shelf/
+        .test(mainText(doc)) ? true : null), { timeout: 6000 });
+      c.ok(!!nudge, 'an uningested book keeps a nudge on the Deck');
+      c.ok(!!button(doc, 'Open the book'), 'with a way back in');
+      c.ok(/from Gym-Fixture/.test(mainText(doc)),
+        'and the campaign list shows the provenance');
+
+      // Hand the wheel back to Gym Realm for the flows that follow.
+      const makeActive = [...doc.querySelectorAll('main div')]
+        .filter((d) => d.textContent.includes('Gym Realm')
+          && d.querySelector('button'))
+        .map((d) => [...d.querySelectorAll('button')]
+          .find((b) => b.textContent.trim() === 'Make active'))
+        .find(Boolean);
+      c.ok(!!makeActive, 'the old campaign can retake the wheel');
+      makeActive?.click();
+      const back = await waitFor(() => (/Gym Realm/
+        .test(doc.querySelector('main .lvl')?.textContent || '')
+        ? true : null), { timeout: 8000 });
+      c.ok(!!back, 'Gym Realm is active again');
+
+      const gone = await fetch('/api/shelf/remove', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hash }),
+      }).then((r) => r.status).catch(() => 0);
+      c.eq(gone, 200, 'cleanup: the fixture leaves the shelf');
+    },
+  },
+
+  {
     id: 'homebrew_pdf_drop',
     title: 'A PDF dropped on the workshop files itself and says where it went',
     async run(c, { doc, win }) {

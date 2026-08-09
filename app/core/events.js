@@ -81,6 +81,9 @@ export const EVENT_TYPES = {
   day_advanced:       { cat: 'world', label: 'A day passed', notable: true },
   faction_standing:   { cat: 'world', label: 'Faction standing shifted' },
   region_moved:       { cat: 'world', label: 'The party moved', notable: true },
+  campaign_founded:   { cat: 'world', label: 'A campaign began', notable: true },
+  section_filed:      { cat: 'world', label: 'Filed from a book' },
+  price_changed:      { cat: 'world', label: 'Prices turned' },
 };
 
 export const CATEGORIES = {
@@ -170,6 +173,9 @@ export function describe(type, p = {}) {
     case 'day_advanced':     return `Day ${p.day} dawns`;
     case 'faction_standing': return `${p.name || 'A faction'}: standing ${p.value}`;
     case 'region_moved':     return `The party crossed into ${p.regionName || 'a new region'}`;
+    case 'campaign_founded': return `${p.name || 'A campaign'} begins${p.source ? `, from ${p.source}` : ''}`;
+    case 'section_filed':    return `${p.title || 'A section'} filed as ${p.as}`;
+    case 'price_changed':    return `${p.name || 'A region'}: prices x${p.value}`;
     case 'attack':      return `Attacked ${p.target || 'a target'}${p.hit === false ? ' and missed' : ''}`;
     case 'crit':        return `Critical hit on ${p.target || 'a target'}`;
     case 'fumble':      return `Rolled a natural 1${p.on ? ` on ${p.on}` : ''}`;

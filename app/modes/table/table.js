@@ -107,11 +107,24 @@ function draw() {
  * the same pure function the DM's Deck runs.
  */
 function worldStrip() {
+  if (!campaign) return null;
   const region = currentRegion(campaign);
-  if (!campaign || !region) return null;
+  const strip = el('div', { class: 'strip' });
+  if (!region) {
+    // A campaign fresh off a book has a name and a day before it has any
+    // region - the players should still see the world exists.
+    strip.append(el('span', { class: 'grow' },
+      `Day ${campaign.day} — ${campaign.name}`));
+    for (const f of campaign.factions || []) {
+      strip.append(el('span', {
+        class: `chip ${f.standing > 2 ? 'ok' : f.standing < -2 ? 'bad' : ''}`,
+        title: 'How they currently regard the party',
+      }, `${f.name} ${f.standing >= 0 ? '+' : ''}${f.standing}`));
+    }
+    return strip;
+  }
   const sky = weatherFor(dmTables,
     { seed: campaign.seed, day: campaign.day, region });
-  const strip = el('div', { class: 'strip' });
   strip.append(el('span', { class: 'grow' },
     `Day ${campaign.day} — ${region.name}`
     + (sky ? `: ${sky.summary.toLowerCase()}` : '')));
