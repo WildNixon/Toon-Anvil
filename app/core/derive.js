@@ -71,8 +71,12 @@ export function derive(character, sources = {}) {
   const shieldWorn = (ch.inventory || []).some(
     (i) => i.equipped && /shield/i.test(i.name || ''),
   );
+  // A shield shares kind:'armor' with body armour in the equipment list,
+  // but it is NOT body armour: picking it here fed armorAc('+2') a base of
+  // 2 and produced AC 4 for a hero holding nothing but a shield. The +2
+  // arrives once, through shieldWorn above.
   const armorWorn = (ch.inventory || []).find(
-    (i) => i.equipped && i.kind === 'armor',
+    (i) => i.equipped && i.kind === 'armor' && !/shield/i.test(i.name || ''),
   );
 
   const acOptions = [];

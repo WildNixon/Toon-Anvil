@@ -178,6 +178,35 @@ export const SUITES = [
         },
       },
       {
+        id: 'shield_ac',
+        title: 'A shield adds two exactly once - it is never the body armour',
+        run(c, { sources }) {
+          c.feature('derive', 'ac', 'inventory');
+          // The equipment list files Shield under kind:'armor' with ac '+2'.
+          // Selecting it as the WORN armour once fed armorAc a base of 2 and
+          // produced AC 4 for a hero holding nothing but a shield.
+          const shield = { id: 'i-shield', name: 'Shield', kind: 'armor',
+            ac: '+2', equipped: true };
+          const chainShirt = { id: 'i-cs', name: 'Chain Shirt', kind: 'armor',
+            ac: '13 + Dex modifier (max 2)', equipped: true };
+          const dex14 = { str: 10, dex: 14, con: 10, int: 10, wis: 10, cha: 10 };
+
+          const both = derive(makeChar({
+            abilities: dex14, inventory: [shield, chainShirt] }), sources);
+          c.eq(both.ac, 17, 'chain shirt + shield at dex 14 = 13 + 2 + 2');
+          c.ok(both.acSource !== 'Shield', 'the armour named is never the shield');
+
+          const only = derive(makeChar({
+            abilities: dex14, inventory: [shield] }), sources);
+          c.eq(only.ac, 14, 'shield alone = unarmored 10 + dex 2 + shield 2');
+
+          // Order independence: the bug was .find() order-dependent.
+          const flipped = derive(makeChar({
+            abilities: dex14, inventory: [chainShirt, shield] }), sources);
+          c.eq(flipped.ac, both.ac, 'inventory order cannot change the answer');
+        },
+      },
+      {
         id: 'multiclass',
         title: 'Multiclassing sums levels without double-counting first-level HP',
         run(c, { sources }) {

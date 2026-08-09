@@ -2025,6 +2025,11 @@ export async function runPlayerView(CheckClass) {
   let error = null;
   const frames = [];
   let dmToken = null;
+  // Real campaigns the user owns that were active when the flow began -
+  // parked (active:false) for the duration and restored on the way out.
+  // Two active records make activeCampaign() order-dependent, and the day
+  // this flow asserts would be Kaladesh's, not PV Realm's.
+  const parked = [];
   try {
     check.feature('ui', 'table', 'shared', 'encounter', 'permissions');
 
@@ -2039,6 +2044,23 @@ export async function runPlayerView(CheckClass) {
     });
     dmToken = opened.body.token;
     check.ok(!!opened.body.code, 'the DM opened a table', opened.body.code);
+
+    // Park the user's own active campaign(s) so the seeded one is the only
+    // record wearing the flag. The DM token sees full records, so restoring
+    // the stashed original puts back agendas and all.
+    const realCamps = await fetch('/api/campaigns', {
+      headers: { 'X-Toon-Token': dmToken },
+    }).then((r) => r.json()).catch(() => []);
+    for (const rc of Array.isArray(realCamps) ? realCamps : []) {
+      if (rc.active && rc.id !== 'gym-pv-camp') {
+        parked.push(rc);
+        await api(`/api/campaigns/${rc.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-Toon-Token': dmToken },
+          body: JSON.stringify({ ...rc, active: false }),
+        });
+      }
+    }
 
     // A world in progress: a campaign with a secret agenda and a map with a
     // hidden pin - the player's screens must carry the day and the sky, and
@@ -2204,6 +2226,15 @@ export async function runPlayerView(CheckClass) {
           method: 'DELETE', headers: { 'X-Toon-Token': dmToken } });
         await api('/api/maps/gym-pv-map', {
           method: 'DELETE', headers: { 'X-Toon-Token': dmToken } });
+        // Give the user back their active campaign, agendas and all.
+        for (const rc of parked) {
+          await api(`/api/campaigns/${rc.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json',
+              'X-Toon-Token': dmToken },
+            body: JSON.stringify(rc),
+          });
+        }
       }
       await api('/api/table/close', { method: 'POST' });
     } catch { /* the server went away; nothing more we can do */ }
