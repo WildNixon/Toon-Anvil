@@ -87,9 +87,11 @@ reports each one where it matters.
    spells all derive correctly, but there is no screen for choosing your
    prepared or known spells. The data model supports it; the UI doesn't yet.
    This is the biggest gap for playing a caster.
-2. **Equipment is managed in Play, not Build.** A new character starts with
-   nothing, so its AC is 10 until you add armour via Play → Inventory or buy
-   some in the Market.
+2. **Starting equipment is chosen in Build.** Every class (and background)
+   offers its book packages — "Take option A" grants the items, equips the
+   armour, and sets the purse to the option's own gold. What the price list
+   can't name (a Monk's instrument) is still granted, marked unresolved.
+   Skipping keeps the 15 GP stake; the Market remains the other road.
 3. **Ability-score methods advise rather than enforce.** Standard array tells
    you the numbers but doesn't assign or validate them; point buy shows your
    spend and turns red over budget rather than blocking it.

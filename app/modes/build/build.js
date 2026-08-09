@@ -10,6 +10,7 @@ import { db } from '../../core/db.js';
 import { log } from '../../core/events.js';
 import {
   ABILITIES, ABILITY_NAMES, SKILLS, abilityMod, proficiencyBonus,
+  parseStartingEquipment,
 } from '../../core/rules2024.js';
 import { rollAbilityScores } from '../../core/dice.js';
 import { saveCharacter, selectCharacter, recompute, go } from '../../app.js';
@@ -56,6 +57,7 @@ function draw() {
   container.append(identityPanel(active, compendium, homebrew));
   container.append(abilitiesPanel(active));
   container.append(skillsPanel(active, compendium));
+  container.append(equipmentPanel(active, compendium));
   container.append(featuresPanel());
   if (gate.locked) lockInputs(container);
 }
@@ -151,6 +153,126 @@ function rosterPanel(characters, active) {
   }
   panel.append(list);
   return panel;
+}
+
+/* ------------------------------------------------------------------ */
+/* starting equipment                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Class (and background) starting gear, chosen once. A new character used
+ * to start with nothing and AC 10 until they visited the Market - the
+ * README listed it as the app's second-biggest gap. Buttons only: the gym
+ * navigates Build by input POSITION, and a stray number input here would
+ * hijack the Level field.
+ */
+function equipmentPanel(ch, compendium) {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Starting equipment'));
+
+  const clsId = ch.classes?.[0]?.class;
+  const clsDef = (compendium.classes || []).find((c) => c.id === clsId);
+  const parsed = parseStartingEquipment(
+    clsDef?.startingEquipment, compendium.equipment);
+  if (!parsed) {
+    panel.append(el('p', { class: 'muted' },
+      'This class ships no starting-equipment options.'));
+    return panel;
+  }
+
+  if (ch.startingEquipment) {
+    panel.append(el('p', { class: 'muted', style: 'margin:0' },
+      ch.startingEquipment === 'skipped'
+        ? 'Kept the 15 GP stake. The Market is open whenever you are.'
+        : `Took option ${ch.startingEquipment.toUpperCase()}. `
+          + 'Armour arrived equipped; the rest is in your inventory on Play.'));
+  } else {
+    panel.append(el('p', { class: 'muted', style: 'font-size:13px' },
+      'One package, once - taking it replaces the 15 GP stake with the '
+      + "option's own purse, and armour arrives already equipped."));
+    for (const opt of parsed.options) {
+      panel.append(optionRow(ch, opt, 'Take option'));
+    }
+    panel.append(el('div', { class: 'btnrow', style: 'margin-top:8px' },
+      el('button', {
+        class: 'act ghost small',
+        onClick: () => update({ startingEquipment: 'skipped' }),
+      }, 'Keep the 15 GP stake')));
+  }
+
+  // The background's package rides the same grammar - additive, since the
+  // rules grant class AND background equipment.
+  const bg = (compendium.backgrounds || []).find((b) => b.id === ch.background);
+  const bgParsed = parseStartingEquipment(bg?.equipment, compendium.equipment);
+  if (bgParsed) {
+    panel.append(el('div', { class: 'eyebrow', style: 'margin:12px 0 4px' },
+      `From your background (${bg.name})`));
+    if (ch.startingEquipmentBg) {
+      panel.append(el('p', { class: 'muted', style: 'margin:0' },
+        `Took background option ${ch.startingEquipmentBg.toUpperCase()}.`));
+    } else {
+      for (const opt of bgParsed.options) {
+        panel.append(optionRow(ch, opt, 'Take background option', true));
+      }
+    }
+  }
+  return panel;
+}
+
+function optionRow(ch, opt, verb, isBackground = false) {
+  const row = el('div', {
+    style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;'
+      + 'padding:6px 0;border-bottom:1px solid var(--etch)',
+  });
+  row.append(el('span', { class: 'chip' }, opt.key.toUpperCase()));
+  row.append(el('span', { style: 'flex:1;min-width:220px;font-size:13px' },
+    opt.label));
+  row.append(el('button', {
+    class: 'act small',
+    onClick: () => takeOption(ch, opt, isBackground),
+  }, `${verb} ${opt.key.toUpperCase()}`));
+  return row;
+}
+
+async function takeOption(ch, opt, isBackground) {
+  await saveCharacter((c) => {
+    const granted = opt.items.map((it) => packItem(it));
+    // Armour goes on as it arrives; a shield is a shield, not body armour.
+    for (const g of granted) {
+      if (g.kind === 'armor') g.equipped = true;
+    }
+    c.inventory = [...(c.inventory || []), ...granted];
+    if (isBackground) {
+      // Background gold is EARNED on top - the class package (or the
+      // stake) already set the purse.
+      c.currency = { ...(c.currency || {}), gp: (c.currency?.gp || 0) + opt.gp };
+      c.startingEquipmentBg = opt.key;
+    } else {
+      c.currency = { gp: opt.gp };
+      c.startingEquipment = opt.key;
+    }
+    return c;
+  });
+  await log('journal', {
+    text: `Starting equipment${isBackground ? ' (background)' : ''}: `
+      + `option ${opt.key.toUpperCase()} — ${opt.label}`,
+  });
+  toast(`Option ${opt.key.toUpperCase()} taken`, 'ok');
+  draw();
+}
+
+/** An option item as the same record shape the Market writes. */
+function packItem(it) {
+  const base = it.ref || {};
+  return {
+    id: `it-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+    name: it.ref ? it.ref.name : it.name,
+    kind: base.kind || 'gear',
+    qty: it.qty || 1,
+    weight: base.weight, damage: base.damage, properties: base.properties,
+    mastery: base.mastery, ac: base.ac, rarity: base.rarity,
+    attunement: base.attunement, equipped: false, costCp: base.costCp || 0,
+  };
 }
 
 const totalLevel = (c) => (c.classes || []).reduce((n, x) => n + (x.level || 0), 0) || 1;

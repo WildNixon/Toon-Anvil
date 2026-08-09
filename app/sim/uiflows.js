@@ -238,6 +238,54 @@ export const FLOWS = [
   },
 
   {
+    id: 'build_equipment',
+    title: 'A new character can leave Build armed and armoured',
+    async run(c, { doc }) {
+      c.feature('ui', 'build', 'starting-gear');
+      c.ok(await goToMode(doc, 'Build', 'Roster'), 'Build mode opens');
+      // A throwaway porter: the flow must leave Gym Recruit's 15 GP purse
+      // untouched for the shop flow later in this shared frame.
+      button(doc, 'New character')?.click();
+      await waitUntilSettled(doc);
+      const name = doc.querySelector('main input[type=text]');
+      setField(name, 'Gym Porter');
+
+      const offered = await waitFor(() => (/Starting equipment/
+        .test(mainText(doc)) ? true : null), { timeout: 6000 });
+      c.ok(!!offered, 'the Build page offers starting equipment');
+      const take = await waitFor(() => button(doc, 'Take option A'),
+        { timeout: 6000 });
+      c.ok(!!take, 'with lettered options');
+      take?.click();
+      const took = await waitFor(() => (/Took option A/.test(mainText(doc))
+        ? true : null), { timeout: 6000 });
+      c.ok(!!took, 'one click takes the package, once');
+      const ac = await waitFor(() => (readNumberAfter(doc, 'AC') === 16
+        ? 16 : null), { timeout: 6000 });
+      c.eq(ac, 16, 'chain mail arrived equipped - AC 16 on the resolved panel');
+
+      c.ok(await goToMode(doc, 'Play', 'Adjust HP'), 'Play opens');
+      button(doc, 'Inventory')?.click();
+      await waitUntilSettled(doc);
+      c.ok(/Chain Mail/.test(mainText(doc)), 'the armour is in the inventory');
+      c.ok(/4 GP/.test(mainText(doc)), "and the purse is option A's own 4 GP");
+      button(doc, 'Overview')?.click();
+      await waitUntilSettled(doc);
+
+      // Hand the bench back to Gym Recruit for every flow that follows.
+      c.ok(await goToMode(doc, 'Build', 'Roster'), 'back to Build');
+      const card = [...doc.querySelectorAll('main .stat.clickable')]
+        .find((d) => /Gym Recruit/.test(d.textContent));
+      c.ok(!!card, 'Gym Recruit is still on the roster');
+      card?.click();
+      const back = await waitFor(() => (/Gym Recruit/
+        .test(doc.querySelector('main input[type=text]')?.value || '')
+        ? true : null), { timeout: 6000 });
+      c.ok(!!back, 'and takes the bench back');
+    },
+  },
+
+  {
     id: 'play_damage_and_rest',
     title: 'Take damage, then rest it off',
     async run(c, { doc }) {

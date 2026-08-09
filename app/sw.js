@@ -18,7 +18,11 @@
  * between "installed" and "actually usable on a train".
  */
 
-const VERSION = 'toon-anvil-v8';
+// v9: compendium files are cached as IMMUTABLE, so a regenerated
+// backgrounds.json never reaches an installed app without a version bump -
+// the repaired background fields ride this one. spell-mechanics.json joins
+// the shell for the spellbook.
+const VERSION = 'toon-anvil-v9';
 
 /** Immutable between releases: safe to serve from cache without asking. */
 const IMMUTABLE = /\/(data\/fonts|data\/compendium|icons)\//;
@@ -85,6 +89,7 @@ const SHELL = [
   './homebrew/parse-content.js',
   './data/dm-tables.json',
   './data/srd-effects.json',
+  './data/spell-mechanics.json',
   './data/compendium/classes.json',
   './data/compendium/species.json',
   './data/compendium/backgrounds.json',

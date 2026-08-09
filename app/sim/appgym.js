@@ -2283,6 +2283,79 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- character generation ----------------------------- */
+  {
+    id: 'chargen',
+    title: 'Starting equipment',
+    why: 'A new character began with nothing and AC 10 - the second-biggest '
+       + 'gap on the README\'s own list. The parser reads the SRD\'s '
+       + 'sentences, so a grammar drift must fail loudly, not grant nothing.',
+    scenarios: [
+      {
+        id: 'equipment_grammar',
+        title: 'Every class and background package parses, quantities intact',
+        run(c, { sources, rules }) {
+          c.feature('chargen', 'starting-gear', 'equipment');
+          let parsedAll = true;
+          for (const cls of sources.classes) {
+            const p = rules.parseStartingEquipment(
+              cls.startingEquipment, sources.equipment);
+            if (!p || !p.options.length) {
+              parsedAll = false;
+              c.ok(false, `${cls.name}'s package parses`);
+            }
+          }
+          c.ok(parsedAll, 'all twelve class packages parse');
+          for (const bg of sources.backgrounds) {
+            const p = rules.parseStartingEquipment(
+              bg.equipment, sources.equipment);
+            c.ok(!!p && p.options.length === 2,
+              `${bg.name}'s background package parses both options`);
+          }
+
+          const fighter = rules.parseStartingEquipment(
+            sources.classes.find((x) => x.id === 'fighter').startingEquipment,
+            sources.equipment);
+          const a = fighter.options[0];
+          const jav = a.items.find((i) => /javelin/i.test(i.name));
+          c.eq(jav?.qty, 8, 'eight javelins are eight, not one');
+          c.ok(!!jav?.resolved && jav.ref.costCp === 50,
+            'and resolve to the priced compendium record');
+          c.eq(a.gp, 4, "option A's purse is 4 GP");
+          c.eq(fighter.options[2].items.length, 0,
+            'the gold-only option carries no items');
+          c.eq(fighter.options[2].gp, 155, 'and all 155 GP');
+
+          const monk = rules.parseStartingEquipment(
+            sources.classes.find((x) => x.id === 'monk').startingEquipment,
+            sources.equipment);
+          c.ok(monk.options[0].items.some((i) => !i.resolved),
+            'what the price list lacks is kept as an unresolved item, not dropped');
+        },
+      },
+      {
+        id: 'equipment_grant',
+        title: 'A taken package derives the AC the book promises',
+        run(c, { sources, rules }) {
+          c.feature('chargen', 'starting-gear', 'ac');
+          const fighter = rules.parseStartingEquipment(
+            sources.classes.find((x) => x.id === 'fighter').startingEquipment,
+            sources.equipment);
+          const inv = fighter.options[0].items
+            .filter((i) => i.resolved)
+            .map((i, n) => ({ id: `t-${n}`, name: i.ref.name,
+              kind: i.ref.kind, qty: i.qty, ac: i.ref.ac,
+              equipped: i.ref.kind === 'armor' }));
+          const d = derive(makeChar({ inventory: inv,
+            abilities: { str: 16, dex: 14, con: 14, int: 10, wis: 10, cha: 8 },
+          }), sources);
+          c.eq(d.ac, 16, 'chain mail arrives equipped: AC 16 flat, dex ignored');
+          c.eq(d.acSource, 'Chain Mail', 'named for the armour, not guessed');
+        },
+      },
+    ],
+  },
+
   /* ---------------- chrome: seat + theme ----------------------------- */
   {
     id: 'chrome',
@@ -2953,7 +3026,8 @@ export const BARS = {
   // app grows.
   // And again (38 -> 40) with the shelf and its book detector.
   // And again (40 -> 42) with setup-from-the-shelf and the forecast.
-  minFeaturesCovered: 42,
+  // And again (42 -> 43) with starting equipment.
+  minFeaturesCovered: 43,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.
@@ -3184,6 +3258,18 @@ export const MUTATIONS = [
             label: 'HIDDEN leak', revealed: false }];
         }
         return r;
+      } } }),
+  },
+  {
+    id: 'equipment_parser_flattens_qty',
+    what: "'8 Javelins' grants one javelin - the quantity is dropped",
+    patch: (ctx) => ({ rules: { ...ctx.rules,
+      parseStartingEquipment: (p, e) => {
+        const out = ctx.rules.parseStartingEquipment(p, e);
+        if (out) {
+          for (const o of out.options) for (const i of o.items) i.qty = 1;
+        }
+        return out;
       } } }),
   },
   {

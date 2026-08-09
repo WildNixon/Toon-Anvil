@@ -243,3 +243,101 @@ export function classFormula(name, classLevel = 1) {
   if (STEPS[name]) return stepValue(STEPS[name], classLevel);
   return null;
 }
+
+/* ------------------------------------------------------------------ */
+/* starting equipment                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Parse a class or background starting-equipment sentence into options.
+ *
+ * The SRD's grammar is stable: `Choose A, B, or C: (A) item, 2 Items,
+ * and N GP; (B) ...; or (C) 155 GP` - backgrounds wrap the preamble in
+ * italics. Each option becomes {key, label, items, gp}; gold-only options
+ * carry items: []. Item names resolve against the equipment compendium
+ * (exact, then singularised, then prefix); what cannot be resolved is kept
+ * as an unresolved named item rather than dropped - a Monk's instrument is
+ * still THEIRS even if the price list has no entry for it.
+ *
+ * Pure: no I/O, no randomness. Returns null when the prose has no
+ * recognisable options.
+ */
+export function parseStartingEquipment(prose, equipment) {
+  if (!prose) return null;
+  const text = String(prose).replace(/_/g, '').trim();
+  const pool = [
+    ...(equipment?.weapons || []),
+    ...(equipment?.armor || []),
+    ...(equipment?.gear || []),
+  ];
+
+  const parts = text.split(/\(([A-C])\)/);
+  if (parts.length < 3) return null;
+
+  const options = [];
+  for (let i = 1; i < parts.length; i += 2) {
+    const key = parts[i].toLowerCase();
+    let body = parts[i + 1] || '';
+    body = body.replace(/^\s*/, '').replace(/[;.]?\s*(?:or\s*)?$/i, '');
+
+    let gp = 0;
+    const gold = /(?:,?\s*(?:and\s+)?)(\d+)\s*GP\s*$/i.exec(body);
+    if (gold) {
+      gp = Number(gold[1]);
+      body = body.slice(0, gold.index).trim().replace(/[,;]$/, '');
+    }
+
+    const items = [];
+    for (let token of splitOutsideParens(body)) {
+      token = token.replace(/^and\s+/i, '').trim();
+      if (!token) continue;
+      let qty = 1;
+      const q = /^(\d+)\s+(.*)$/.exec(token);
+      let name = token;
+      if (q) { qty = Number(q[1]); name = q[2]; }
+      // "(10 sheets)" style parentheticals also carry a quantity.
+      const paren = /\((\d+)\s+[a-z]+\)/i.exec(name);
+      if (paren && qty === 1) qty = Number(paren[1]);
+      const ref = resolveEquipment(name, pool);
+      items.push({ name, qty, resolved: !!ref, ref: ref || null });
+    }
+    options.push({
+      key,
+      label: items.length
+        ? `${items.map((it) => (it.qty > 1 ? `${it.qty}× ${it.name}` : it.name))
+          .join(', ')}${gp ? ` + ${gp} GP` : ''}`
+        : `${gp} GP`,
+      items,
+      gp,
+    });
+  }
+  return options.length ? { options } : null;
+}
+
+function splitOutsideParens(body) {
+  const out = [];
+  let depth = 0;
+  let cur = '';
+  for (const chr of body) {
+    if (chr === '(') depth += 1;
+    if (chr === ')') depth = Math.max(0, depth - 1);
+    if (chr === ',' && depth === 0) { out.push(cur); cur = ''; } else cur += chr;
+  }
+  out.push(cur);
+  return out.map((s) => s.trim()).filter(Boolean);
+}
+
+function resolveEquipment(rawName, pool) {
+  // Display keeps the parenthetical ("Book (prayers)"); lookup drops it.
+  const name = rawName.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ')
+    .trim().toLowerCase();
+  if (!name) return null;
+  const exact = pool.find((it) => it.name.toLowerCase() === name);
+  if (exact) return exact;
+  if (name.endsWith('s')) {
+    const singular = name.slice(0, -1);
+    const hit = pool.find((it) => it.name.toLowerCase() === singular);
+    if (hit) return hit;
+  }
+  return pool.find((it) => it.name.toLowerCase().startsWith(name)) || null;
+}
