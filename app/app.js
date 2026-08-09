@@ -45,8 +45,6 @@ const MODES = [
     load: () => import('./modes/table/table.js') },
   { id: 'dm',        label: 'DM',        group: 'Dungeon Master', dmOnly: true,
     load: () => import('./modes/dm/dm.js') },
-  { id: 'homebrew',  label: 'Homebrew',  group: 'Dungeon Master', dmOnly: true,
-    load: () => import('./homebrew/homebrew-ui.js') },
   // No group: rendered as the gear pinned to the right.
   { id: 'settings',  label: 'Settings',  gear: true,
     load: () => import('./modes/settings/settings.js') },

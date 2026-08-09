@@ -578,8 +578,10 @@ export const FLOWS = [
     title: 'Run a fight through the encounter runner',
     async run(c, { doc }) {
       c.feature('ui', 'dm', 'runner', 'combat');
-      c.ok(await goToMode(doc, 'DM', 'Run a fight'), 'DM mode opens');
-      button(doc, 'Run a fight')?.click();
+      // Stage is the default lens: the runner is on screen the moment DM
+      // mode opens - the fight is the DM's home screen now.
+      c.ok(await goToMode(doc, 'DM', 'Encounter'), 'DM mode opens on the Stage');
+      button(doc, 'Stage')?.click();
       await waitUntilSettled(doc);
 
       // Add the party member built by an earlier flow.
@@ -637,8 +639,10 @@ export const FLOWS = [
     title: 'The party dashboard shows the numbers a DM looks up',
     async run(c, { doc }) {
       c.feature('ui', 'dm', 'party');
-      c.ok(await goToMode(doc, 'DM', 'Party'), 'DM mode opens');
-      button(doc, 'Party')?.click();
+      // The party board shares the Stage with the fight - the two things a
+      // DM glances at mid-session, one screen.
+      c.ok(await goToMode(doc, 'DM', 'Pass. Perc'), 'the Stage shows the party board');
+      button(doc, 'Stage')?.click();
       await waitUntilSettled(doc);
       const t = mainText(doc).replace(/\s+/g, ' ');
       c.ok(/Pass\. Perc/.test(t), 'passive Perception is a column');
@@ -653,7 +657,9 @@ export const FLOWS = [
     title: 'Roll a hoard and hand it to a character',
     async run(c, { doc }) {
       c.feature('ui', 'dm', 'loot');
-      c.ok(await goToMode(doc, 'DM', 'Treasure'), 'DM mode opens');
+      c.ok(await goToMode(doc, 'DM'), 'DM mode opens');
+      button(doc, 'World')?.click();
+      await waitUntilSettled(doc);
       button(doc, 'Treasure')?.click();
       await waitUntilSettled(doc);
 
@@ -680,7 +686,9 @@ export const FLOWS = [
     title: 'Improvise an NPC, a rumour and an encounter',
     async run(c, { doc }) {
       c.feature('ui', 'dm', 'generators');
-      c.ok(await goToMode(doc, 'DM', 'Improvise'), 'DM mode opens');
+      c.ok(await goToMode(doc, 'DM'), 'DM mode opens');
+      button(doc, 'World')?.click();
+      await waitUntilSettled(doc);
       button(doc, 'Improvise')?.click();
       await waitUntilSettled(doc);
 
@@ -715,7 +723,9 @@ export const FLOWS = [
     title: 'The bestiary finds a monster',
     async run(c, { doc }) {
       c.feature('ui', 'dm', 'bestiary');
-      c.ok(await goToMode(doc, 'DM', 'Bestiary'), 'DM mode opens');
+      c.ok(await goToMode(doc, 'DM'), 'DM mode opens');
+      button(doc, 'World')?.click();
+      await waitUntilSettled(doc);
       button(doc, 'Bestiary')?.click();
       await waitUntilSettled(doc);
       const search = await waitFor(() => doc.querySelector('main input[type=text]'));
@@ -881,9 +891,12 @@ export const FLOWS = [
     title: 'Extracted subclasses can be selected and combined',
     async run(c, { doc }) {
       c.feature('ui', 'homebrew', 'library', 'pdf');
-      c.ok(await goToMode(doc, 'Homebrew',
-        () => /Open library|Hide library/.test(mainText(doc))),
-      'Homebrew mode opens');
+      // The workshop lives in the DM's Setup lens now.
+      c.ok(await goToMode(doc, 'DM'), 'DM mode opens');
+      button(doc, 'Setup')?.click();
+      const bench = await waitFor(() => (/Open library|Hide library/
+        .test(mainText(doc)) ? true : null), { timeout: 10000 });
+      c.ok(!!bench, 'the Setup lens carries the homebrew workshop');
       const opener = button(doc, 'Open library');
       if (opener) { opener.click(); await waitUntilSettled(doc); }
 
@@ -941,9 +954,12 @@ export const FLOWS = [
       // Tolerate whatever a previous flow left behind. These flows share one
       // app instance on purpose - that IS the integration - so a flow must not
       // assume it is the first to touch a toggle.
-      c.ok(await goToMode(doc, 'Homebrew',
-        () => /Open library|Hide library/.test(mainText(doc))),
-      'Homebrew mode opens');
+      // The workshop lives in the DM's Setup lens now.
+      c.ok(await goToMode(doc, 'DM'), 'DM mode opens');
+      button(doc, 'Setup')?.click();
+      const bench = await waitFor(() => (/Open library|Hide library/
+        .test(mainText(doc)) ? true : null), { timeout: 10000 });
+      c.ok(!!bench, 'the Setup lens carries the homebrew workshop');
       const open = button(doc, 'Open library');
       if (open) { open.click(); await waitUntilSettled(doc); }
       c.ok(!!button(doc, 'Hide library'), 'the library is open');
@@ -1112,8 +1128,14 @@ export async function runRoleGate(CheckClass) {
     const dmNav = await waitFor(() => (labels().includes('DM') ? true : null),
       { timeout: 5000 });
     check.ok(!!dmNav, "taking the DM's seat reveals the DM screen");
-    check.ok(labels().includes('Homebrew'), 'and the homebrew analyser');
+    // The homebrew workshop is inside the DM's Setup lens now, not the nav.
+    check.ok(await goToMode(doc, 'DM'), 'the DM screen opens');
+    button(doc, 'Setup')?.click();
+    const workshop = await waitFor(() => (/homebrew|workshop/i
+      .test(mainText(doc)) ? true : null), { timeout: 8000 });
+    check.ok(!!workshop, 'and its Setup lens carries the homebrew workshop');
 
+    check.ok(await goToMode(doc, 'Settings', 'Seat'), 'back to Settings');
     button(doc, "Return to the player's seat")?.click();
     const back = await waitFor(() => (!labels().includes('DM') ? true : null),
       { timeout: 5000 });
