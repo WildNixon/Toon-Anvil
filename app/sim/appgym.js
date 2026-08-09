@@ -1033,6 +1033,46 @@ export const SUITES = [
         },
       },
       {
+        id: 'measure_smoke',
+        title: 'measure() answers every axis, deterministically',
+        run(c, { sources, monsters, spells, mechanics, vec }) {
+          c.feature('simulation', 'vectors');
+          const base = { sources, monsters, spells, mechanics, maxLevel: 3 };
+          const a = vec.measure('fighter', null, base, 1);
+          const b = vec.measure('fighter', null, base, 1);
+          for (const ax of vec.AXES) {
+            c.ok(Number.isFinite(a[ax]), `${ax} is a finite number`, String(a[ax]));
+          }
+          c.same(a, b, 'measuring twice gives the same numbers');
+        },
+      },
+      {
+        id: 'vectors_artifact_watchdog',
+        title: 'The published corpus artifact stays internally sane',
+        async run(c, { vec }) {
+          c.feature('simulation', 'vectors');
+          const v = await vec.loadVectors();
+          if (!v) {
+            // No artifact is an honest state (fresh clone) - what matters
+            // is that the loader says so rather than inventing one.
+            c.ok(true, 'no artifact on this server - the loader returned null');
+            c.ok(v === null, 'null, not a fabricated shape');
+            return;
+          }
+          c.same(v.axes, vec.AXES,
+            'the artifact was built on the axes the code projects against');
+          for (const ax of vec.AXES) {
+            c.ok((v.stats?.[ax]?.sd ?? 0) > 0,
+              `${ax} is alive - a dead axis separates nothing`);
+          }
+          const tie = v.diagnostics?.tieRate;
+          c.ok(Number.isFinite(tie) && tie >= 0 && tie <= 1,
+            `tieRate is recorded honestly (${tie})`);
+          c.eq(v.vectors.length, v.counts.simulated + v.counts.cached,
+            'every vector is accounted for');
+        },
+      },
+      {
         id: 'play_persists',
         title: 'Damage taken in play survives a save, reload and re-derive',
         async run(c, { db, sources, engine }) {
@@ -3188,7 +3228,8 @@ export const BARS = {
   // And again (42 -> 43) with starting equipment.
   // And again (43 -> 45) with HP overrides and the browsable bestiary.
   // And again (45 -> 46) with the spellbook.
-  minFeaturesCovered: 46,
+  // And again (46 -> 47) with the corpus-vectors pipeline.
+  minFeaturesCovered: 47,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.

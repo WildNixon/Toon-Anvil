@@ -57,6 +57,26 @@
     </div>
 
     <div class="panel rivets">
+      <span class="lvl">Corpus</span>
+      <h3>Rebuild corpus vectors</h3>
+      <p class="muted">
+        Re-simulates the reference corpus and publishes
+        <code>library/_vectors.json</code> — the space "plays most like"
+        positions every homebrew against. The server keeps the previous
+        artifact as <code>_vectors.prev.json</code>.
+      </p>
+      <label style="font-size:13px">
+        <input type="checkbox" id="vecCache" checked style="width:auto">
+        reuse cached vectors where the mapping is unchanged
+      </label>
+      <div class="btnrow" style="margin-top:10px">
+        <button class="act" id="rebuildVectors">Rebuild corpus vectors</button>
+      </div>
+      <div class="bar" style="margin-top:14px"><span id="vecFill"></span></div>
+      <div class="mono muted" id="vecStatus" style="margin-top:6px">idle</div>
+    </div>
+
+    <div class="panel rivets">
       <span class="lvl">Output</span>
       <div id="log">Ready.</div>
     </div>
@@ -70,6 +90,7 @@
 
 <script type="module">
 import { runSweep, publish, loadSources, buildMatrix } from './runner.js';
+import { buildCorpusVectors, saveVectors, loadVectors } from './vectors.js';
 
 const $ = (s) => document.querySelector(s);
 const log = (msg) => {
@@ -140,6 +161,76 @@ async function go({ seeds, maxLevel, withAblations }) {
     $('#quick').disabled = false;
   }
 }
+
+/**
+ * Rebuild the corpus behaviour vectors and publish them. This button is the
+ * pipeline the play guide has PROMISED since it shipped ("Rebuild them from
+ * the emulator page") - until now the artifact could only be produced from a
+ * devtools console, which is how it was built the first time.
+ */
+$('#rebuildVectors').addEventListener('click', async () => {
+  $('#rebuildVectors').disabled = true;
+  $('#vecStatus').textContent = 'loading sources...';
+  try {
+    const loaded = await loadSources();
+
+    // The cache-shape gotcha: buildCorpusVectors expects an id-keyed map
+    // (vectors.js reads cache[r.id]); loadVectors() returns .vectors as an
+    // ARRAY. Passing it straight through would not error - it would just
+    // silently resimulate all ninety-two subclasses.
+    const before = await loadVectors().catch(() => null);
+    let cache = null;
+    if ($('#vecCache').checked && before?.vectors) {
+      cache = Object.fromEntries(before.vectors.map((v) => [v.id, v]));
+    }
+
+    const t0 = performance.now();
+    const payload = await buildCorpusVectors({
+      sources: loaded.sources, monsters: loaded.monsters,
+      spells: loaded.spells, mechanics: loaded.mechanics, cache,
+      onProgress: ({ done, total, name }) => {
+        $('#vecFill').style.width = `${(done / total) * 100}%`;
+        $('#vecStatus').textContent = `${done}/${total} — ${name}`;
+      },
+    });
+    const saved = await saveVectors(payload);
+    const secs = ((performance.now() - t0) / 1000).toFixed(1);
+    $('#vecFill').style.width = '100%';
+    $('#vecStatus').textContent = `published ${saved.vectors} vectors `
+      + `(${payload.counts.cached} cached, ${payload.counts.excluded} excluded) `
+      + `— tieRate ${payload.diagnostics.tieRate} — ${secs}s`;
+
+    // The before/after diff IS the deliverable: numbers may move, silently
+    // moving them is the failure mode.
+    log('\n=== corpus vectors rebuilt ===');
+    const d = payload.diagnostics;
+    if (before?.diagnostics) {
+      const b = before.diagnostics;
+      log(`tieRate   ${b.tieRate} -> ${d.tieRate}`);
+      log(`distinct  ${b.distinct}/${before.vectors.length} -> ${d.distinct}/${payload.vectors.length}`);
+      log(`excluded  ${before.excluded?.length ?? '?'} -> ${payload.excluded.length}`);
+      const was = new Set((before.excluded || []).map((x) => x.name));
+      const now = new Set(payload.excluded.map((x) => x.name));
+      for (const n of was) if (!now.has(n)) log(`  re-entered: ${n}`);
+      for (const n of now) if (!was.has(n)) log(`  newly excluded: ${n}`);
+      for (const ax of payload.axes) {
+        const sb = before.stats?.[ax]; const sn = payload.stats[ax];
+        if (sb) log(`${ax.padEnd(9)} mean ${sb.mean.toFixed(3)} -> ${sn.mean.toFixed(3)}  sd ${sb.sd.toFixed(3)} -> ${sn.sd.toFixed(3)}`);
+      }
+    } else {
+      log(`tieRate ${d.tieRate} · distinct ${d.distinct} · excluded ${payload.excluded.length} (no previous artifact to diff)`);
+    }
+    if (d.redundant.length) {
+      log(`REDUNDANT AXES: ${d.redundant.map((p) => `${p.a}~${p.b} r=${p.r}`).join(', ')}`);
+    }
+    log(`elapsed ${secs}s`);
+  } catch (err) {
+    $('#vecStatus').textContent = `failed: ${err.message}`;
+    log(`\nRebuild FAILED: ${err.message}`);
+  } finally {
+    $('#rebuildVectors').disabled = false;
+  }
+});
 
 function render(p) {
   $('#results').hidden = false;

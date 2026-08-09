@@ -56,7 +56,8 @@ export function brewHash(brew) {
   return hashString(`${brew.class}|${shape}`).toString(36);
 }
 
-/** Measure one subclass over `seeds` paired campaigns. */
+/** Measure one subclass over `seeds` INDEPENDENT campaigns (seeds 0..n-1).
+ *  Nothing here is paired - pairing is the ablation harness's job. */
 export function measure(classId, subclassId, base, seeds = 6) {
   const runs = Array.from({ length: seeds }, (_, s) => runCampaign({
     classId, subclassId, seed: s, ...base,

@@ -58,6 +58,9 @@ inbox/*
 library/corpus/
 data/corpus/
 library/_manifest.json
+# The server's safety copy of the previous vectors artifact - measurement
+# data like _vectors.json, but a backup is not for the repo.
+library/_vectors.prev.json
 
 # _vectors.json is DELIBERATELY tracked. It holds no rules text - only each
 # subclass's name, class, source document and four simulated numbers. That is a

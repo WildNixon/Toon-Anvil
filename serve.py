@@ -626,9 +626,22 @@ class Handler(SimpleHTTPRequestHandler):
             payload = self._read_json()
             if payload is None:
                 return self._send_json({"error": "bad json body"}, 400)
+            # A truncated or half-built payload must not clobber a good
+            # artifact: refuse shapeless bodies, and keep the previous file
+            # as _vectors.prev.json (safe from loadCorpus, which skips _*).
+            if not isinstance(payload.get("axes"), list) or not payload["axes"]:
+                return self._send_json(
+                    {"error": "payload has no axes list - refusing to clobber"}, 400)
+            if not isinstance(payload.get("vectors"), list) or not payload["vectors"]:
+                return self._send_json(
+                    {"error": "payload has no vectors - refusing to clobber"}, 400)
             LIBRARY.mkdir(parents=True, exist_ok=True)
             with _write_lock:
-                (LIBRARY / "_vectors.json").write_text(
+                vp = LIBRARY / "_vectors.json"
+                if vp.exists():
+                    (LIBRARY / "_vectors.prev.json").write_text(
+                        vp.read_text(encoding="utf-8"), encoding="utf-8")
+                vp.write_text(
                     json.dumps(payload, ensure_ascii=False, indent=1),
                     encoding="utf-8")
             return self._send_json({
