@@ -79,7 +79,42 @@ def level_of(text: str, default: int = 3) -> int:
 # --------------------------------------------------------------------------
 
 
-def _column_split(page, min_gap_ratio: float = 0.055):
+def _pick_gutter(words: list[dict], left: float, right: float):
+    """The gutter DECISION, split from the pdfplumber glue so the selftest
+    can feed it synthetic word boxes.
+
+    A vertical band through the middle of the page that no word crosses is
+    essentially always a real gutter - running prose spans the centre. The
+    old rule additionally demanded a near-balanced word split (>0.35), which
+    rejected the Monster Manual's commonest layout: art in one column, a
+    statblock in the other. Every such page then extracted with its columns
+    ZIPPED line-by-line, which is where "Languages Infernal, telepathy
+    120ft. The creature then makes a DC 17 Dexterity saving throw" came
+    from. Balance is now only a tiebreak; the gate is that both sides hold
+    enough words to be columns at all.
+    """
+    if len(words) < 40:
+        return None
+    width = right - left
+    if width <= 0:
+        return None
+
+    best = None
+    for frac in [0.40 + i * 0.01 for i in range(21)]:
+        x = left + width * frac
+        crossing = sum(1 for w in words if w["x0"] < x < w["x1"])
+        if crossing == 0:
+            l_n = sum(1 for w in words if w["x1"] <= x)
+            r_n = sum(1 for w in words if w["x0"] >= x)
+            if l_n < 8 or r_n < 8:
+                continue
+            balance = min(l_n, r_n) / max(l_n, r_n)
+            if best is None or balance > best[1]:
+                best = (x, balance)
+    return best[0] if best else None
+
+
+def _column_split(page):
     """Find the x of a two-column gutter, or None for single-column pages.
 
     D&D documents are overwhelmingly two-column, and naive extraction reads
@@ -87,39 +122,9 @@ def _column_split(page, min_gap_ratio: float = 0.055):
     at As an action, so long as you have", which is column one and column two
     welded together. Every downstream heuristic then fails on text that is not
     actually a sentence.
-
-    The gutter is found as the widest vertical band near the page centre that
-    no word crosses.
     """
     words = page.extract_words(use_text_flow=False, keep_blank_chars=False)
-    if len(words) < 40:
-        return None
-    left, right = float(page.bbox[0]), float(page.bbox[2])
-    width = right - left
-    if width <= 0:
-        return None
-
-    # Sample candidate gutters across the middle half of the page.
-    best = None
-    for frac in [0.40 + i * 0.01 for i in range(21)]:
-        x = left + width * frac
-        crossing = sum(1 for w in words if w["x0"] < x < w["x1"])
-        if crossing == 0:
-            near = [w for w in words
-                    if abs((w["x0"] + w["x1"]) / 2 - x) < width * 0.5]
-            if not near:
-                continue
-            # Prefer the gutter with the most balanced split.
-            l_n = sum(1 for w in words if w["x1"] <= x)
-            r_n = sum(1 for w in words if w["x0"] >= x)
-            if l_n < 10 or r_n < 10:
-                continue
-            balance = min(l_n, r_n) / max(l_n, r_n)
-            if best is None or balance > best[1]:
-                best = (x, balance)
-    if best and best[1] > 0.35:
-        return best[0]
-    return None
+    return _pick_gutter(words, float(page.bbox[0]), float(page.bbox[2]))
 
 
 def extract_pages(path: Path) -> list[str]:
@@ -229,6 +234,11 @@ def normalise(text: str) -> str:
     text = text.replace("\u2014", "-").replace("\u2013", "-")
     # PDF extraction frequently hyphen-breaks across lines.
     text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)
+    # Art boxes and page furniture leave runs of dozens of blank lines
+    # (layout=True preserves vertical position). They carry nothing, and a
+    # thirty-line void in the middle of a statblock reads as a chapter break
+    # to every heuristic downstream.
+    text = re.sub(r"\n{3,}", "\n\n", text)
     return text
 
 
@@ -708,6 +718,24 @@ def selftest() -> dict:
     both = _render_fixture(mons[0]) + "\n" + _render_fixture(mons[1])
     case("census_counts_two", len(CENSUS.findall(both)) == 2,
          f"found={len(CENSUS.findall(both))}")
+
+    # 7. Gutter decision on synthetic word boxes. The unbalanced case is the
+    #    Monster Manual's bread and butter - art in one column, a statblock
+    #    in the other - and rejecting its gutter zips the columns.
+    def col(x0, x1, n, y0=50):
+        return [{"x0": x0, "x1": x1, "top": y0 + i * 12} for i in range(n)]
+    balanced = col(40, 280, 40) + col(320, 560, 40)
+    case("gutter_balanced_two_col",
+         _pick_gutter(balanced, 0, 600) is not None, "")
+    lopsided = col(40, 280, 60) + col(320, 560, 9)
+    case("gutter_unbalanced_two_col",
+         _pick_gutter(lopsided, 0, 600) is not None,
+         "art-beside-statblock layout must still split")
+    # Single-column prose: words span the centre, so no zero-crossing band.
+    prose = [{"x0": 40 + (i % 4) * 130, "x1": 40 + (i % 4) * 130 + 140,
+              "top": 50 + i * 12} for i in range(48)]
+    case("gutter_single_col_refused",
+         _pick_gutter(prose, 0, 600) is None, "")
 
     failed = [c for c in cases if not c["ok"]]
     return {"ok": not failed, "passed": len(cases) - len(failed),

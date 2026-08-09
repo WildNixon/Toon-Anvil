@@ -1915,11 +1915,14 @@ export async function runRoleGate(CheckClass) {
     // The homebrew workshop lives in Setup. Same 10s budget as the two
     // library flows that open this screen: whichever flow opens it FIRST
     // after a server restart pays the cold /api/library scan, and this one
-    // usually runs before them.
+    // usually runs before them. On failure the note carries what the screen
+    // ACTUALLY said - this check went red twice with no way to tell whether
+    // the mode was blank, erroring, or showing something else entirely.
     check.ok(await goToMode(doc, 'Setup'), 'Setup opens');
     const workshop = await waitFor(() => (/homebrew|workshop/i
       .test(mainText(doc)) ? true : null), { timeout: 10000 });
-    check.ok(!!workshop, 'and carries the homebrew workshop');
+    check.ok(!!workshop, 'and carries the homebrew workshop',
+      workshop ? '' : `main says: ${mainText(doc).slice(0, 160)}`);
 
     // The plaque itself is the way back - one click, no Settings trip.
     doc.querySelector('#seat')?.click();
