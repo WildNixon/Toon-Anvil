@@ -18,7 +18,7 @@
  * between "installed" and "actually usable on a train".
  */
 
-const VERSION = 'toon-anvil-v7';
+const VERSION = 'toon-anvil-v8';
 
 /** Immutable between releases: safe to serve from cache without asking. */
 const IMMUTABLE = /\/(data\/fonts|data\/compendium|icons)\//;
@@ -32,6 +32,10 @@ const SHELL = [
   './ui/theme.js',
   './ui/kit.js',
   './ui/map.js',
+  // chart.js and shop/pricing.js were missed when Deck 4 landed - offline,
+  // the Market priced nothing and the Deck's graphs vanished. The gap only
+  // shows on an airplane-mode load, which is exactly why it lists here now.
+  './ui/chart.js',
   './ui/ribbon.js',
   './ui/welcome.js',
   './core/store.js',
@@ -46,6 +50,7 @@ const SHELL = [
   './core/rng.js',
   './core/campaign.js',
   './core/weather.js',
+  './core/shelf.js',
   './homebrew/effects.js',
   './homebrew/ingest.js',
   './homebrew/mapping.js',
@@ -55,6 +60,7 @@ const SHELL = [
   './modes/sheet/sheet.js',
   './modes/combat/combat.js',
   './modes/shop/shop.js',
+  './modes/shop/pricing.js',
   './modes/rp/rp.js',
   './modes/chronicle/chronicle.js',
   './modes/dm/shared.js',

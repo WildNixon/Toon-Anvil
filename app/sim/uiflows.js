@@ -19,9 +19,18 @@
  * flaky suite gets ignored, and an ignored suite is worse than none.
  */
 
+import { FIXTURE_NAME, fixturePdfBytes } from './fixtures.js';
+
 /* ------------------------------------------------------------------ */
 /* interaction helpers                                                 */
 /* ------------------------------------------------------------------ */
+
+/** sha256[:16] of bytes - the shelf's content hash, for targeted cleanup. */
+async function shelfHash(bytes) {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+}
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -962,6 +971,124 @@ export const FLOWS = [
       } else {
         c.ok(true, 'nothing affordable at x2 - which is also the dial working');
       }
+    },
+  },
+
+  {
+    id: 'deck_shelf_ingest',
+    title: 'A shelved book is one click from the Deck review rows',
+    async run(c, { doc }) {
+      c.feature('ui', 'shelf', 'deck');
+      // Put the frozen fixture on the shelf via the API - the DROP surface
+      // has its own flow below; this one is about the Deck's side. Tolerate
+      // alreadyKnown: either tier may have shelved it first.
+      const bytes = fixturePdfBytes();
+      const hash = await shelfHash(bytes);
+      const up = await fetch('/api/shelf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/pdf',
+          'X-Filename': FIXTURE_NAME },
+        body: bytes,
+      }).then((r) => r.json()).catch(() => ({}));
+      c.ok(up.category === 'settings' || up.alreadyKnown === true,
+        'the fixture book is on the shelf', up.category);
+
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'Deck', 'campaign'), 'the Deck opens');
+      // Earlier flows founded Gym Realm in this shared frame; solo runs
+      // found it here so the ingest panel exists at all.
+      if (!/Gym Realm/.test(mainText(doc))) {
+        const name = doc.querySelector('main input[aria-label="Campaign name"]');
+        if (name) {
+          setField(name, 'Gym Realm');
+          button(doc, 'Found the campaign')?.click();
+          await waitUntilSettled(doc);
+        }
+      }
+
+      const listed = await waitFor(() => (mainText(doc)
+        .includes(FIXTURE_NAME) ? true : null), { timeout: 8000 });
+      c.ok(!!listed, 'the Deck lists it under On the shelf');
+
+      // Ingest: the book's sections arrive as review rows, server-split.
+      const row = [...doc.querySelectorAll('main div')].find((d) => d
+        .textContent.includes(FIXTURE_NAME) && d.querySelector('button'));
+      const ingestBtn = [...(row?.querySelectorAll('button') || [])]
+        .find((b) => b.textContent.trim() === 'Ingest');
+      c.ok(!!ingestBtn, 'a setting book offers Ingest');
+      ingestBtn?.click();
+      const rows = await waitFor(() => (/sections from Gym-Fixture/
+        .test(mainText(doc)) ? true : null), { timeout: 8000 });
+      c.ok(!!rows, 'the review rows arrive');
+      c.ok(/The Tiny Gazetteer/.test(mainText(doc)),
+        'with the book\'s own headings');
+
+      // File one as lore - the same one-click grammar as text ingest.
+      const lore = allButtons(doc).find((b) => b.textContent.trim() === 'lore');
+      c.ok(!!lore, 'a section can be filed');
+      lore?.click();
+      const filed = await waitFor(() => (/filed as lore/.test(mainText(doc))
+        ? true : null), { timeout: 6000 });
+      c.ok(!!filed, 'and says so on the row');
+      button(doc, 'Done - clear the bench')?.click();
+
+      // Leave no trace on the real shelf.
+      const gone = await fetch('/api/shelf/remove', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hash }),
+      }).then((r) => r.status).catch(() => 0);
+      c.eq(gone, 200, 'cleanup: the fixture leaves the shelf');
+    },
+  },
+
+  {
+    id: 'homebrew_pdf_drop',
+    title: 'A PDF dropped on the workshop files itself and says where it went',
+    async run(c, { doc, win }) {
+      c.feature('ui', 'shelf', 'homebrew', 'detector');
+      const bytes = fixturePdfBytes();
+      const hash = await shelfHash(bytes);
+
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'Setup', 'Ingest a homebrew page'),
+        'the workshop opens');
+
+      const drop = doc.querySelector(
+        '[aria-label="Drop homebrew pages or PDF books"]');
+      c.ok(!!drop, 'the drop zone is there');
+      if (!drop) return;
+
+      // A real constructed drop: File -> DataTransfer -> DragEvent. This is
+      // the exact path a person's drag takes, minus the mouse.
+      const file = new win.File([bytes], FIXTURE_NAME,
+        { type: 'application/pdf' });
+      const dt = new win.DataTransfer();
+      dt.items.add(file);
+      drop.dispatchEvent(new win.DragEvent('drop',
+        { bubbles: true, cancelable: true, dataTransfer: dt }));
+
+      const verdict = await waitFor(() => {
+        const t = mainText(doc);
+        return (/Filed under Settings/.test(t)
+          || /Already on the shelf, under Settings/.test(t)) ? t : null;
+      }, { timeout: 15000 });
+      c.ok(!!verdict, 'the verdict row names the category');
+      c.ok(mainText(doc).includes(FIXTURE_NAME),
+        'and the book it judged');
+
+      // Settings are Deck material - the row offers the bridge and it works.
+      const bridge = button(doc, 'Open in the Deck');
+      c.ok(!!bridge, 'a setting offers "Open in the Deck"');
+      bridge?.click();
+      const onDeck = await waitFor(() => (/On the shelf|Found the campaign/
+        .test(mainText(doc)) ? true : null), { timeout: 8000 });
+      c.ok(!!onDeck, 'and it lands on the Deck');
+
+      const gone = await fetch('/api/shelf/remove', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hash }),
+      }).then((r) => r.status).catch(() => 0);
+      c.eq(gone, 200, 'cleanup: the fixture leaves the shelf');
     },
   },
 

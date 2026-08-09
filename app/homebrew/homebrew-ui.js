@@ -16,7 +16,8 @@ import { describeEffect, validateEffect, EFFECT_TYPES } from './effects.js';
 import { detect, parse as parseAdapter } from './adapters.js';
 import { emitHtml, downloadHtml } from './emit-html.js';
 import { sheetHtml, sheetJson, downloadSheet } from './sheet.js';
-import { recompute } from '../app.js';
+import { recompute, go } from '../app.js';
+import { uploadPdf, verdictLine, CATEGORY_LABELS } from '../core/shelf.js';
 
 export const title = 'Homebrew';
 
@@ -44,18 +45,34 @@ function importPanel() {
   panel.append(el('span', { class: 'lvl accent' }, 'Import'));
   panel.append(el('h3', {}, 'Ingest a homebrew page'));
   panel.append(el('p', { class: 'muted' },
-    'Drop the .html files you wrote. The page is rendered in a sandbox so any '
-    + 'content its own JavaScript builds - like a d20 table held in an array - '
-    + 'is captured too.'));
+    'Drop .html homebrew (rendered in a sandbox, so script-built tables are '
+    + 'captured) - or drop a whole .pdf book: the shelf detects whether it is '
+    + 'a setting, an adventure, player options or a bestiary, files it, and '
+    + 'splits it.'));
 
   const drop = el('div', {
     class: 'empty',
+    'aria-label': 'Drop homebrew pages or PDF books',
     style: 'cursor:pointer;border-style:dashed;border-width:2px',
-  }, 'Drop .html files here, or click to choose');
+  }, 'Drop .html pages or .pdf books here, or click to choose');
+
+  // .html goes to the sandbox scraper, .pdf to the shelf. The old handler
+  // FILTERED to html, which discarded a dropped PDF without a word.
+  const routeFiles = (files) => {
+    const html = files.filter((f) => /\.html?$/i.test(f.name));
+    const pdfs = files.filter((f) => /\.pdf$/i.test(f.name));
+    if (html.length) handleFiles(html);
+    for (const f of pdfs) shelvePdf(f);
+    if (!html.length && !pdfs.length && files.length) {
+      toast('Only .html pages and .pdf books land here', 'warn');
+    }
+  };
 
   const pick = () => {
-    const input = el('input', { type: 'file', accept: '.html,.htm', multiple: true });
-    input.addEventListener('change', () => handleFiles([...input.files]));
+    const input = el('input', {
+      type: 'file', accept: '.html,.htm,.pdf', multiple: true,
+    });
+    input.addEventListener('change', () => routeFiles([...input.files]));
     input.click();
   };
   drop.addEventListener('click', pick);
@@ -67,10 +84,31 @@ function importPanel() {
   drop.addEventListener('drop', (e) => {
     e.preventDefault();
     drop.style.borderColor = '';
-    handleFiles([...e.dataTransfer.files].filter((f) => /\.html?$/i.test(f.name)));
+    routeFiles([...e.dataTransfer.files]);
   });
 
   panel.append(drop);
+
+  // The last verdict stays visible: a toast is gone in four seconds, and
+  // "where did my book go" deserves a standing answer with a next step.
+  if (lastShelved) {
+    const row = el('div', {
+      style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;'
+        + 'margin-top:10px',
+    });
+    row.append(el('span', { class: 'chip accent' },
+      CATEGORY_LABELS[lastShelved.category] || lastShelved.category || '?'));
+    row.append(el('span', { style: 'flex:1;font-size:13px' },
+      `${lastShelved.name || 'The book'}: ${verdictLine(lastShelved)}`));
+    if (['settings', 'adventures'].includes(lastShelved.category)) {
+      row.append(el('button', {
+        class: 'act small',
+        title: 'Settings and adventures are Deck material - regions, factions, lore',
+        onClick: () => go('dm-deck'),
+      }, 'Open in the Deck'));
+    }
+    panel.append(row);
+  }
 
   const folderRow = el('div', { class: 'btnrow', style: 'margin-top:12px' });
   folderRow.append(el('button', {
@@ -103,6 +141,25 @@ function importPanel() {
 let showDrop = false;
 let dropListing = null;
 let dropFilter = '';
+let lastShelved = null;   // the most recent PDF verdict, kept on screen
+
+async function shelvePdf(f) {
+  toast(`Reading ${f.name} - a big book takes a minute or two...`, 'ok');
+  const res = await uploadPdf(f);
+  lastShelved = { ...res, name: res.name || f.name };
+  if (res.status !== 200) {
+    toast(verdictLine(res), 'bad');
+  } else {
+    toast(verdictLine(res), 'ok');
+    // The listing is re-read on next open; a shelved book is split already,
+    // so it appears under "From your PDFs" without a reload.
+    showDrop = true;
+    dropListing = null;
+    loadDrop();
+    return;
+  }
+  draw();
+}
 let openDocs = new Set();
 // Per-document selection of extracted subclass groups, so a reader can
 // combine what the splitter guessed apart.

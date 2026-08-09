@@ -25,6 +25,10 @@ import { statTile } from '../../ui/kit.js';
 import { mapView, PIN_KINDS } from '../../ui/map.js';
 import { db } from '../../core/db.js';
 import { detect, parse } from '../../homebrew/adapters.js';
+import {
+  uploadPdf, listShelf, getSections, refileBook, verdictLine,
+  CATEGORIES as SHELF_CATEGORIES, CATEGORY_LABELS,
+} from '../../core/shelf.js';
 import { dmData } from './shared.js';
 
 export const title = 'Deck';
@@ -38,10 +42,16 @@ let mapRecord = null;
 let mapHandle = null;
 // Setting-ingest review state: sections awaiting the DM's filing.
 let ingest = null;   // { source, sections: [{ title, body, filedAs }] }
+// GET /api/shelf result; null means "fetch on next draw". The Deck reads it
+// lazily so an offline solo Deck still renders everything else.
+let shelfListing = null;
 
 export async function render(root) {
   container = root;
   ({ tables } = await dmData());
+  // Entering the mode re-reads the shelf: it is server state another surface
+  // (the workshop drop, the CLI) may have grown since the Deck last looked.
+  shelfListing = null;
   await refresh();
   draw();
 
@@ -560,19 +570,22 @@ function ingestPanel() {
 
   if (!ingest) {
     panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
-      'Drop a setting document (.md or .txt) or paste its text. It splits '
-      + 'into sections by heading, and you file each one - as a region, a '
-      + 'faction, an NPC, or campaign lore - with one click. Nothing is '
-      + 'guessed on your behalf; you know your setting, the parser does not.'));
+      'Drop a setting document (.md, .txt - or a whole .pdf book) or paste '
+      + 'its text. A PDF is filed on the shelf and split server-side; text '
+      + 'splits into sections by heading. Either way you file each section - '
+      + 'as a region, a faction, an NPC, or campaign lore - with one click. '
+      + 'Nothing is guessed on your behalf; you know your setting, the '
+      + 'parser does not.'));
 
     const file = el('input', {
-      type: 'file', accept: '.md,.markdown,.txt',
+      type: 'file', accept: '.md,.markdown,.txt,.pdf',
       'aria-label': 'Setting document', style: 'max-width:280px',
     });
     file.addEventListener('change', async () => {
       const f = file.files?.[0];
       if (!f) return;
-      splitText(await f.text(), f.name);
+      if (/\.pdf$/i.test(f.name)) ingestPdf(f);
+      else splitText(await f.text(), f.name);
     });
     panel.append(file);
 
@@ -591,6 +604,7 @@ function ingestPanel() {
       },
     }, 'Split the text'));
     panel.append(paste, row);
+    panel.append(shelfBlock());
     return panel;
   }
 
@@ -598,7 +612,15 @@ function ingestPanel() {
     `${ingest.sections.length} sections from ${ingest.source}. File what `
     + 'earns a place; skip the rest.'));
 
-  for (const s of ingest.sections) {
+  // A whole book can be a thousand sections; the panel shows the first 200
+  // and says so, rather than quietly hanging the tab on DOM weight.
+  const shown = ingest.sections.slice(0, 200);
+  if (shown.length < ingest.sections.length) {
+    panel.append(el('p', { class: 'muted', style: 'font-size:12px;margin:0 0 8px' },
+      `Showing the first ${shown.length} of ${ingest.sections.length}.`));
+  }
+
+  for (const s of shown) {
     const row = el('div', {
       style: 'padding:8px 0;border-bottom:1px solid var(--etch)',
     });
@@ -632,6 +654,97 @@ function ingestPanel() {
       onClick: () => { ingest = null; draw(); },
     }, 'Done - clear the bench')));
   return panel;
+}
+
+/* ---- the shelf: books already filed, one click from the review rows ---- */
+
+async function ingestPdf(f) {
+  toast(`Reading ${f.name} - a big book takes a minute or two...`, 'ok');
+  const res = await uploadPdf(f);
+  if (res.status !== 200) { toast(verdictLine(res), 'bad'); return; }
+  toast(verdictLine(res), 'ok');
+  shelfListing = null;
+  await ingestFromShelf(res.slug, res.name || f.name);
+}
+
+async function ingestFromShelf(slug, name) {
+  const got = await getSections(slug);
+  const rows = (got.sections || [])
+    .filter((s) => s.title && s.body)
+    .map((s) => ({ title: s.title, body: s.body, filedAs: null }));
+  if (!rows.length) {
+    toast('No prose sections came out of that book', 'warn');
+    return;
+  }
+  ingest = { source: name, sections: rows };
+  draw();
+}
+
+function shelfBlock() {
+  const box = el('div', { style: 'margin-top:16px' });
+  box.append(el('span', { class: 'eyebrow' }, 'On the shelf'));
+
+  if (!shelfListing) {
+    listShelf().then((r) => {
+      shelfListing = r;
+      // Same guard as the live subscription: never paint a view another
+      // mode owns by the time this resolves.
+      if (container?.dataset.rendered === 'dm-deck') draw();
+    });
+    box.append(el('p', { class: 'muted', style: 'font-size:12px;margin:4px 0 0' },
+      'Looking at the shelf...'));
+    return box;
+  }
+
+  const cats = shelfListing.categories || {};
+  const books = SHELF_CATEGORIES.flatMap((c) => cats[c] || []);
+  if (shelfListing.status !== 200 || !books.length) {
+    box.append(el('p', { class: 'muted', style: 'font-size:12px;margin:4px 0 0' },
+      shelfListing.status !== 200
+        ? 'The shelf needs serve.py running.'
+        : 'Empty. Drop a .pdf book above and it files itself.'));
+    return box;
+  }
+
+  for (const b of books) {
+    const row = el('div', {
+      style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;'
+        + 'padding:6px 0;border-bottom:1px solid var(--etch)',
+    });
+    row.append(el('span', { style: 'flex:1;min-width:160px;font-size:13px' },
+      b.name || b.slug));
+    // Settings and adventures are Deck material; the rest live in the
+    // workshop. The select is the one-click rescue for a wrong guess.
+    if (b.category === 'settings' || b.category === 'adventures') {
+      row.append(el('button', {
+        class: 'act ghost small',
+        onClick: () => ingestFromShelf(b.slug, b.name),
+      }, 'Ingest'));
+    } else {
+      row.append(el('span', { class: 'muted', style: 'font-size:12px' },
+        'in the workshop (Setup)'));
+    }
+    const sel = el('select', {
+      'aria-label': `Category for ${b.name}`, style: 'width:auto',
+    });
+    for (const c of SHELF_CATEGORIES) {
+      sel.append(el('option', { value: c, selected: c === b.category },
+        CATEGORY_LABELS[c]));
+    }
+    sel.addEventListener('change', async () => {
+      const out = await refileBook(b.hash, sel.value);
+      if (out.status !== 200) {
+        toast(out.error || 'Could not refile that', 'bad');
+      } else {
+        toast(`${b.name} refiled under ${CATEGORY_LABELS[sel.value]}`, 'ok');
+      }
+      shelfListing = null;
+      draw();
+    });
+    row.append(sel);
+    box.append(row);
+  }
+  return box;
 }
 
 /** Reuse the homebrew section splitter: brew.features IS heading+body. */

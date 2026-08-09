@@ -349,6 +349,7 @@ You can also go straight there with `?storage=memory`.
 toon-anvil/
   inbox/          <- YOU PUT FILES HERE. Nothing else writes to it.
   library/
+    shelf/        <- your source PDFs, organised by what each book IS
     extracted/    <- what came out of your PDFs, one folder per document
     corpus/       <- optional Open5e reference set
   examples/       <- one subclass to try, shipped with the repo
@@ -366,6 +367,33 @@ python tools/split_pdf.py
 ```
 
 Nothing is deleted, moved or edited in `inbox/`. Your originals stay yours.
+
+### The shelf
+
+Drop a **whole book** — on the workshop's drop zone, or on the Deck's ingest
+panel — and a detector reads it (filename first, then a few sampled pages)
+and files it under `library/shelf/<category>/`: **settings**, **adventures**,
+**options** (UA and subclass archives), **bestiaries** — or **unsorted**,
+because an honest "couldn't tell" beats a confident wrong guess. Every
+verdict comes with its evidence, and every listing offers a one-click refile.
+Dropping the same book twice is a no-op: the shelf is keyed by content hash.
+
+What each category is *for*: settings and adventures are Deck material — "On
+the shelf" in the Deck's ingest panel turns them into review rows (regions,
+factions, NPCs, lore) without re-uploading; options and bestiaries surface in
+the workshop under "From your PDFs". At a table, filing and refiling need the
+DM's token — same rule as the forge. Solo needs no login, same as everything
+else.
+
+To organise a folder of loose PDFs from the command line:
+
+```bash
+python tools/shelf.py --dry  "D:\path\to\folder"   # verdicts only, no writes
+python tools/shelf.py --apply "D:\path\to\folder"  # move + extract
+```
+
+The shelf holds whole commercial books, so `library/shelf/` is gitignored —
+the same safety control as `library/extracted/`.
 
 ### What formats work, and how well
 
