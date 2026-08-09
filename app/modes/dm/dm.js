@@ -36,10 +36,14 @@ let lens = 'stage';
 let unsubscribe = null;
 
 const LENSES = {
-  stage: { label: 'Stage', mod: stage },
-  world: { label: 'World', mod: world },
-  story: { label: 'Story', mod: story },
-  setup: { label: 'Setup', mod: setup },
+  stage: { label: 'Stage', mod: stage,
+    sub: 'The fight and the table, live - and your levers: the forge, the grants.' },
+  world: { label: 'World', mod: world,
+    sub: 'Prep between scenes: bestiary, encounters, treasure, improvisation, rules.' },
+  story: { label: 'Story', mod: story,
+    sub: 'Everything the party has done, as it happens, with names.' },
+  setup: { label: 'Setup', mod: setup,
+    sub: 'Open the table, work the forge, accept homebrew into the campaign.' },
 };
 
 export async function render(root) {
@@ -97,16 +101,18 @@ function sources() {
 
 async function draw() {
   container.innerHTML = '';
-  const head = el('div', { class: 'panel rivets accent' });
-  head.append(el('span', { class: 'lvl accent' }, 'Dungeon Master'));
-  head.append(el('h3', {},
-    `${monsters.length} monsters · ${glossary.length} rules entries`));
-  head.append(tabs({
+
+  // The lenses ARE the navigation here, so they get headline treatment - not
+  // a panel whose biggest words are a monster count. One italic line says
+  // what the current lens is for; the tools below say the rest.
+  const bar = el('div', { class: 'lens-bar' });
+  bar.append(tabs({
     items: Object.entries(LENSES).map(([id, l]) => ({ id, label: l.label })),
     active: lens,
     onSelect: (id) => { lens = id; draw(); },
   }));
-  container.append(head);
+  bar.append(el('p', { class: 'lens-sub' }, LENSES[lens].sub));
+  container.append(bar);
 
   const box = el('div', {});
   container.append(box);

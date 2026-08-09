@@ -383,20 +383,40 @@ export function runnerPanel({ characters = [], sources, monsters = [], redraw,
     return panel;
   }
 
-  // --- controls --------------------------------------------------------
+  // --- headline first: what is happening ------------------------------
+  // The screen reads top to bottom in the order a fight is run: where we
+  // are, then the action that fits this moment, then the list, then adding.
+  // A Roll Initiative button above an empty list was the old order, and it
+  // put the one control you could not use yet in the most prominent spot.
+  const empty = !state.combatants.length;
+  if (state.started) {
+    const current = state.combatants[state.turn];
+    panel.append(el('h3', {},
+      `Round ${state.round}${current ? ` — ${current.name}'s turn` : ''}`));
+  } else if (empty) {
+    panel.append(el('h3', {}, 'No fight yet'));
+    panel.append(el('p', { class: 'muted', style: 'font-size:13px' },
+      'Add the party and the monsters below, then roll initiative. Damage '
+      + 'goes through the same engine as everything else, so resistances '
+      + 'are applied for you.'));
+  } else {
+    panel.append(el('h3', {}, `${state.combatants.length} in the fight`));
+    panel.append(el('p', { class: 'muted', style: 'font-size:13px' },
+      'Roll initiative when everyone is in.'));
+  }
+
+  // --- controls that fit the moment ------------------------------------
   const controls = el('div', { class: 'btnrow' });
-  if (!state.started) {
+  if (!state.started && !empty) {
     controls.append(el('button', {
       class: 'act',
       onClick: () => {
-        if (!state.combatants.length) return toast('Add somebody first', 'warn');
         rollInitiative();
         log('encounter_start', { combatants: state.combatants.length });
         redraw();
-        return null;
       },
     }, 'Roll initiative & start'));
-  } else {
+  } else if (state.started) {
     controls.append(el('button', {
       class: 'act', onClick: () => { nextTurn(); redraw(); },
     }, 'Next turn'));
@@ -404,16 +424,18 @@ export function runnerPanel({ characters = [], sources, monsters = [], redraw,
       class: 'act ghost', onClick: () => { prevTurn(); redraw(); },
     }, 'Back'));
   }
-  controls.append(el('button', {
-    class: 'act ghost',
-    onClick: () => {
-      if (state.started && !window.confirm('End the encounter and clear everyone?')) return;
-      // Shared as well as local: leaving a finished fight on the players'
-      // screens is worse than not sharing it at all.
-      clearShared().then(redraw);
-      redraw();
-    },
-  }, 'Clear'));
+  if (!empty) {
+    controls.append(el('button', {
+      class: 'act ghost',
+      onClick: () => {
+        if (state.started && !window.confirm('End the encounter and clear everyone?')) return;
+        // Shared as well as local: leaving a finished fight on the players'
+        // screens is worse than not sharing it at all.
+        clearShared().then(redraw);
+        redraw();
+      },
+    }, 'Clear'));
+  }
   if (isShared()) {
     controls.append(el('button', {
       class: `act ${state.showMonsterHp ? '' : 'ghost'} small`,
@@ -425,28 +447,13 @@ export function runnerPanel({ characters = [], sources, monsters = [], redraw,
       },
     }, state.showMonsterHp ? 'Enemy HP: shown' : 'Enemy HP: hidden'));
   }
-  panel.append(controls);
-
-  if (state.started) {
-    const current = state.combatants[state.turn];
-    panel.append(el('h3', {},
-      `Round ${state.round}${current ? ` — ${current.name}'s turn` : ''}`));
-  } else {
-    panel.append(el('h3', {}, `${state.combatants.length} in the fight`));
-    panel.append(el('p', { class: 'muted', style: 'font-size:13px' },
-      'Add the party and the monsters, then roll initiative. Damage goes '
-      + 'through the same engine as everything else, so resistances are '
-      + 'applied for you.'));
-  }
+  if (controls.children.length) panel.append(controls);
 
   // --- the list --------------------------------------------------------
   for (const [i, c] of state.combatants.entries()) {
     panel.append(combatantRow(c, i, redraw));
   }
 
-  if (!state.combatants.length) {
-    panel.append(el('div', { class: 'empty' }, 'Nobody in the fight yet.'));
-  }
 
   // --- adding ----------------------------------------------------------
   panel.append(el('h3', { style: 'margin-top:18px' }, 'Add'));

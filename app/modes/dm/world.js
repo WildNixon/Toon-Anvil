@@ -41,6 +41,9 @@ function draw() {
   box.innerHTML = '';
   const bar = el('div', { class: 'panel rivets' });
   bar.append(el('span', { class: 'lvl' }, 'World'));
+  bar.append(el('p', { class: 'mono muted', style: 'font-size:11px;margin:0 0 6px' },
+    `${ctx.monsters.length} monsters · ${ctx.glossary.length} rules entries · `
+    + 'all offline'));
   bar.append(tabs({
     items: Object.entries({
       bestiary: 'Bestiary', encounter: 'Encounter builder', loot: 'Treasure',

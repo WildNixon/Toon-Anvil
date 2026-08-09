@@ -304,11 +304,11 @@ a { color: var(--accent-text); }
 
 nav.modes { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; align-items: center; }
 nav.modes button {
-  font-family: var(--mono); font-size: 11px; font-weight: 600;
-  letter-spacing: .12em; text-transform: uppercase;
+  font-family: var(--mono); font-size: 12px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase;
   background: transparent; color: var(--chrome-dim);
   border: 1px solid transparent; border-radius: var(--radius);
-  padding: 8px 11px; cursor: pointer;
+  padding: 9px 12px; cursor: pointer;
   transition: background .14s, color .14s;
 }
 nav.modes button:hover { color: var(--chrome-ink); background: var(--chrome-hover); }
@@ -323,9 +323,9 @@ nav.modes button[aria-current='true'] {
   padding-left: 10px; margin-left: 6px;
 }
 .navgroup-label {
-  font-family: var(--mono); font-size: 9px; font-weight: 600;
-  letter-spacing: .2em; text-transform: uppercase;
-  color: var(--chrome-dim); opacity: .75; margin-right: 2px;
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  letter-spacing: .18em; text-transform: uppercase;
+  color: var(--chrome-gold); opacity: .9; margin-right: 4px;
   user-select: none;
 }
 .gearbtn { margin-left: auto; }
@@ -459,6 +459,36 @@ button:focus-visible, [tabindex]:focus-visible {
 .tabs .tab[aria-selected='true'] {
   color: var(--accent-text); border-bottom-color: var(--accent);
 }
+
+/* ---------- lens bar: the DM's four screens, unmissable -------------- */
+
+.lens-bar { margin-bottom: 4px; }
+.lens-bar .tabs { border-bottom: 2px solid var(--gold-soft); margin-bottom: 6px; }
+.lens-bar .tabs .tab {
+  font-family: var(--display);
+  font-size: 17px; font-weight: 700;
+  letter-spacing: .05em;
+  padding: 10px 18px;
+  border-bottom-width: 4px;
+}
+.lens-sub {
+  font-style: italic;
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 14px 2px;
+}
+
+/* A slim notice - for facts worth a line, not a panel. */
+.strip {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  padding: 8px 14px; margin-bottom: 14px;
+  background: var(--panel);
+  border-left: 4px solid var(--gold);
+  border-radius: var(--radius);
+  font-size: 14px; color: var(--muted);
+  box-shadow: var(--shadow);
+}
+.strip .grow { flex: 1; min-width: 200px; }
 
 /* ---------- data display ---------- */
 

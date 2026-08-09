@@ -52,20 +52,20 @@ const totalLevel = (ch) => Math.max(1, (ch?.classes || [])
   .reduce((n, c) => n + (Number(c.level) || 0), 0));
 
 function tableStrip() {
+  if (!session.isOpen()) {
+    // Solo: one quiet line, not a panel shouting about something that does
+    // not exist. The fight below is the point of this screen.
+    const strip = el('div', { class: 'strip' });
+    strip.append(el('span', { class: 'grow' },
+      'Prepping solo. When the players arrive, open a table in Setup.'));
+    strip.append(el('button', {
+      class: 'act ghost small', onClick: () => ctx.goToLens('setup'),
+    }, 'Go to Setup'));
+    return strip;
+  }
+
   const panel = el('div', { class: 'panel rivets accent' });
   panel.append(el('span', { class: 'lvl accent' }, 'At the table'));
-
-  if (!session.isOpen()) {
-    panel.append(el('h3', {}, 'No table open'));
-    panel.append(el('p', { class: 'muted', style: 'font-size:14px;margin:0' },
-      'Solo prep works exactly as always. To bring players in, open a '
-      + 'table in Setup.'));
-    panel.append(el('div', { class: 'btnrow', style: 'margin-top:10px' },
-      el('button', {
-        class: 'act ghost small', onClick: () => ctx.goToLens('setup'),
-      }, 'Go to Setup')));
-    return panel;
-  }
 
   const status = session.current() || {};
   const grants = session.grants();

@@ -18,7 +18,7 @@
  * between "installed" and "actually usable on a train".
  */
 
-const VERSION = 'toon-anvil-v5';
+const VERSION = 'toon-anvil-v6';
 
 /** Immutable between releases: safe to serve from cache without asking. */
 const IMMUTABLE = /\/(data\/fonts|data\/compendium|icons)\//;
