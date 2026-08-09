@@ -147,15 +147,24 @@ reports each one where it matters.
    (about a third of that Monster Manual), a section heading is still refused
    outright rather than parsed confidently from the first record inside it,
    and every refusal is kept in `unclassified.json` rather than discarded.
-9. **PDF grouping is only as good as the document.** Where a PDF says "3rd
-   level Toymaker feature", features are grouped under *Toymaker* and marked
-   **named**. Where it just says "At 3rd level" — which is how Wizards' own
-   Unearthed Arcana is written — grouping is inferred from level order and
-   marked **guessed**. In the library you can tick several extracted groups
-   and combine them into one subclass under a name you choose, because a guess
-   you can correct beats a guess you can't. Text extraction also loses layout,
-   so every result carries a coverage number. Saving the source page as HTML
-   gives markedly better results than a PDF.
+9. **PDF grouping reads the document's own structure, and says which signal
+   it used.** Three signals, in order of trust: the text names the subclass
+   outright ("3rd level Toymaker feature" — and the level marker counts in a
+   feature's *heading* too, which is how official UA titles them); a heading
+   shaped like a subclass name ("College of Creation") **anchors** the bare
+   "At 3rd level" features beneath it; and only when neither speaks is
+   grouping inferred from level order — and an inferred group of fewer than
+   three features is discarded as noise rather than shipped as a subclass.
+   The name's shape supplies the class (a College is a bard's, an Oath a
+   paladin's) before any word-search of the prose. Measured against a census
+   of every subclass name the extracted text carries, grouping went from
+   matching 40% of names to 70% across the shelf's subclass documents. The
+   library's combine tool remains the correction for what's left — a guess
+   you can correct beats a guess you can't — and every result still carries
+   its coverage number and its **named / anchored / guessed** provenance.
+   The remaining ceiling is upstream: a few UA PDFs render headings in
+   small-caps that extraction scatters into letter salad, and no grouping
+   signal survives that. Saving the source page as HTML sidesteps it.
 
 **Not planned:** anything that reads D&D Beyond, and any bulk crawl of a
 homebrew site.
