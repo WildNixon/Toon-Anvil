@@ -1082,6 +1082,18 @@ class Handler(SimpleHTTPRequestHandler):
             return self._send_json({"slug": slug, "total": len(rows),
                                     "sections": rows})
 
+        if parts == ["api", "split", "selftest"]:
+            # The PDF splitter's quality gate, run in-process on SRD-rendered
+            # fixtures (never book text). The gym calls this so the Python
+            # pipeline sits behind the same green-or-red door as the app.
+            sys.path.insert(0, str(ROOT / "tools"))
+            import split_pdf as split_mod                      # noqa: PLC0415
+            try:
+                return self._send_json(split_mod.selftest())
+            except Exception as exc:                           # noqa: BLE001
+                return self._send_json(
+                    {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, 500)
+
         if parts == ["api", "library"] or parts == ["api", "drop"]:
             # One structured view of everything the app can see, grouped by
             # where it came from. The old flat list mixed 118 generated files

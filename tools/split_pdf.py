@@ -595,6 +595,126 @@ def assemble_subclasses(features: list[dict], doc_title: str) -> list[dict]:
 
 
 # --------------------------------------------------------------------------
+# selftest
+# --------------------------------------------------------------------------
+#
+# Fixtures are rendered from the bundled SRD 5.2.1 monsters (CC-BY, ours to
+# ship) - NEVER from extracted book text, which must stay out of the repo.
+# Each case pins a property the pipeline holds today; a stage improvement
+# lands together with the new case that proves it.
+
+
+def _render_fixture(m: dict) -> str:
+    """One SRD monster as conventional 2014-shaped statblock text."""
+    lines = [
+        f"{m['size']} {m['type']}, {m.get('alignment') or 'unaligned'}",
+        f"Armor Class {m['ac']}",
+        f"Hit Points {m['hp']} ({m.get('hitDice') or '1d8'})",
+        f"Speed {m.get('speed') or '30 ft.'}",
+        "STR DEX CON INT WIS CHA",
+        " ".join(str(m["abilities"][k]["score"])
+                 for k in ("str", "dex", "con", "int", "wis", "cha")),
+    ]
+    if m.get("skills"):
+        lines.append(f"Skills {m['skills']}")
+    if m.get("senses"):
+        lines.append(f"Senses {m['senses']}")
+    if m.get("languages"):
+        lines.append(f"Languages {m['languages']}")
+    lines.append(f"Challenge {m.get('crText') or m['cr']} (XP {m.get('xp') or 0})")
+    for group in ("traits", "actions"):
+        for entry in (m.get(group) or [])[:3]:
+            lines.append(f"{entry['name']}.")
+            lines.append(str(entry.get("text") or "")[:200])
+    return "\n".join(lines)
+
+
+def _srd_monsters(n: int = 3) -> list[dict]:
+    fp = ROOT / "app" / "data" / "compendium" / "monsters.json"
+    data = json.loads(fp.read_text(encoding="utf-8"))
+    # Deterministic picks with traits AND actions, so fixtures have headings.
+    rich = [m for m in data if (m.get("traits") and m.get("actions"))]
+    return rich[:n]
+
+
+def selftest() -> dict:
+    """Pin the pipeline's honest properties on SRD-rendered fixtures."""
+    cases = []
+
+    def case(name: str, ok: bool, note: str = "") -> None:
+        cases.append({"name": name, "ok": bool(ok), "note": note})
+
+    mons = _srd_monsters(3)
+    m0 = mons[0]
+
+    # 1. KNOWN DEFECT, pinned so it cannot be forgotten: a whole statblock
+    #    under its name heading currently SHATTERS. Every label line (Armor
+    #    Class, Hit Points, the score row) is heading-shaped, so blocks_from
+    #    marks each one - and then DISCARDS the sub-60-char bodies between
+    #    them, deleting the AC line before the stitcher can see a start
+    #    signal. This is the Monster Manual's 81 orphan blocks in miniature.
+    #    The stitching fix flips this case to assert ONE monster.
+    page = f"{m0['name'].upper()}\n{_render_fixture(m0)}"
+    blocks = blocks_from([page])
+    kinds = [classify(b)[0] for b in blocks]
+    case("KNOWN_DEFECT_whole_statblock_shatters",
+         kinds.count("monster") == 0
+         and not any("Armor Class" in b["text"] for b in blocks),
+         f"kinds={kinds} (flip to =1 monster when stitching is fixed)")
+
+    # 2. The stitcher rejoins a statblock fragmented at its action headings -
+    #    the designed case: the run STARTS at a block whose head carries
+    #    "Armor Class N".
+    stat = _render_fixture(m0)
+    at = stat.index("Challenge")
+    head, tail = stat[:at], stat[at:]
+    frag_blocks = [
+        {"title": m0["name"].upper(), "text": head, "page": 1, "chars": len(head)},
+        {"title": "Actions", "text": tail, "page": 1, "chars": len(tail)},
+    ]
+    stitched = stitch_statblocks(frag_blocks)
+    case("fragmented_statblock_stitches",
+         len(stitched) == 1
+         and classify(stitched[0])[0] == "monster",
+         f"blocks={len(stitched)}")
+
+    # 3. Containers and label-fragments are refused, never parsed confidently
+    #    from the first record inside them.
+    for title in ("Spell Descriptions", "ACTIONS", "Armor Class 18",
+                  "STR DEX CON INT WIS CHA"):
+        k, _, _ = classify({"title": title, "text": _render_fixture(m0)})
+        case(f"container_refused:{title[:20]}", k == "unclassified", k)
+
+    # 4. Two creatures in one block is refused, not guessed at.
+    two = {"title": m0["name"],
+           "text": _render_fixture(mons[0]) + "\n" + _render_fixture(mons[1])}
+    case("two_statblocks_refused", classify(two)[0] == "unclassified",
+         classify(two)[2])
+
+    # 5. Spells and items still classify from their own signatures.
+    sp = {"title": "Mage Hand",
+          "text": "Casting Time: 1 action\nRange: 30 feet\nDuration: 1 minute\n"
+                  "A spectral hand appears."}
+    case("spell_classifies", classify(sp)[0] == "spell", classify(sp)[2])
+    it = {"title": "Cloak of Protection",
+          "text": "Wondrous item, uncommon (requires attunement)\n"
+                  "You gain a +1 bonus to AC and saving throws."}
+    case("item_classifies", classify(it)[0] == "magic_item", classify(it)[2])
+
+    # 6. The census regex used by tools/yield_eval.py counts rendered
+    #    statblocks exactly - renderer and ruler must not drift apart.
+    sys.path.insert(0, str(ROOT / "tools"))
+    from yield_eval import CENSUS                        # noqa: PLC0415
+    both = _render_fixture(mons[0]) + "\n" + _render_fixture(mons[1])
+    case("census_counts_two", len(CENSUS.findall(both)) == 2,
+         f"found={len(CENSUS.findall(both))}")
+
+    failed = [c for c in cases if not c["ok"]]
+    return {"ok": not failed, "passed": len(cases) - len(failed),
+            "failed": len(failed), "cases": cases}
+
+
+# --------------------------------------------------------------------------
 # driver
 # --------------------------------------------------------------------------
 
@@ -665,6 +785,14 @@ def split(path: Path) -> dict:
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     do_all = "--all" in sys.argv
+
+    if "--selftest" in sys.argv:
+        rep = selftest()
+        for c in rep["cases"]:
+            mark = "ok " if c["ok"] else "FAIL"
+            print(f"  {mark} {c['name']}  {c['note']}")
+        print(f"{rep['passed']} passed, {rep['failed']} failed")
+        return 0 if rep["ok"] else 1
 
     if do_all:
         targets = sorted(SOURCE_DIR.glob("*.pdf"))

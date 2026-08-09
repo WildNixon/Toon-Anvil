@@ -1912,10 +1912,13 @@ export async function runRoleGate(CheckClass) {
     check.eq(doc.querySelector('#seat')?.textContent, 'Dungeon Master',
       'the plaque changed with it');
 
-    // The homebrew workshop lives in Setup.
+    // The homebrew workshop lives in Setup. Same 10s budget as the two
+    // library flows that open this screen: whichever flow opens it FIRST
+    // after a server restart pays the cold /api/library scan, and this one
+    // usually runs before them.
     check.ok(await goToMode(doc, 'Setup'), 'Setup opens');
     const workshop = await waitFor(() => (/homebrew|workshop/i
-      .test(mainText(doc)) ? true : null), { timeout: 8000 });
+      .test(mainText(doc)) ? true : null), { timeout: 10000 });
     check.ok(!!workshop, 'and carries the homebrew workshop');
 
     // The plaque itself is the way back - one click, no Settings trip.

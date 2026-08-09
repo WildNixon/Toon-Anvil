@@ -2441,6 +2441,32 @@ export const SUITES = [
         },
       },
       {
+        id: 'split_selftest',
+        title: 'The PDF splitter passes its pinned quality gate',
+        // The splitter is Python; its fixtures are rendered from the bundled
+        // SRD monsters (never book text). Running its selftest through the
+        // server puts the extraction pipeline behind the same green-or-red
+        // door as everything else. No mutation reaches server-side code, so
+        // the adversarial cases live INSIDE the selftest instead.
+        async run(c) {
+          c.feature('shelf', 'split-selftest');
+          const rep = await fetch('/api/split/selftest')
+            .then((r) => r.json());
+          c.ok(rep.ok === true, 'the selftest is green',
+            JSON.stringify((rep.cases || []).filter((x) => !x.ok)));
+          c.ok((rep.passed || 0) >= 10, 'at least the ten pinned cases ran',
+            `${rep.passed} passed`);
+          c.eq(rep.failed, 0, 'zero failures');
+          // The harness pins the CURRENT defect by name: whole statblocks
+          // shatter in blocks_from. When the stitching fix lands, the case
+          // flips to assert one classified monster and this check follows -
+          // the diff here is the receipt that the defect died on purpose.
+          c.ok((rep.cases || []).some(
+            (x) => /whole_statblock/.test(x.name)),
+          'the whole-statblock case is pinned');
+        },
+      },
+      {
         id: 'price_choke_pure',
         title: 'One arithmetic for every price the Market shows or takes',
         run(c, { campaign }) {
