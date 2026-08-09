@@ -51,6 +51,56 @@ def norm_name(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(s or "").lower()).strip()
 
 
+def grouping_eval(book_dir: Path) -> dict | None:
+    """How well did subclass GROUPING do, against a name census.
+
+    The census collects every distinct subclass name the block stream
+    carries, two ways: block titles shaped like a subclass name ("College
+    of Creation" anchor headings), and names embedded in level-marker
+    phrasing ("3rd-level Oath of Heroism feature") in titles or text.
+    A book with no such names has nothing to group and returns None.
+
+    nameMatch counts assembled subclasses whose name appears in the census
+    - a group named after its first FEATURE does not match, which is
+    exactly the failure this measures.
+    """
+    sys.path.insert(0, str(ROOT / "tools"))
+    from split_pdf import SUBCLASS_NAME_SHAPE, SUBCLASS_IN_TEXT  # noqa: PLC0415
+
+    kinds = load_blocks(book_dir)
+    names: set[str] = set()
+    for blocks in kinds.values():
+        for b in blocks:
+            if not isinstance(b, dict):
+                continue
+            title = str(b.get("title") or "")
+            if SUBCLASS_NAME_SHAPE.match(title.strip()):
+                names.add(norm_name(title))
+            # Assembled subclasses carry their feature prose NESTED - the
+            # raw subclass_feature blocks are never written to disk, so the
+            # census must read through to the feature text or it undercounts
+            # every book whose grouping already worked.
+            probes = [title, str(b.get("text") or "")[:400]]
+            for f in b.get("features", []) or []:
+                probes.append(str(f.get("text") or "")[:400])
+            for probe in probes:
+                m = SUBCLASS_IN_TEXT.search(probe)
+                if m:
+                    names.add(norm_name(m.group(1)))
+
+    subs = kinds.get("subclasses", [])
+    if not names and not subs:
+        return None
+    assembled_names = {norm_name(s.get("name")) for s in subs}
+    return {
+        "censusNames": len(names),
+        "assembled": len(subs),
+        "named": sum(1 for s in subs if s.get("nameSource") == "text"),
+        "nameMatch": len(assembled_names & names),
+        "classOk": sum(1 for s in subs if s.get("class")),
+    }
+
+
 def load_blocks(book_dir: Path) -> dict[str, list[dict]]:
     """Every block the splitter wrote for one book, keyed by kind."""
     out: dict[str, list[dict]] = {}
@@ -137,8 +187,31 @@ def main() -> int:
     print()
     print("TOTAL census=%d classified=%d recall=%s" % (
         tot_c, tot_m, ("%.3f" % (tot_m / tot_c)) if tot_c else "-"))
+
+    print()
+    print("SUBCLASS GROUPING")
+    print("%-34s %6s %5s %6s %6s %6s" % (
+        "book", "names", "asmbl", "named", "match", "clsOk"))
+    grouping = {}
+    for book_dir in sorted(EXTRACTED.iterdir()):
+        if not book_dir.is_dir():
+            continue
+        g = grouping_eval(book_dir)
+        if not g:
+            continue
+        grouping[book_dir.name] = g
+        print("%-34s %6d %5d %6d %6d %6d" % (
+            book_dir.name[:34], g["censusNames"], g["assembled"],
+            g["named"], g["nameMatch"], g["classOk"]))
+    tot_names = sum(g["censusNames"] for g in grouping.values())
+    tot_match = sum(g["nameMatch"] for g in grouping.values())
+    print("TOTAL names=%d matched=%d (%s)" % (
+        tot_names, tot_match,
+        ("%.2f" % (tot_match / tot_names)) if tot_names else "-"))
+
     out = EXTRACTED / "_yield.json"
-    out.write_text(json.dumps({"rows": rows}, indent=1), encoding="utf-8")
+    out.write_text(json.dumps({"rows": rows, "grouping": grouping},
+                              indent=1), encoding="utf-8")
     print("wrote %s" % out)
     return 0
 

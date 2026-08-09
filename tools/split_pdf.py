@@ -595,6 +595,35 @@ SUBCLASS_HINT = re.compile(
     r"order|tradition|discipline|creed|bloodline|origin)\b", re.I)
 
 
+# A TITLE that is the name of a subclass: "College of Creation", "Twilight
+# Domain", "Oath of Heroism". Both word orders 5e uses, bounded length so a
+# sentence can't qualify. This is the shape the grouping census counts and
+# the anchor detector matches - one regex, so the ruler and the assembler
+# cannot drift apart.
+SUBCLASS_NAME_SHAPE = re.compile(
+    r"^\s*(?:"
+    r"(?:Path|College|Circle|Oath|Order|School|Way|Warden)\s+of\s+"
+    r"(?:the\s+)?[A-Z][A-Za-z'\- ]{2,32}"
+    r"|[A-Z][A-Za-z'\- ]{2,32}\s+"
+    r"(?:Domain|Patron|Archetype|Conclave|Tradition|Origin|Bloodline)"
+    r")\s*$")
+
+# What the name's own SHAPE says about the class. Only unambiguous forms are
+# mapped - "Order of X" belongs to several classes and stays unmapped.
+NAME_SHAPE_CLASS = [
+    (re.compile(r"^Path of\b", re.I), "barbarian"),
+    (re.compile(r"^College of\b", re.I), "bard"),
+    (re.compile(r"\bDomain$", re.I), "cleric"),
+    (re.compile(r"^Circle of\b", re.I), "druid"),
+    (re.compile(r"^Way of\b", re.I), "monk"),
+    (re.compile(r"^Oath of\b", re.I), "paladin"),
+    (re.compile(r"\bConclave$", re.I), "ranger"),
+    (re.compile(r"\b(?:Origin|Bloodline)$", re.I), "sorcerer"),
+    (re.compile(r"\bPatron$", re.I), "warlock"),
+    (re.compile(r"^School of\b", re.I), "wizard"),
+]
+
+
 # "3rd level Toymaker feature" / "15th-level Wyrmforger feature".
 #
 # This is the single best signal a community-authored PDF gives us, and it was
@@ -915,6 +944,89 @@ def selftest() -> dict:
               "top": 50 + i * 12} for i in range(48)]
     case("gutter_single_col_refused",
          _pick_gutter(prose, 0, 600) is None, "")
+
+    # --- subclass grouping, in the three styles real documents use -------
+
+    def assemble_pages(pages: list[str]) -> list[dict]:
+        blocks = blocks_from(pages)
+        feats = [b for b in blocks if classify(b)[0] == "subclass_feature"]
+        return assemble_subclasses(feats, "gym-fixture")
+
+    # 2a. In-text naming (the Armokil style): "3rd-level Gymnast feature"
+    #     as a subheading inside the feature text. This path has worked
+    #     since the grouping shipped - pin it.
+    # The subheading stays lowercase-'level' and unhyphenated, as Armokil
+    # writes it - at 2/4 caps it is NOT heading-shaped, so it stays in the
+    # feature body where subclass_named_in reads it.
+    style_a = "\n".join([
+        "IRON FIST",
+        "3rd level Gymnast feature",
+        "You gain a bonus to unarmed strikes while you are conscious of "
+        "your breathing and footwork in every exchange.",
+        "PERFECT BALANCE",
+        "10th level Gymnast feature",
+        "You can move along ropes and ledges at full speed, and standing "
+        "up from prone costs you no movement at all.",
+        "SPRING HEEL",
+        "3rd level Tumbler feature",
+        "Your jump distance doubles, and you can stand from prone as a "
+        "reaction when a creature misses you with a melee attack.",
+        "ROLLING RECOVERY",
+        "14th level Tumbler feature",
+        "When you fall, reduce the falling damage you take by an amount "
+        "equal to five times your proficiency bonus, always.",
+    ])
+    groups_a = assemble_pages([style_a])
+    case("grouping_in_text_names",
+         {g["name"] for g in groups_a} == {"Gymnast", "Tumbler"}
+         and all(g["nameSource"] == "text" for g in groups_a),
+         f"names={sorted(g['name'] for g in groups_a)}")
+
+    # 2b. KNOWN DEFECT, pinned: the level marker in the TITLE and pure
+    #     prose in the body - how 2020-era UA is written. classify() only
+    #     searches the body for level phrasing, so every one of these
+    #     features lands unclassified and NOTHING assembles. The fix makes
+    #     this case assemble one NAMED College of the Gym.
+    style_b = "\n".join([
+        "3rd-level College of the Gym feature",
+        "You learn to turn an audience's applause into a palpable force "
+        "that steadies your allies in the thick of a performance.",
+        "6th-level College of the Gym feature",
+        "Your routines sharpen into weapons; a flourish of the baton can "
+        "drive an enemy back a step even when it misses you.",
+        "14th-level College of the Gym feature",
+        "Your grand finale leaves every foe that watches it dazzled and "
+        "every friend emboldened beyond their ordinary limits.",
+    ])
+    groups_b = assemble_pages([style_b])
+    case("KNOWN_DEFECT_level_in_title_features_lost",
+         len(groups_b) == 0,
+         f"groups={len(groups_b)} (fix flips this to one named College)")
+
+    # 2c. KNOWN DEFECT, pinned: an anchor heading over bare "At 3rd
+    #     level..." prose - the subclass NAME is a heading the assembler
+    #     never reads, so the group ships named after its first feature.
+    #     The fix flips this to name the group from the anchor.
+    style_c = "\n".join([
+        "College of the Gym",
+        "Bards of this college treat the training hall as a stage and "
+        "the drill as a performance worth an encore.",
+        "STARLIT STEP",
+        "At 3rd level, you learn to slide between training apparatus in "
+        "a blur, and your Speed increases by ten feet.",
+        "CHALKED HANDS",
+        "At 6th level, you cannot be disarmed while you are conscious, "
+        "and you have advantage on checks made to grip or climb.",
+        "ENCORE",
+        "At 14th level, when you finish a performance, one ally who "
+        "watched it regains expended Bardic Inspiration immediately.",
+    ])
+    groups_c = assemble_pages([style_c])
+    case("KNOWN_DEFECT_anchor_name_lost",
+         len(groups_c) == 1
+         and groups_c[0]["name"] != "College of the Gym",
+         f"names={[g['name'] for g in groups_c]} "
+         "(fix flips this to the anchor's name)")
 
     failed = [c for c in cases if not c["ok"]]
     return {"ok": not failed, "passed": len(cases) - len(failed),
