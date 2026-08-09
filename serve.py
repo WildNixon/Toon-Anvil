@@ -306,13 +306,18 @@ class Handler(SimpleHTTPRequestHandler):
             return auth[7:].strip() or None
         return self.headers.get("X-Toon-Token") or None
 
-    def _guard_write(self, kind: str, rid: str):
+    def _guard_write(self, kind: str, rid: str, incoming=None):
         """(allowed, response_tuple_or_None). Open door when no table.
 
         Loads the record from DISK to decide ownership. It must never be taken
         from the request body: that is attacker-controlled, and reading it from
         there let a player overwrite anybody's character just by omitting the
         ownerId field.
+
+        `incoming` (the PUT payload; None on DELETE) is passed through so the
+        character-building gate can ask what CHANGED - identity fields are set
+        at the forge, levelling needs the DM's grant. Ownership still comes
+        from disk alone.
         """
         mod = self._table()
         if mod is None:
@@ -330,7 +335,7 @@ class Handler(SimpleHTTPRequestHandler):
                 stored = None
 
         who = mod.whoami(self._token())
-        ok, why = mod.may_write(who, kind, rid, stored, exists)
+        ok, why = mod.may_write(who, kind, rid, stored, exists, incoming)
         if ok:
             return True, None
         return False, ({"error": why, "needsJoin": who is None},
@@ -394,7 +399,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._send_json({"error": "bad json body"}, 400)
         payload.setdefault("id", rid)
 
-        allowed, refusal = self._guard_write(parts[1], rid)
+        allowed, refusal = self._guard_write(parts[1], rid, payload)
         if not allowed:
             return self._send_json(*refusal)
 
@@ -407,6 +412,13 @@ class Handler(SimpleHTTPRequestHandler):
             )
             tmp.replace(path)  # atomic: never leave a half-written character
         rev = bump(parts[1], rid, self._client())
+        if parts[1] == "characters":
+            # A grant is a promise to reach a level; once the character is
+            # there, the promise is kept and the gate closes again. Whoever
+            # made the write - the DM levelling a player's sheet consumes too.
+            mod = self._table()
+            if mod and mod.consume_grant(rid, payload):
+                bump("table", rid, self._client())
         return self._send_json({"ok": True, "id": rid, "rev": rev,
                                 "updatedAt": payload["updatedAt"]})
 
@@ -538,6 +550,71 @@ class Handler(SimpleHTTPRequestHandler):
                 out = mod.set_owner(target or who["id"], cid)
                 bump("table", cid, self._client())
                 return self._send_json(out)
+
+            if action == "forge":
+                # Open or close character building. Strictly the DM's token -
+                # deliberately NO local-machine bypass, unlike close. Close's
+                # hatch is disaster recovery; a forge hatch would make every
+                # browser on the DM's machine (including a player's) the DM.
+                who = mod.whoami(self._token())
+                if not who:
+                    return self._send_json({"error": "join first"}, 401)
+                if who.get("role") != "dm":
+                    return self._send_json(
+                        {"error": "only the DM can open or close the forge"}, 403)
+                out = mod.set_forge(bool(payload.get("open")))
+                bump("table", None, self._client())
+                return self._send_json(out)
+
+            if action == "grant":
+                # Permit a character (or every player's character) to level.
+                # DM token only - same reasoning as the forge above.
+                who = mod.whoami(self._token())
+                if not who:
+                    return self._send_json({"error": "join first"}, 401)
+                if who.get("role") != "dm":
+                    return self._send_json(
+                        {"error": "only the DM grants level-ups"}, 403)
+
+                raw = str(payload.get("characterId") or "")
+                if raw == "party":
+                    data = mod.read()
+                    targets = sorted({cid
+                                      for prof in data.get("profiles", {}).values()
+                                      if prof.get("role") == "player"
+                                      for cid in prof.get("characterIds", [])})
+                else:
+                    cid = safe_id(raw)
+                    if not cid:
+                        return self._send_json({"error": "bad character id"}, 400)
+                    targets = [cid]
+
+                granted, revoked = {}, []
+                for cid in targets:
+                    if payload.get("revoke"):
+                        if mod.clear_grant(cid):
+                            revoked.append(cid)
+                        continue
+                    path = kind_dir("characters") / f"{cid}.json"
+                    if not path.exists():
+                        continue
+                    try:
+                        stored = json.loads(path.read_text(encoding="utf-8"))
+                    except (json.JSONDecodeError, OSError):
+                        continue
+                    cur = mod.total_level(stored)
+                    try:
+                        target = int(payload.get("toLevel") or cur + 1)
+                    except (TypeError, ValueError):
+                        target = cur + 1
+                    target = max(1, min(20, target))
+                    if target <= cur:
+                        continue        # a no-op grant is not written
+                    mod.set_grant(cid, target)
+                    granted[cid] = target
+                bump("table", None, self._client())
+                return self._send_json({"ok": True, "granted": granted,
+                                        "revoked": revoked})
 
             return self._send_json({"error": "unknown table action"}, 404)
 

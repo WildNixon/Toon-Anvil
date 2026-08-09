@@ -39,7 +39,7 @@ CODE_WORD = "ANVIL"
 
 def _blank() -> dict:
     return {"open": False, "code": None, "createdAt": None,
-            "profiles": {}, "tokens": {}}
+            "profiles": {}, "tokens": {}, "forgeOpen": False, "grants": {}}
 
 
 def read() -> dict:
@@ -80,6 +80,9 @@ def open_table(dm_name: str = "DM") -> dict:
         data = _blank()
         data["open"] = True
         data["code"] = new_code()
+        # Session zero starts with the forge open: players make and rebuild
+        # their characters freely until the DM closes it for the campaign.
+        data["forgeOpen"] = True
         data["createdAt"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         dm_id = "p-dm"
         data["profiles"][dm_id] = {
@@ -156,9 +159,21 @@ def status(token: str | None = None) -> dict:
     """Safe to hand to a browser: never includes the code or any token."""
     data = read()
     me = whoami(token)
+    grants = data.get("grants", {}) or {}
+    if me and me.get("role") == "dm":
+        visible_grants = dict(grants)
+    elif me:
+        mine = set(me.get("characterIds", []))
+        visible_grants = {k: v for k, v in grants.items() if k in mine}
+    else:
+        visible_grants = {}
     return {
         "open": bool(data.get("open")),
         "createdAt": data.get("createdAt"),
+        # The whole gate is visible state: a player's Build appears and
+        # disappears off these two fields.
+        "forgeOpen": bool(data.get("forgeOpen")),
+        "grants": visible_grants,
         "me": me,
         "profiles": [
             {"id": p["id"], "name": p["name"], "role": p["role"],
@@ -182,6 +197,75 @@ def set_owner(profile_id: str, character_id: str) -> dict:
         prof["characterIds"] = sorted(ids)
         _write(data)
         return {"ok": True, "profile": prof}
+
+
+# --------------------------------------------------------------------------
+# the forge and the grants
+# --------------------------------------------------------------------------
+
+def total_level(record: dict | None) -> int:
+    """A character's total level: the sum across classes. 0 for anything odd."""
+    if not isinstance(record, dict):
+        return 0
+    total = 0
+    for c in record.get("classes") or []:
+        if isinstance(c, dict):
+            try:
+                total += int(c.get("level") or 0)
+            except (TypeError, ValueError):
+                pass
+    return total
+
+
+def set_forge(open_: bool) -> dict:
+    """Open or close the forge. While open, players create and rebuild."""
+    with _lock:
+        data = read()
+        if not data.get("open"):
+            return {"ok": False, "error": "no table is open"}
+        data["forgeOpen"] = bool(open_)
+        _write(data)
+        return {"ok": True, "forgeOpen": data["forgeOpen"]}
+
+
+def set_grant(character_id: str, max_total_level: int) -> dict:
+    """Grant a character permission to reach a total level."""
+    with _lock:
+        data = read()
+        if not data.get("open"):
+            return {"ok": False, "error": "no table is open"}
+        data.setdefault("grants", {})[character_id] = int(max_total_level)
+        _write(data)
+        return {"ok": True, "granted": {character_id: int(max_total_level)}}
+
+
+def clear_grant(character_id: str) -> bool:
+    with _lock:
+        data = read()
+        removed = data.get("grants", {}).pop(character_id, None) is not None
+        if removed:
+            _write(data)
+        return removed
+
+
+def consume_grant(character_id: str, record: dict | None) -> bool:
+    """Clear a grant once the character has reached it.
+
+    Called after a successful write, whoever made it - the DM levelling a
+    player's sheet for them consumes the grant too. One locked read-check-pop
+    so two concurrent saves cannot both consume.
+    """
+    with _lock:
+        data = read()
+        grants = data.get("grants", {})
+        cap = grants.get(character_id)
+        if cap is None:
+            return False
+        if total_level(record) < int(cap):
+            return False
+        grants.pop(character_id, None)
+        _write(data)
+        return True
 
 
 # --------------------------------------------------------------------------
@@ -249,8 +333,22 @@ def redact_encounter(record: dict, profile: dict | None) -> dict:
     return out
 
 
+# Fields a player may only change at the forge (or under a grant). Everything
+# else - hit points, inventory, prepared spells, conditions - is PLAY, and
+# play must never need the DM's permission.
+FROZEN_FIELDS = ("name", "species", "background", "abilities", "abilityBonuses",
+                 "abilityMethod", "classes", "skills", "expertise", "feats")
+
+
+def _canon(v):
+    """Order-insensitive, None == missing - so a field merely omitted from the
+    payload does not read as a change."""
+    return json.dumps(v, sort_keys=True, ensure_ascii=False) if v is not None else None
+
+
 def may_write(profile: dict | None, kind: str, record_id: str,
-              existing: dict | None = None, exists: bool = False) -> tuple[bool, str]:
+              existing: dict | None = None, exists: bool = False,
+              incoming: dict | None = None) -> tuple[bool, str]:
     """May this profile write this record? Returns (allowed, reason).
 
     `existing` is the record ALREADY ON DISK, never the incoming body, and
@@ -261,6 +359,12 @@ def may_write(profile: dict | None, kind: str, record_id: str,
     player could overwrite anybody's character simply by omitting the field,
     because a missing owner looked like an unclaimed record. Ownership is a
     fact about what is stored, so it is read from what is stored.
+
+    `incoming` is the payload being written (None for a DELETE). It is used
+    only to ask what CHANGED - the character-building gate: identity fields
+    are set at the forge, and levelling up needs the DM's grant. Play-state
+    fields are deliberately not checked, so damage, purchases and prepared
+    spells never need permission.
 
     With NO TABLE OPEN this is never consulted - single-player must not grow a
     login, so serve.py only calls it once a table exists.
@@ -278,22 +382,54 @@ def may_write(profile: dict | None, kind: str, record_id: str,
         return False, f"only the DM can change {kind}."
 
     if kind == "characters":
-        owned = set(profile.get("characterIds", []))
-        if record_id in owned:
-            return True, ""
+        data = read()
+        forge = bool(data.get("forgeOpen"))
+        grants = data.get("grants", {}) or {}
+
         if not exists:
-            # Genuinely new: whoever creates it may create it. The claim is
+            # Creation is a forge act. With the forge open (session zero, or
+            # the DM reopened it) anyone at the table may create; the claim is
             # recorded separately, so this cannot be used to take one over.
-            return True, ""
+            if forge:
+                return True, ""
+            return False, ("the forge is closed. Ask the DM to open it "
+                           "before making a new character.")
+
+        owned = set(profile.get("characterIds", []))
         stored_owner = (existing or {}).get("ownerId")
-        if stored_owner == profile["id"]:
-            return True, ""
-        if stored_owner is None:
-            # Pre-existing and unowned - a character made before the table was
-            # opened. First claim wins rather than free-for-all editing.
-            return False, ("that character has no owner yet. Ask the DM to "
-                           "assign it to you.")
-        return False, "that is somebody else's character."
+        is_mine = record_id in owned or stored_owner == profile["id"]
+        if not is_mine:
+            if stored_owner is None and record_id not in owned:
+                # Pre-existing and unowned - a character made before the table
+                # was opened. First claim wins rather than free-for-all editing.
+                return False, ("that character has no owner yet. Ask the DM to "
+                               "assign it to you.")
+            return False, "that is somebody else's character."
+
+        # ---- own existing character -----------------------------------
+        if incoming is None:
+            # DELETE. Retiring a character is a forge act too - and it stops
+            # delete-and-recreate from being a way around the level gate.
+            if forge:
+                return True, ""
+            return False, ("retiring a character is done at the forge. "
+                           "Ask the DM to open it.")
+
+        unlocked = forge or record_id in grants
+        if not unlocked:
+            for f in FROZEN_FIELDS:
+                if _canon(incoming.get(f)) != _canon((existing or {}).get(f)):
+                    return False, (f"'{f}' is set at the forge. Ask the DM to "
+                                   "open it, or to grant a level-up.")
+
+        new_total = total_level(incoming)
+        old_total = total_level(existing)
+        if new_total > old_total and not forge:
+            cap = int(grants.get(record_id) or 0)
+            if new_total > cap:
+                return False, ("levelling up needs the DM's grant. "
+                               "Ask for one, then come back to Build.")
+        return True, ""
 
     if kind == "profiles":
         if record_id == profile["id"]:

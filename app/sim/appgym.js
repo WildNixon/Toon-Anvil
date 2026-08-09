@@ -1691,6 +1691,238 @@ export const SUITES = [
           }
         },
       },
+      {
+        id: 'forge_gates_creation',
+        title: 'Creation is a forge act',
+        async run(c, { table }) {
+          c.feature('table', 'forge', 'permissions');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          const status = await table.status();
+          c.ok(status.forgeOpen === true,
+            'a fresh table opens with the forge open - session zero');
+
+          const made = await table.put('characters', 'gym-forge-a',
+            { id: 'gym-forge-a', name: 'A', classes: [] }, kim.token);
+          c.eq(made.status, 200, 'a player creates while the forge is open');
+
+          const closed = await table.forge(false, dm.token);
+          c.ok(closed.ok && closed.forgeOpen === false, 'the DM closes the forge');
+          const refused = await table.put('characters', 'gym-forge-b',
+            { id: 'gym-forge-b', name: 'B' }, kim.token);
+          c.eq(refused.status, 403, 'creation is refused once it is closed');
+          c.ok(/forge/i.test(refused.body.error || ''),
+            'and the reason names the forge', refused.body.error);
+
+          const sneaky = await table.forge(true, kim.token);
+          c.eq(sneaky.status, 403, 'a player cannot reopen it themselves');
+          const anon = await table.forge(true, undefined);
+          c.eq(anon.status, 401, 'nor can a browser with no token');
+
+          const dmStill = await table.put('characters', 'gym-forge-c',
+            { id: 'gym-forge-c', name: 'C' }, dm.token);
+          c.eq(dmStill.status, 200, 'the DM builds whenever they like');
+
+          for (const id of ['gym-forge-a', 'gym-forge-c']) {
+            // eslint-disable-next-line no-await-in-loop
+            await table.del('characters', id, dm.token);
+          }
+          await table.close();
+        },
+      },
+      {
+        id: 'identity_frozen_play_state_writable',
+        title: 'Identity is set at the forge; play never needs permission',
+        async run(c, { table }) {
+          c.feature('table', 'forge', 'permissions');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          const base = {
+            id: 'gym-frozen', name: 'Kim', species: 'human',
+            abilities: { str: 14, dex: 12 },
+            classes: [{ class: 'fighter', subclass: null, level: 3 }],
+            hp: { max: 28, current: 28 }, inventory: [], conditions: [],
+          };
+          await table.put('characters', 'gym-frozen', base, kim.token);
+          await table.claim('gym-frozen', kim.token);
+          await table.forge(false, dm.token);
+
+          const respec = await table.put('characters', 'gym-frozen',
+            { ...base, species: 'elf' }, kim.token);
+          c.eq(respec.status, 403, 'changing species is refused');
+          c.ok(/'species'/.test(respec.body.error || ''),
+            'and the refusal names the field', respec.body.error);
+
+          const cheat = await table.put('characters', 'gym-frozen',
+            { ...base, abilities: { str: 20, dex: 12 } }, kim.token);
+          c.eq(cheat.status, 403, 'so is quietly raising an ability score');
+
+          const play = await table.put('characters', 'gym-frozen',
+            { ...base, hp: { max: 28, current: 9 },
+              conditions: ['Poisoned'], inventory: [{ id: 'rope', qty: 1 }] },
+            kim.token);
+          c.eq(play.status, 200,
+            'damage, conditions and inventory pass without asking anybody');
+
+          const onDisk = await table.get('characters', 'gym-frozen', kim.token);
+          c.eq(onDisk?.hp?.current, 9, 'and the play state actually landed');
+          c.eq(onDisk?.species, 'human', 'while the identity never moved');
+
+          await table.del('characters', 'gym-frozen', dm.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'level_up_refused_granted_consumed',
+        title: 'Levelling needs the grant, and the grant is spent by arriving',
+        async run(c, { table }) {
+          c.feature('table', 'grants', 'permissions');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          const at = (lvl, extra = {}) => ({
+            id: 'gym-lvl', name: 'Kim',
+            classes: [{ class: 'fighter', subclass: null, level: lvl }],
+            feats: [], ...extra,
+          });
+          await table.put('characters', 'gym-lvl', at(3), kim.token);
+          await table.claim('gym-lvl', kim.token);
+          await table.forge(false, dm.token);
+
+          const refused = await table.put('characters', 'gym-lvl', at(4), kim.token);
+          c.eq(refused.status, 403, 'level 4 is refused without a grant');
+          c.ok(/grant/i.test(refused.body.error || ''),
+            'and the reason says to ask the DM', refused.body.error);
+
+          const granted = await table.grant({ characterId: 'gym-lvl' }, dm.token);
+          c.ok(granted.ok && granted.granted['gym-lvl'] === 4,
+            'the default grant is one level up', JSON.stringify(granted.granted));
+
+          const mine = await table.status(kim.token);
+          c.eq(mine.grants?.['gym-lvl'], 4, 'the player can see their own grant');
+
+          // A real level-up touches identity: a feat at 4. Allowed under the
+          // grant - that is what the grant is FOR.
+          const up = await table.put('characters', 'gym-lvl',
+            at(4, { feats: ['ability-score-improvement'] }), kim.token);
+          c.eq(up.status, 200, 'the level-up passes, feat and all');
+
+          const after = await table.status(dm.token);
+          c.ok(!('gym-lvl' in (after.grants || {})),
+            'arriving at the granted level consumes the grant');
+
+          const again = await table.put('characters', 'gym-lvl', at(5), kim.token);
+          c.eq(again.status, 403, 'so level 5 is refused until the next one');
+
+          await table.del('characters', 'gym-lvl', dm.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'party_grant_and_revoke',
+        title: 'One button levels the party; revoke takes one back',
+        async run(c, { table }) {
+          c.feature('table', 'grants');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          const ren = await table.join(dm.code, 'Ren');
+          if (!kim.ok || !ren.ok) { c.ok(false, 'both players joined'); return; }
+
+          const mk = (id, lvl) => ({
+            id, name: id, classes: [{ class: 'rogue', subclass: null, level: lvl }],
+          });
+          await table.put('characters', 'gym-p1', mk('gym-p1', 3), kim.token);
+          await table.claim('gym-p1', kim.token);
+          await table.put('characters', 'gym-p2', mk('gym-p2', 5), ren.token);
+          await table.claim('gym-p2', ren.token);
+          await table.forge(false, dm.token);
+
+          const out = await table.grant({ characterId: 'party' }, dm.token);
+          c.eq(out.granted['gym-p1'], 4, 'the level-3 character may reach 4');
+          c.eq(out.granted['gym-p2'], 6, 'the level-5 character may reach 6');
+
+          // Grants are scoped like everything else at the table: you see your
+          // own, the DM sees all, and nobody reads a neighbour's.
+          const kimView = await table.status(kim.token);
+          c.eq(kimView.grants?.['gym-p1'], 4, 'Kim sees her own grant');
+          c.ok(!('gym-p2' in (kimView.grants || {})),
+            'and not Ren\'s', JSON.stringify(kimView.grants));
+
+          const rev = await table.grant(
+            { characterId: 'gym-p1', revoke: true }, dm.token);
+          c.ok(rev.revoked.includes('gym-p1'), 'one grant revoked');
+          const st = await table.status(dm.token);
+          c.ok(!('gym-p1' in st.grants), 'it is gone');
+          c.eq(st.grants['gym-p2'], 6, 'the other survives');
+
+          const denied = await table.grant({ characterId: 'gym-p2' }, kim.token);
+          c.eq(denied.status, 403, 'players cannot grant');
+
+          await table.del('characters', 'gym-p1', dm.token);
+          await table.del('characters', 'gym-p2', dm.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'forge_open_full_rebuild',
+        title: 'While the forge is open, a player rebuilds and retires freely',
+        async run(c, { table }) {
+          c.feature('table', 'forge');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          await table.put('characters', 'gym-rebuild',
+            { id: 'gym-rebuild', name: 'Draft', species: 'human',
+              classes: [{ class: 'wizard', subclass: null, level: 1 }] }, kim.token);
+          await table.claim('gym-rebuild', kim.token);
+
+          const rebuilt = await table.put('characters', 'gym-rebuild',
+            { id: 'gym-rebuild', name: 'Final', species: 'elf',
+              classes: [{ class: 'sorcerer', subclass: null, level: 3 }] }, kim.token);
+          c.eq(rebuilt.status, 200,
+            'name, species, class AND level all change in one forge-open write');
+
+          await table.forge(false, dm.token);
+          const del1 = await table.del('characters', 'gym-rebuild', kim.token);
+          c.eq(del1.status, 403,
+            'retiring is refused when closed - delete-and-recreate is not a '
+            + 'way around the level gate');
+          await table.forge(true, dm.token);
+          const del2 = await table.del('characters', 'gym-rebuild', kim.token);
+          c.eq(del2.status, 200, 'and allowed at the forge');
+
+          await table.close();
+        },
+      },
+      {
+        id: 'solo_gate_absent',
+        title: 'With no table, none of this exists',
+        async run(c, { table }) {
+          c.feature('table', 'forge', 'grants');
+          await table.close();
+          // The regression pin for "solo play untouched": a tokenless browser
+          // levels a character from 3 to 9 in one write and nobody asks.
+          await table.put('characters', 'gym-solo-lvl',
+            { id: 'gym-solo-lvl', classes: [{ class: 'wizard', level: 3 }] }, null);
+          const up = await table.put('characters', 'gym-solo-lvl',
+            { id: 'gym-solo-lvl', species: 'elf',
+              classes: [{ class: 'wizard', level: 9 }] }, null);
+          c.eq(up.status, 200, 'solo levelling needs nobody\'s permission');
+          const gone = await table.del('characters', 'gym-solo-lvl', null);
+          c.eq(gone.status, 200, 'and solo delete works too');
+        },
+      },
     ],
   },
 
@@ -1934,6 +2166,30 @@ export const SUITES = [
           c.ok(anon.changes.every((x) => 'by' in x),
             'every change carries the field, even when nobody claimed it');
           await table.del('characters', 'gym-live-who', null);
+        },
+      },
+      {
+        id: 'events_bump_revision',
+        title: 'A logged event moves the revision, so a story feed can be live',
+        async run(c, { table }) {
+          c.feature('live', 'sync', 'story');
+          const start = (await table.changes(0)).rev;
+          // The log is append-only by design, so this leaves one line in the
+          // real file. It says exactly what it is, and the server stamps ts.
+          const res = await fetch('/api/events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify([{ id: `gym-ev-${Date.now()}`,
+              type: 'journal', cat: 'journal',
+              summary: 'Toon Anvil self-test: change-feed probe' }]),
+          });
+          c.ok(res.ok, 'the event was accepted', String(res.status));
+          const after = await table.changes(start);
+          c.ok(after.changes.some((x) => x.kind === 'events'),
+            'and announced on the change feed as kind "events"',
+            after.changes.map((x) => x.kind).join(','));
+          // Without this, a DM story lens would look connected and simply
+          // never update - the quietest possible failure.
         },
       },
       {
