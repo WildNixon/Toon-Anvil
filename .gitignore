@@ -43,6 +43,10 @@ data/extracted/
 # from a public repo.
 library/shelf/
 
+# Personal tooling kept beside personal data (e.g. the campaign map
+# generator) - not app code, not for the repo.
+data/*.py
+
 # --- whatever the user dropped in --------------------------------------------
 inbox/*
 !inbox/README.txt

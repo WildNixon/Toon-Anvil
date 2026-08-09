@@ -719,8 +719,17 @@ def parse_backgrounds(blocks: list[Block]) -> list[dict[str, Any]]:
             continue
         text = norm(b.body)
         def grab(label: str) -> str | None:
-            m = re.search(rf"_{label}:\s*(.+?)_", text)
-            return m.group(1).strip() if m else None
+            # The SRD writes background field labels in BOLD ("**Equipment:**
+            # value to end of line"), not italics - the italic form matched
+            # nothing, which silently nulled all five structured fields on
+            # every background. Both forms accepted; bold value runs to EOL
+            # and may itself contain italics ("_Choose A or B:_ ...").
+            m = re.search(
+                rf"(?:_{label}:\s*(.+?)_|\*\*{label}:\*\*\s*(.+?)\s*$)",
+                text, re.M)
+            if not m:
+                return None
+            return (m.group(1) or m.group(2) or "").strip() or None
         out.append({
             "id": slug(b.title),
             "name": b.title,
