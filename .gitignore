@@ -37,6 +37,12 @@ data/homebrew-variants/
 library/extracted/
 data/extracted/
 
+# --- the shelf: the user's source PDFs, organised --------------------------
+# Whole commercial books live here. *.pdf is not globally ignored, so this
+# folder is - a shelved Monster Manual must never be one `git add -A` away
+# from a public repo.
+library/shelf/
+
 # --- whatever the user dropped in --------------------------------------------
 inbox/*
 !inbox/README.txt
