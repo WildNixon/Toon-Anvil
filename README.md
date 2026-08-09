@@ -129,14 +129,24 @@ reports each one where it matters.
 7. **The bestiary browses by default.** Open it and the first thirty of
    330 are listed by challenge rating, with CR chips to narrow and an Open
    button per row; typing still finds by name, type, or "cr 5".
-8. **Custom monsters, items and spells parse; the classifier is the weak
-   link.** The statblock parser round-trips all 330 bundled monsters exactly —
-   AC, HP, CR, every ability score, every action. What is unreliable is
-   deciding *which blocks of a PDF are statblocks*: on a subclass document it
-   finds almost none, and what it does find needs your eye. Every parse
-   reports its coverage and names what it could not read, and a block that is
-   really a section heading is refused outright rather than parsed
-   confidently from the first record inside it.
+8. **Books yield their statblocks, and the yield is measured.** The statblock
+   parser still round-trips all 330 bundled monsters exactly; what changed is
+   everything upstream of it. Extraction no longer zips two-column pages
+   (a zero-crossing gutter is trusted even when art makes the split lopsided),
+   no text is dropped on the floor (heading-less pages and page-lead prose
+   reach the block stream), statblocks shattered across label-shaped headings
+   stitch back into one block, and a creature whose name was the last line of
+   the previous page gets it back. `tools/yield_eval.py` is the ruler: it
+   counts challenge-rating lines across a book's extracted text as a census
+   and reports recall per shelved book — across a thirteen-book shelf that
+   number went from 0.29 to 0.66, and the 2014 Monster Manual from 72
+   creatures to 256 of a 411-line census. The Deck's shelf rows show each
+   book's yield, because a bestiary that reads "3 monsters" is telling you
+   the extraction struggled. The remaining ceiling is named, not hidden:
+   badly interleaved pages where the two columns mixed mid-line still refuse
+   (about a third of that Monster Manual), a section heading is still refused
+   outright rather than parsed confidently from the first record inside it,
+   and every refusal is kept in `unclassified.json` rather than discarded.
 9. **PDF grouping is only as good as the document.** Where a PDF says "3rd
    level Toymaker feature", features are grouped under *Toymaker* and marked
    **named**. Where it just says "At 3rd level" — which is how Wizards' own

@@ -1050,13 +1050,27 @@ class Handler(SimpleHTTPRequestHandler):
                 if not e.get("category"):
                     continue        # inbox / seeded entries are not shelved
                 sp = e.get("shelfPath")
+                # The manifest's written counts are a snapshot from the drop.
+                # The extraction dir's _report.json is the source of truth -
+                # a re-extraction (better splitter, CLI re-run) updates it,
+                # and the Deck must report what the book yields NOW.
+                written = e.get("written", {})
+                out_dir = e.get("outputDir")
+                if out_dir:
+                    rep_fp = Path(out_dir) / "_report.json"
+                    try:
+                        if rep_fp.is_file():
+                            written = json.loads(rep_fp.read_text(
+                                encoding="utf-8")).get("written", written)
+                    except (OSError, json.JSONDecodeError):
+                        pass
                 cats.setdefault(e["category"], []).append({
                     "name": e.get("file"), "hash": digest,
                     "slug": shelf_mod.slug_for(e.get("file", "")),
                     "category": e["category"],
                     "confidence": e.get("confidence"),
                     "evidence": e.get("evidence", []),
-                    "written": e.get("written", {}),
+                    "written": written,
                     "pages": e.get("pages"),
                     "origin": e.get("origin"),
                     "present": bool(sp and Path(sp).exists()),

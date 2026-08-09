@@ -843,6 +843,19 @@ function shelfBlock() {
     });
     row.append(el('span', { style: 'flex:1;min-width:160px;font-size:13px' },
       b.name || b.slug));
+    // What the book actually YIELDED - the DM's honest per-book report.
+    // A bestiary that reads "3 monsters" is telling you the extraction
+    // struggled, and that is worth knowing before session prep relies on it.
+    const w = b.written || {};
+    const n = (k, one, many) => (w[k]
+      ? `${w[k]} ${w[k] === 1 ? one : many}` : '');
+    const got = [n('monster', 'monster', 'monsters'),
+      n('spell', 'spell', 'spells'), n('magic_item', 'item', 'items'),
+      n('subclasses', 'subclass', 'subclasses'),
+      n('species', 'species', 'species'), n('feat', 'feat', 'feats')]
+      .filter(Boolean).join(' · ');
+    row.append(el('span', { class: 'muted', style: 'font-size:12px' },
+      got || (b.extractedOk ? 'prose only - no records' : '')));
     // Settings and adventures are Deck material; the rest live in the
     // workshop. The select is the one-click rescue for a wrong guess.
     if (b.category === 'settings' || b.category === 'adventures') {
