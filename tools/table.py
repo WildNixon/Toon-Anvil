@@ -439,6 +439,31 @@ def may_write(profile: dict | None, kind: str, record_id: str,
     return False, f"players cannot change {kind}."
 
 
+def redact_campaign(record: dict, profile: dict | None) -> dict:
+    """Strip the campaign's secrets for players.
+
+    Same reasoning as redact_encounter: hiding it in the UI leaves it in the
+    payload, and a player with the network tab open reads exactly what the
+    DM decided not to show. Faction AGENDAS never leave the server for a
+    player; factions the DM has not marked public are absent entirely; lore
+    is DM prep. day/seed/regions survive on purpose - the day's weather is
+    an in-world fact every player computes client-side from exactly those
+    fields, and the seed predicts nothing but the sky.
+    """
+    if not isinstance(record, dict):
+        return record
+    if profile is None or profile.get("role") == "dm":
+        return record
+    out = dict(record)
+    out["factions"] = [
+        {k: v for k, v in f.items() if k != "agenda"}
+        for f in (record.get("factions") or [])
+        if isinstance(f, dict) and f.get("public")
+    ]
+    out.pop("lore", None)
+    return out
+
+
 def may_read(profile: dict | None, kind: str) -> tuple[bool, str]:
     """Reads are open to anyone at the table.
 

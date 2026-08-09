@@ -1134,14 +1134,17 @@ class Handler(SimpleHTTPRequestHandler):
                         records.append(json.loads(p.read_text(encoding="utf-8")))
                     except json.JSONDecodeError:
                         records.append({"id": p.stem, "_error": "unreadable"})
-                if parts[1] == "encounters":
-                    # The list endpoint reads the same files, so it needs the
-                    # same redaction. Missing it here would hand a player every
-                    # number the single-record route just withheld.
-                    mod = self._table()
-                    if mod:
+                # The list endpoint reads the same files as the single-record
+                # route, so it needs the same redaction - one mapping for
+                # both, because the list route was missed once and the leak
+                # was silent.
+                mod = self._table()
+                if mod:
+                    fn = {"encounters": mod.redact_encounter,
+                          "campaigns": mod.redact_campaign}.get(parts[1])
+                    if fn:
                         me = mod.whoami(self._token())
-                        records = [mod.redact_encounter(r, me) for r in records]
+                        records = [fn(r, me) for r in records]
                 return self._send_json(records)
             rid = safe_id(parts[2])
             if not rid:
@@ -1153,10 +1156,12 @@ class Handler(SimpleHTTPRequestHandler):
                 record = json.loads(path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 return self._send_json({"error": "unreadable record"}, 500)
-            if parts[1] == "encounters":
-                mod = self._table()
-                if mod:
-                    record = mod.redact_encounter(record, mod.whoami(self._token()))
+            mod = self._table()
+            if mod:
+                fn = {"encounters": mod.redact_encounter,
+                      "campaigns": mod.redact_campaign}.get(parts[1])
+                if fn:
+                    record = fn(record, mod.whoami(self._token()))
             return self._send_json(record)
 
         return self._send_json({"error": "unknown endpoint"}, 404)

@@ -172,13 +172,19 @@ function metSomeone() {
       { key: 'want', label: 'What do they want?', placeholder: 'A favour owed' },
     ],
     async onSubmit({ name, where, want }) {
-      const record = {
-        id: `npc-${name.toLowerCase().replace(/\W+/g, '-')}`,
-        name, where, want, disposition: 0,
-        firstMet: new Date().toISOString(), notes: [],
-      };
-      await db.put('npcs', record);
+      // The EVENT is the beat and always lands - /api/events is ungated.
+      // The npcs RECORD is the world's ledger, which at a table belongs to
+      // the DM (a shared kind, so the server refuses players). Best-effort:
+      // solo and DM writes succeed; a player's beat still shows in People
+      // because that panel also reads the events.
       await log('npc_met', { name, where, want, threadKey: name });
+      try {
+        await db.put('npcs', {
+          id: `npc-${name.toLowerCase().replace(/\W+/g, '-')}`,
+          name, where, want, disposition: 0,
+          firstMet: new Date().toISOString(), notes: [],
+        });
+      } catch { /* a player at a table: the event carries the beat */ }
       toast(`Met ${name}`, 'ok');
       await reload();
     },
@@ -339,10 +345,12 @@ function npcPanel() {
 
 async function shift(npc, delta) {
   const next = { ...npc, disposition: (npc.disposition || 0) + delta };
-  await db.put('npcs', next);
   await log('npc_relationship', {
     name: npc.name, delta, disposition: next.disposition, threadKey: npc.name,
   });
+  try {
+    await db.put('npcs', next);
+  } catch { /* a player at a table: the event carries the shift */ }
   await reload();
 }
 

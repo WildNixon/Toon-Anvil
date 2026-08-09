@@ -1926,6 +1926,157 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- the campaign ------------------------------------ */
+  {
+    id: 'campaign',
+    title: 'The world the Deck drives',
+    why: 'Weather is a pure function so every screen derives the same sky; '
+       + 'the campaign record carries the one real secret (agendas), so the '
+       + 'server must strip it. Both claims are only worth anything tested.',
+    scenarios: [
+      {
+        id: 'weather_deterministic',
+        title: 'The same day in the same place has the same sky, forever',
+        run(c, { campaign, tables }) {
+          c.feature('weather', 'campaign');
+          const region = { id: 'reg-t', terrain: 'forest' };
+          const args = { seed: 1234, day: 14, region };
+          const a = campaign.weatherFor(tables, args);
+          const b = campaign.weatherFor(tables, args);
+          c.eq(JSON.stringify(a), JSON.stringify(b),
+            'two computations agree exactly');
+          c.ok(a.summary.length > 0, 'and say something readable', a.summary);
+
+          // No hidden state: computing day 19 must not change day 14.
+          campaign.weatherFor(tables, { seed: 1234, day: 19, region });
+          const again = campaign.weatherFor(tables, args);
+          c.eq(JSON.stringify(again), JSON.stringify(a),
+            'computing another day does not disturb this one');
+
+          // Days differ somewhere across a span, or the sky is a painting.
+          const skies = new Set();
+          for (let d = 1; d <= 30; d += 1) {
+            skies.add(campaign.weatherFor(tables,
+              { seed: 1234, day: d, region }).summary);
+          }
+          c.ok(skies.size > 3, 'thirty days hold more than three skies',
+            `${skies.size} distinct`);
+
+          const desert = campaign.weatherFor(tables,
+            { seed: 1234, day: 14, region: { id: 'reg-d', terrain: 'desert' } });
+          c.ok(desert.terrain === 'desert', 'terrain flows through');
+        },
+      },
+      {
+        id: 'weather_label_mixes',
+        title: 'Two regions with one terrain do not share a sky',
+        run(c, { campaign, tables }) {
+          c.feature('weather');
+          // Regression pin on a bug this project actually shipped once: the
+          // rng LABEL does not mix into the sequence, so anything built on
+          // seededRng(seed, label) gives every region identical draws. The
+          // weather engine must use .stream(), which hashes seed and name.
+          const a = [];
+          const b = [];
+          for (let d = 1; d <= 30; d += 1) {
+            a.push(campaign.weatherFor(tables,
+              { seed: 77, day: d, region: { id: 'reg-a', terrain: 'coast' } }).summary);
+            b.push(campaign.weatherFor(tables,
+              { seed: 77, day: d, region: { id: 'reg-b', terrain: 'coast' } }).summary);
+          }
+          c.ok(a.join('|') !== b.join('|'),
+            'thirty days in two coastal regions diverge somewhere');
+          // And days must differ within one region too - a stream that
+          // ignored the day would freeze the sky.
+          c.ok(new Set(a).size > 1, 'the sky moves from day to day');
+        },
+      },
+      {
+        id: 'campaign_secrets_stay_on_the_server',
+        title: 'A player is not sent the agendas, on either route',
+        async run(c, { table }) {
+          c.feature('campaign', 'permissions', 'security');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          const record = {
+            id: 'gym-camp', name: 'Gym Campaign', active: true, day: 3,
+            seed: 999, currentRegionId: 'reg-1',
+            regions: [{ id: 'reg-1', name: 'The Vale', terrain: 'forest',
+              priceMod: 1.5, note: '' }],
+            factions: [
+              { id: 'f-pub', name: 'The Wardens', standing: 2,
+                agenda: 'SECRET: reclaim the shrine', public: true },
+              { id: 'f-hid', name: 'The Veiled Hand', standing: -3,
+                agenda: 'SECRET: replace the mayor', public: false },
+            ],
+            lore: [{ title: 'The drowned district', text: 'DM prep' }],
+          };
+          const put = await table.put('campaigns', 'gym-camp', record, dm.token);
+          c.eq(put.status, 200, 'the DM writes the campaign');
+          const refused = await table.put('campaigns', 'gym-camp',
+            { ...record, day: 99 }, kim.token);
+          c.eq(refused.status, 403, 'a player cannot');
+
+          const mine = await table.get('campaigns', 'gym-camp', kim.token);
+          c.ok(!JSON.stringify(mine).includes('SECRET'),
+            'no agenda text reaches the player');
+          c.eq(mine.factions?.length, 1, 'non-public factions are absent entirely');
+          c.eq(mine.factions?.[0]?.agenda, undefined,
+            'and the public one arrives without its agenda');
+          c.ok(!('lore' in mine), 'lore is DM prep and stays home');
+          c.eq(mine.seed, 999,
+            'the seed survives - players compute the same sky from it');
+          c.eq(mine.day, 3, 'so does the day');
+          c.eq(mine.regions?.length, 1, 'and the regions');
+
+          // The route that was missed once: the LIST hands back the same files.
+          const listed = await fetch('/api/campaigns', {
+            headers: { 'X-Toon-Token': kim.token } }).then((r) => r.json());
+          const fromList = listed.find((x) => x.id === 'gym-camp');
+          c.ok(fromList && !JSON.stringify(fromList).includes('SECRET'),
+            'the list route redacts identically');
+
+          const asDm = await table.get('campaigns', 'gym-camp', dm.token);
+          c.eq(asDm.factions?.[1]?.agenda, 'SECRET: replace the mayor',
+            'while the DM keeps every word');
+
+          await table.del('campaigns', 'gym-camp', dm.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'npc_write_best_effort',
+        title: "A player's beat lands as an event even when the record is refused",
+        async run(c, { table }) {
+          c.feature('campaign', 'permissions', 'rp');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          const rec = await table.put('npcs', 'gym-npc-probe',
+            { id: 'gym-npc-probe', name: 'Ilse' }, kim.token);
+          c.eq(rec.status, 403,
+            'the npcs record is the DM\'s ledger - players are refused');
+
+          const ev = await fetch('/api/events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify([{ id: `gym-npc-ev-${Date.now()}`,
+              type: 'npc_met', cat: 'rp',
+              summary: 'Toon Anvil self-test: met Ilse (gym probe)' }]),
+          });
+          c.ok(ev.ok, 'while the npc_met EVENT always lands - the beat is theirs');
+
+          await table.close();
+        },
+      },
+    ],
+  },
+
   /* ---------------- chrome: seat + theme ----------------------------- */
   {
     id: 'chrome',

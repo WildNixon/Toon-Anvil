@@ -76,11 +76,16 @@ export const EVENT_TYPES = {
 
   // --- manual
   journal:            { cat: 'journal', label: 'Journal entry' },
+
+  // --- the world (campaign state the DM drives from the Deck)
+  day_advanced:       { cat: 'world', label: 'A day passed', notable: true },
+  faction_standing:   { cat: 'world', label: 'Faction standing shifted' },
+  region_moved:       { cat: 'world', label: 'The party moved', notable: true },
 };
 
 export const CATEGORIES = {
   session: 'Session', progression: 'Progression', combat: 'Combat',
-  shop: 'Wealth', rp: 'Roleplay', journal: 'Journal',
+  shop: 'Wealth', rp: 'Roleplay', journal: 'Journal', world: 'The World',
 };
 
 /* ------------------------------------------------------------------ */
@@ -162,6 +167,9 @@ export function subscribe(fn) {
 /** A short human sentence for an event, used when no summary is supplied. */
 export function describe(type, p = {}) {
   switch (type) {
+    case 'day_advanced':     return `Day ${p.day} dawns`;
+    case 'faction_standing': return `${p.name || 'A faction'}: standing ${p.value}`;
+    case 'region_moved':     return `The party crossed into ${p.regionName || 'a new region'}`;
     case 'attack':      return `Attacked ${p.target || 'a target'}${p.hit === false ? ' and missed' : ''}`;
     case 'crit':        return `Critical hit on ${p.target || 'a target'}`;
     case 'fumble':      return `Rolled a natural 1${p.on ? ` on ${p.on}` : ''}`;

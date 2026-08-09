@@ -788,6 +788,63 @@ export const FLOWS = [
   },
 
   {
+    id: 'deck_campaign',
+    title: 'The Deck founds a campaign, turns the day, and the sky follows',
+    async run(c, { doc }) {
+      c.feature('ui', 'deck', 'campaign', 'weather');
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'Deck', 'campaign'), 'the Deck opens');
+
+      // Found a campaign.
+      const name = doc.querySelector('main input[aria-label="Campaign name"]');
+      c.ok(!!name, 'the Deck asks for a campaign name');
+      if (!name) return;
+      setField(name, 'Gym Realm');
+      button(doc, 'Found the campaign')?.click();
+      const founded = await waitFor(() => (/Gym Realm/.test(mainText(doc))
+        ? true : null), { timeout: 8000 });
+      c.ok(!!founded, 'the campaign appears on the Deck');
+
+      // Give it a region so the sky dial wakes up.
+      const region = doc.querySelector('main input[aria-label="New region name"]');
+      c.ok(!!region, 'a region can be added');
+      setField(region, 'The Vale');
+      button(doc, 'Add region')?.click();
+      const sky = await waitFor(() => {
+        const t = mainText(doc);
+        const m = /The sky\s*([A-Z][a-z]+,\s*\w+,\s*\w+)/.exec(t.replace(/\s+/g, ' '));
+        return m ? m[1] : null;
+      }, { timeout: 8000 });
+      c.ok(!!sky, 'the sky dial reports weather', sky || '(none)');
+
+      const dayOf = () => readNumberAfter(doc, 'Day');
+      const startDay = dayOf();
+      c.eq(startDay, 1, 'a new campaign starts on day 1');
+
+      // Advance until the sky CHANGES - deterministic, so a bounded walk.
+      let changed = false;
+      for (let i = 0; i < 10 && !changed; i += 1) {
+        button(doc, 'Advance the day')?.click();
+        // eslint-disable-next-line no-await-in-loop
+        const bumped = await waitFor(() => (dayOf() === startDay + i + 1
+          ? true : null), { timeout: 5000 });
+        if (!bumped) break;
+        const now = /The sky\s*([A-Z][a-z]+,\s*\w+,\s*\w+)/
+          .exec(mainText(doc).replace(/\s+/g, ' '))?.[1];
+        if (now && now !== sky) changed = true;
+      }
+      c.ok(dayOf() > startDay, 'the day advances', `day ${dayOf()}`);
+      c.ok(changed, 'and within ten days the sky changed - weather is alive');
+
+      // The Story lens sees the world turn.
+      c.ok(await goToMode(doc, 'Story'), 'Story opens');
+      const dawn = await waitFor(() => (/day passed|dawns/i.test(mainText(doc))
+        ? true : null), { timeout: 8000 });
+      c.ok(!!dawn, 'the days that passed are on the record');
+    },
+  },
+
+  {
     id: 'settings_connectors',
     title: 'Settings is honest about what is not connected',
     async run(c, { doc }) {
