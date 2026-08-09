@@ -90,6 +90,7 @@ import * as session from '../core/session.js';
 import * as theme from '../ui/theme.js';
 import { weatherFor } from '../core/weather.js';
 import { newCampaign, newRegion } from '../core/campaign.js';
+import { unitPrice, sellBack } from '../modes/shop/pricing.js';
 
 const $ = (s) => document.querySelector(s);
 const log = (m) => { $('#log').textContent += `${m}\n`;
@@ -121,7 +122,7 @@ async function buildCtx() {
     providers,
     session,
     theme,
-    campaign: { weatherFor, newCampaign, newRegion },
+    campaign: { weatherFor, newCampaign, newRegion, unitPrice, sellBack },
     dbTokenKey: 'toonanvil.token',
     // Raw HTTP on purpose. Going through ServerAdapter would test the client;
     // the whole question here is what the SERVER refuses.

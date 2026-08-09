@@ -16,8 +16,10 @@ import * as live from '../../core/live.js';
 import { log } from '../../core/events.js';
 import {
   listCampaigns, activeCampaign, saveCampaign, setActive, newCampaign,
-  newRegion, currentRegion,
+  newRegion, newFaction, currentRegion,
 } from '../../core/campaign.js';
+import { query } from '../../core/events.js';
+import { lineChart } from '../../ui/chart.js';
 import { weatherFor } from '../../core/weather.js';
 import { statTile } from '../../ui/kit.js';
 import { mapView, PIN_KINDS } from '../../ui/map.js';
@@ -66,6 +68,10 @@ function draw() {
   }
   container.append(dialsPanel());
   container.append(mapPanel());
+  const columns = el('div', { class: 'grid two' });
+  columns.append(factionsPanel());
+  columns.append(economyPanel());
+  container.append(columns);
   container.append(regionsPanel());
   container.append(campaignPanel());
 }
@@ -246,6 +252,212 @@ async function adoptImage(src, name) {
   };
   probe.onerror = () => toast('That does not load as an image', 'bad');
   probe.src = src;
+}
+
+/* ------------------------------------------------------------------ */
+/* factions - the political dial                                       */
+/* ------------------------------------------------------------------ */
+
+function factionsPanel() {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Factions'));
+
+  if (!campaign.factions.length) {
+    panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
+      'Who holds power, and how they feel about the party. Standings are '
+      + 'public when you mark them so; agendas never leave this machine '
+      + 'for a player.'));
+  }
+
+  for (const f of campaign.factions) {
+    const row = el('div', {
+      style: 'padding:8px 0;border-bottom:1px solid var(--etch)',
+    });
+    const top = el('div', {
+      style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap',
+    });
+    top.append(el('span', {
+      style: `width:10px;height:10px;border-radius:50%;background:${f.colour};`
+        + 'display:inline-block;flex:none',
+    }));
+    top.append(el('strong', { style: 'flex:1;min-width:100px' }, f.name));
+    top.append(el('span', {
+      class: 'mono', style: 'font-size:12px;width:34px;text-align:right',
+    }, String(f.standing)));
+
+    const slider = el('input', {
+      type: 'range', min: '-10', max: '10', step: '1',
+      value: String(f.standing),
+      'aria-label': `${f.name} standing`, style: 'width:130px',
+    });
+    // change, not input: one logged shift per settled drag, not forty.
+    slider.addEventListener('change', async () => {
+      f.standing = Number(slider.value);
+      await saveCampaign(campaign);
+      await log('faction_standing',
+        { factionId: f.id, name: f.name, value: f.standing, day: campaign.day },
+        { campaignId: campaign.id });
+      draw();
+    });
+    top.append(slider);
+
+    top.append(el('button', {
+      class: `act ${f.public ? '' : 'ghost'} small`,
+      title: 'Whether players see this faction and its standing at all',
+      onClick: async () => {
+        f.public = !f.public;
+        await saveCampaign(campaign);
+        draw();
+      },
+    }, f.public ? 'Public' : 'Unknown'));
+    top.append(el('button', {
+      class: 'act ghost small',
+      onClick: async () => {
+        campaign.factions = campaign.factions.filter((x) => x.id !== f.id);
+        await saveCampaign(campaign);
+        draw();
+      },
+    }, 'x'));
+    row.append(top);
+
+    const agenda = el('textarea', {
+      placeholder: 'Their agenda - what they are actually doing...',
+      'aria-label': `${f.name} agenda`,
+      style: 'min-height:44px;font-size:13px;margin-top:6px',
+    });
+    agenda.value = f.agenda || '';
+    agenda.addEventListener('change', async () => {
+      f.agenda = agenda.value;
+      await saveCampaign(campaign);
+    });
+    row.append(agenda);
+    row.append(el('div', { class: 'welcome-fine' },
+      'SECRET - the server never sends agendas to a player.'));
+    panel.append(row);
+  }
+
+  const name = el('input', {
+    type: 'text', placeholder: 'New faction name...',
+    'aria-label': 'New faction name', style: 'max-width:200px',
+  });
+  const add = el('div', { class: 'btnrow', style: 'margin-top:10px' });
+  add.append(name);
+  add.append(el('button', {
+    class: 'act ghost small',
+    onClick: async () => {
+      const n = name.value.trim();
+      if (!n) return toast('Name the faction first', 'warn');
+      campaign.factions.push(newFaction(n, campaign.factions.length));
+      await saveCampaign(campaign);
+      name.value = '';
+      draw();
+      return null;
+    },
+  }, 'Add faction'));
+  panel.append(add);
+
+  if (campaign.factions.length) {
+    panel.append(el('div', { class: 'eyebrow', style: 'margin:12px 0 4px' },
+      'Standing over the days'));
+    const canvas = el('canvas', { 'aria-label': 'Faction standings over time' });
+    panel.append(canvas);
+    drawStandingsChart(canvas);
+  }
+  return panel;
+}
+
+async function drawStandingsChart(canvas) {
+  const events = await query({ campaignId: campaign.id, type: 'faction_standing' });
+  const byFaction = new Map();
+  for (const ev of events) {
+    const id = ev.payload?.factionId;
+    if (!id) continue;
+    if (!byFaction.has(id)) byFaction.set(id, []);
+    byFaction.get(id).push({ x: ev.payload.day ?? 0, y: ev.payload.value ?? 0 });
+  }
+  const series = [];
+  for (const f of campaign.factions) {
+    const points = byFaction.get(f.id) || [];
+    // Today's reading is always on the chart, logged or not.
+    points.push({ x: campaign.day, y: f.standing });
+    series.push({ label: f.name, colour: f.colour, points });
+  }
+  if (series.length) {
+    lineChart(canvas, { series, yMin: -10, yMax: 10, refY: 0 });
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* economy - the price dials                                           */
+/* ------------------------------------------------------------------ */
+
+function economyPanel() {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Economy'));
+
+  if (!campaign.regions.length) {
+    panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
+      'Each region has a price dial. Where the party stands is what their '
+      + 'Market charges - turn it and their open screens re-price.'));
+    return panel;
+  }
+
+  for (const region of campaign.regions) {
+    const row = el('div', {
+      style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;'
+        + 'padding:7px 0;border-bottom:1px solid var(--etch)',
+    });
+    row.append(el('strong', { style: 'flex:1;min-width:100px' }, region.name));
+    const label = el('span', {
+      class: 'mono', style: 'font-size:12px;width:48px',
+    }, `x${Number(region.priceMod || 1).toFixed(2)}`);
+    const dial = el('input', {
+      type: 'range', min: '0.5', max: '2', step: '0.05',
+      value: String(region.priceMod || 1),
+      'aria-label': `${region.name} price dial`, style: 'width:130px',
+    });
+    dial.addEventListener('input', () => {
+      label.textContent = `x${Number(dial.value).toFixed(2)}`;
+    });
+    dial.addEventListener('change', async () => {
+      region.priceMod = Number(dial.value);
+      await saveCampaign(campaign);
+      draw();
+    });
+    row.append(dial, label);
+    if (campaign.currentRegionId === region.id) {
+      row.append(el('span', { class: 'chip accent' }, 'the party pays this'));
+    }
+    panel.append(row);
+  }
+
+  panel.append(el('div', { class: 'eyebrow', style: 'margin:12px 0 4px' },
+    'Coin spent, by day'));
+  const canvas = el('canvas', { 'aria-label': 'Party spending over time' });
+  panel.append(canvas);
+  drawSpendChart(canvas);
+
+  panel.append(el('p', { class: 'welcome-fine', style: 'margin-top:6px' },
+    'The dial cuts both ways - cheap regions buy cheap AND sell cheap. '
+    + 'Hauling goods between your dials is caravan gameplay, not a bug.'));
+  return panel;
+}
+
+async function drawSpendChart(canvas) {
+  const events = await query({ type: 'purchase' });
+  const byDay = new Map();
+  for (const ev of events) {
+    // Purchases predate the calendar; bucket the dateless under day 0.
+    const day = ev.payload?.day ?? 0;
+    byDay.set(day, (byDay.get(day) || 0) + (Number(ev.payload?.priceCp) || 0));
+  }
+  const points = [...byDay.entries()]
+    .map(([x, y]) => ({ x, y: Math.round(y / 100) }));
+  if (!points.length) points.push({ x: campaign.day, y: 0 });
+  lineChart(canvas, {
+    series: [{ label: 'gp spent', colour: '--gold', points }],
+    yMin: 0,
+  });
 }
 
 /* ------------------------------------------------------------------ */

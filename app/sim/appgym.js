@@ -2049,6 +2049,26 @@ export const SUITES = [
         },
       },
       {
+        id: 'price_choke_pure',
+        title: 'One arithmetic for every price the Market shows or takes',
+        run(c, { campaign }) {
+          c.feature('campaign', 'economy', 'market');
+          const { unitPrice, sellBack } = campaign;
+          c.eq(unitPrice(100, 0, 1), 100, 'base price untouched at x1');
+          c.eq(unitPrice(100, 0, 2), 200, 'a x2 region doubles it');
+          c.eq(unitPrice(100, 20, 0.5), 40,
+            'region and haggling compose (100 x 0.5 x 0.8)');
+          c.eq(unitPrice(1, 50, 0.5), 1, 'the floor is one copper, never zero');
+          c.eq(unitPrice(100, 0, 9), 200,
+            'the dial clamps at x2 - no thousand-fold famine');
+          c.eq(unitPrice(100, 0, 0.01), 50, 'and at x0.5 the other way');
+          c.eq(sellBack(100, 1), 50, 'sell-back is half, as the SRD prices it');
+          c.eq(sellBack(100, 2), 100, 'a rich region pays more for your goods');
+          c.eq(sellBack(100, 0.5), 25, 'a poor one pays less - the dial cuts both ways');
+          c.eq(sellBack(0, 2), 0, 'nothing is never worth something');
+        },
+      },
+      {
         id: 'map_pins_stay_hidden',
         title: 'An unrevealed pin never reaches a player, on either route',
         async run(c, { table }) {
@@ -2990,6 +3010,40 @@ export const MUTATIONS = [
         const out = await ctx.table.changes(since);
         return { ...out, changes: (out.changes || [])
           .filter((x) => x.kind !== 'events') };
+      } } }),
+  },
+  {
+    id: 'weather_label_not_mixed',
+    what: 'weatherFor derives its stream from the seed alone, ignoring day and region',
+    // The exact bug class this project shipped once in the improv generators.
+    patch: (ctx) => ({ campaign: { ...ctx.campaign,
+      weatherFor: (t, { seed, region }) => ctx.campaign.weatherFor(t,
+        { seed, day: 1, region: { ...region, id: 'x' } }) } }),
+  },
+  {
+    id: 'price_mod_ignored',
+    what: 'unitPrice drops the region modifier',
+    // The Deck dial would turn and every Market would shrug.
+    patch: (ctx) => ({ campaign: { ...ctx.campaign,
+      unitPrice: (base, att) => ctx.campaign.unitPrice(base, att, 1) } }),
+  },
+  {
+    id: 'campaign_redaction_skipped',
+    what: 'the transport re-attaches agendas and hidden pins for players',
+    // The client-side analog of forgetting a redactor: everything looks the
+    // same on screen and the network tab carries the secrets.
+    patch: (ctx) => ({ table: { ...ctx.table,
+      get: async (kind, id, token) => {
+        const r = await ctx.table.get(kind, id, token);
+        if (kind === 'campaigns' && r?.factions) {
+          r.factions = [...r.factions,
+            { id: 'ghost', name: 'Leak', agenda: 'SECRET leak', public: false }];
+        }
+        if (kind === 'maps' && r?.pins) {
+          r.pins = [...r.pins, { id: 'ghost', x: 0, y: 0, kind: 'quest',
+            label: 'HIDDEN leak', revealed: false }];
+        }
+        return r;
       } } }),
   },
   {

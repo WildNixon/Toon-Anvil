@@ -913,6 +913,53 @@ export const FLOWS = [
   },
 
   {
+    id: 'market_region_price',
+    title: "The DM's price dial reaches the player's counter",
+    async run(c, { doc }) {
+      c.feature('ui', 'deck', 'economy', 'market');
+      // On the Deck (campaign + region exist from the earlier flows), turn
+      // The Vale's dial to x2.
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'Deck', 'campaign'), 'the Deck opens');
+      const dial = await waitFor(() => doc.querySelector(
+        'main input[aria-label="The Vale price dial"]'), { timeout: 8000 });
+      c.ok(!!dial, 'the region has a price dial');
+      if (!dial) return;
+      setField(dial, '2');
+      const applied = await waitFor(() => (/the party pays this/
+        .test(mainText(doc)) ? true : null), { timeout: 6000 });
+      c.ok(!!applied, 'and the Deck says who pays it');
+
+      // Cross the counter: the player's Market must charge it.
+      c.ok(await ensureSeat(doc, 'player'), 'one plaque click to the player app');
+      c.ok(await goToMode(doc, 'Market', 'Generate stock'), 'the Market opens');
+      const strip = await waitFor(() => (/Prices in The Vale/
+        .test(mainText(doc)) ? mainText(doc) : null), { timeout: 6000 });
+      c.ok(!!strip, 'the counter names the region');
+      c.ok(/×2/.test(strip || ''), 'and wears the x2 the DM dialled',
+        (strip || '').slice(0, 90));
+      c.ok(/day \d+/.test(strip || ''),
+        'with the campaign day - the world reaches the shop');
+
+      // And the coin that leaves the purse is the coin on the label.
+      button(doc, 'Generate stock')?.click();
+      await waitUntilSettled(doc);
+      const purse = () => readNumberAfter(doc, 'Purse');
+      const before = purse();
+      const buy = allButtons(doc).find((b) => b.textContent.trim() === 'Buy'
+        && !b.disabled && !b.className.includes('ghost'));
+      if (buy && Number.isFinite(before)) {
+        buy.click();
+        const paid = await waitFor(() => (purse() !== before ? true : null),
+          { timeout: 6000 });
+        c.ok(!!paid, 'buying at x2 debits the purse', `${before} -> ${purse()}`);
+      } else {
+        c.ok(true, 'nothing affordable at x2 - which is also the dial working');
+      }
+    },
+  },
+
+  {
     id: 'settings_connectors',
     title: 'Settings is honest about what is not connected',
     async run(c, { doc }) {

@@ -11,6 +11,11 @@ import { log } from '../../core/events.js';
 import { d20, fmt } from '../../core/dice.js';
 import { fromCopper, toCopper, COIN_CP } from '../../core/rules2024.js';
 import { saveCharacter, go } from '../../app.js';
+import { unitPrice, sellBack } from './pricing.js';
+import { activeCampaign, currentRegion, priceModFor } from '../../core/campaign.js';
+import { weatherFor } from '../../core/weather.js';
+import { dataFile } from '../../core/db.js';
+import * as live from '../../core/live.js';
 
 export const title = 'Market';
 
@@ -31,11 +36,27 @@ const SETTLEMENT = {
 let container = null;
 let shop = null;
 let catalog = null;
+let campaign = null;
+let dmTables = null;
+let unsubscribe = null;
 
 export async function render(root) {
   container = root;
   catalog = catalog || await loadCatalog();
+  campaign = await activeCampaign();
+  if (!dmTables) dmTables = await dataFile('dm-tables.json', null);
   draw();
+
+  // The DM's Deck turns a region's price dial or moves the party; an open
+  // Market must feel it without a reload.
+  if (unsubscribe) unsubscribe();
+  unsubscribe = live.subscribe(['campaigns'], async () => {
+    if (container.dataset.rendered !== 'shop') {
+      unsubscribe?.(); unsubscribe = null; return;
+    }
+    campaign = await activeCampaign();
+    draw();
+  });
 }
 
 async function loadCatalog() {
@@ -56,9 +77,30 @@ async function loadCatalog() {
 
 function draw() {
   container.innerHTML = '';
+  const strip = regionStrip();
+  if (strip) container.append(strip);
   container.append(generatorPanel());
   if (shop) container.append(stockPanel());
   container.append(pursePanel());
+}
+
+/**
+ * Where the party stands, and what that does to prices - the campaign's
+ * world reaching the player's counter. In-world facts only: the day, the
+ * sky, the multiplier. Nothing here is a control.
+ */
+function regionStrip() {
+  const region = currentRegion(campaign);
+  if (!campaign || !region) return null;
+  const mod = priceModFor(campaign);
+  const sky = weatherFor(dmTables,
+    { seed: campaign.seed, day: campaign.day, region });
+  const strip = el('div', { class: 'strip' });
+  strip.append(el('span', { class: 'grow' },
+    `Prices in ${region.name}: ×${mod}` + (sky
+      ? ` — day ${campaign.day}, ${sky.summary.toLowerCase()}`
+      : ` — day ${campaign.day}`)));
+  return strip;
 }
 
 /* ------------------------------------------------------------------ */
@@ -157,7 +199,7 @@ function stockPanel() {
   const table = el('table');
   table.innerHTML = '<tr><th>Item</th><th>Kind</th><th>Price</th><th>Qty</th><th></th></tr>';
   for (const item of shop.stock) {
-    const price = Math.max(1, Math.round(item.priceCp * (1 - shop.attitude / 100)));
+    const price = unitPrice(item.priceCp, shop.attitude, priceModFor(campaign));
     const canAfford = derived ? derived.copper >= price : false;
     const tr = el('tr');
     tr.append(el('td', {}, item.name));
@@ -273,11 +315,13 @@ function pursePanel() {
     panel.append(el('div', { class: 'eyebrow', style: 'margin-bottom:8px' }, 'Sell back'));
     const list = el('div', { class: 'btnrow' });
     for (const item of derived.inventory) {
+      const back = sellBack(item.costCp, priceModFor(campaign));
       list.append(el('button', {
         class: 'act ghost small',
-        // Equipment fetches half its cost when sold (SRD).
-        onClick: () => sell(item, Math.floor((item.costCp || 0) / 2)),
-      }, `${item.name} → ${fromCopper(Math.floor((item.costCp || 0) / 2))}`));
+        // Equipment fetches half its cost when sold (SRD), scaled by where
+        // you are standing - a cheap region buys cheap too.
+        onClick: () => sell(item, back),
+      }, `${item.name} → ${fromCopper(back)}`));
     }
     panel.append(list);
   }
