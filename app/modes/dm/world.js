@@ -287,17 +287,80 @@ function bestiaryPanel() {
   const panel = el('div', { class: 'panel rivets' });
   panel.append(el('span', { class: 'lvl' }, 'Bestiary'));
   const box_ = el('input', {
-    type: 'text', placeholder: 'Look up a monster...', value: searches.bestiary,
+    type: 'text', placeholder: 'Look up a monster, a type, or "cr 5"...',
+    value: searches.bestiary,
     onInput: (e) => { searches.bestiary = e.target.value; renderOut(); },
   });
   panel.append(box_);
   const out = el('div', { style: 'margin-top:14px' });
   panel.append(out);
 
+  // Browse rows, not statblocks: 330 statblocks is fifteen thousand DOM
+  // nodes; 30 rows with an Open button is a page.
+  const browseRow = (m) => {
+    const row = el('div', {
+      style: 'display:flex;gap:10px;align-items:center;padding:5px 0;'
+        + 'border-bottom:1px solid var(--etch)',
+    });
+    row.append(el('span', { style: 'flex:1' }, m.name));
+    row.append(el('span', { class: 'mono muted', style: 'font-size:12px' },
+      `${m.size} ${m.type} · CR ${m.crText} · AC ${m.ac} · ${m.hp} HP`));
+    row.append(el('button', {
+      class: 'act ghost small',
+      onClick: () => {
+        searches.bestiary = m.name;
+        box_.value = m.name;
+        renderOut();
+      },
+    }, 'Open'));
+    return row;
+  };
+
   function renderOut() {
     out.innerHTML = '';
     const q = searches.bestiary.trim().toLowerCase();
-    if (q.length < 2) return;
+
+    // Empty search used to render NOTHING - "the bestiary starts empty"
+    // was on the README's limitation list. Browse by default instead.
+    if (q.length < 2) {
+      const sorted = [...ctx.monsters]
+        .sort((a, b) => (a.cr - b.cr) || a.name.localeCompare(b.name));
+      out.append(el('p', { class: 'mono muted', style: 'font-size:12px' },
+        `Showing 30 of ${ctx.monsters.length} — type to narrow, or tap a CR.`));
+      const chips = el('div', { class: 'btnrow', style: 'margin:6px 0 8px' });
+      for (const cr of ['0', '1/2', '1', '2', '5', '10', '15']) {
+        chips.append(el('button', {
+          class: 'act ghost small',
+          onClick: () => {
+            searches.bestiary = `cr ${cr}`;
+            box_.value = searches.bestiary;
+            renderOut();
+          },
+        }, `CR ${cr}`));
+      }
+      out.append(chips);
+      for (const m of sorted.slice(0, 30)) out.append(browseRow(m));
+      return;
+    }
+
+    // "cr 5" browses that challenge rating - same syntax the encounter
+    // picker honours.
+    const crMatch = /^cr\s*([\d/.]+)$/.exec(q);
+    if (crMatch) {
+      const [a, b] = crMatch[1].split('/');
+      const want = b ? Number(a) / Number(b) : parseFloat(crMatch[1]);
+      const list = ctx.monsters.filter((m) => m.cr === want)
+        .sort((x, y) => x.name.localeCompare(y.name));
+      if (!list.length) {
+        out.append(el('p', { class: 'muted' }, 'No match.'));
+        return;
+      }
+      out.append(el('p', { class: 'mono muted', style: 'font-size:12px' },
+        `${list.length} at CR ${crMatch[1]}.`));
+      for (const m of list.slice(0, 30)) out.append(browseRow(m));
+      return;
+    }
+
     const m = ctx.monsters.find((x) => x.name.toLowerCase() === q)
       || ctx.monsters.find((x) => x.name.toLowerCase().includes(q));
     if (!m) { out.append(el('p', { class: 'muted' }, 'No match.')); return; }

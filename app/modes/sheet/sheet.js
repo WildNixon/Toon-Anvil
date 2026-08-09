@@ -110,6 +110,13 @@ function vitalsPanel(d) {
 
   add('AC', d.ac, d.acSource);
   add('HP', `${d.hp.current}${d.hp.temp ? `+${d.hp.temp}` : ''}`, `of ${d.hp.max}`);
+  if (!d.hp.derived) {
+    // The maximum in force is a table's rolled number, not the rules' -
+    // said out loud, since every other figure on this screen is derived.
+    const last = stats.lastElementChild;
+    last?.append(el('span', { class: 'chip accent', style: 'margin-top:4px' },
+      'rolled'));
+  }
   add('Initiative', sign(d.initiative), 'click to roll', () => {
     const r = d20({ mod: d.initiative });
     log('initiative', { total: r.total, nat: r.nat });
@@ -140,6 +147,52 @@ function vitalsPanel(d) {
     class: 'act dark', onClick: () => rest('long'),
   }, 'Long rest'));
   panel.append(hpRow);
+
+  // Rolled maximums. hp.override wins inside derive when set; clearing it
+  // hands the maximum back to the 2024 fixed-value rule. This row sits
+  // BELOW Adjust HP on purpose: the gym (and muscle memory) reach for the
+  // first number input on this screen as the damage amount.
+  const maxRow = el('div', {
+    class: 'btnrow', style: 'margin-top:8px;align-items:center',
+  });
+  maxRow.append(el('span', { class: 'eyebrow' }, 'Max HP'));
+  const maxIn = el('input', {
+    type: 'number', min: '1', placeholder: String(d.hp.max),
+    'aria-label': 'Max HP override', style: 'width:70px',
+  });
+  maxRow.append(maxIn);
+  maxRow.append(el('button', {
+    class: 'act ghost',
+    title: 'Your table rolled hit points - use that number as the maximum',
+    onClick: async () => {
+      const v = Math.max(1, Math.floor(Number(maxIn.value)));
+      if (!Number.isFinite(v) || !maxIn.value) {
+        return toast('Type the rolled maximum first', 'warn');
+      }
+      await saveCharacter((c) => {
+        c.hp = { ...(c.hp || {}), override: v };
+        return c;
+      });
+      toast(`Maximum HP is ${v} now - the rules step aside`, 'ok');
+      draw();
+      return null;
+    },
+  }, 'Use rolled maximum'));
+  if (!d.hp.derived) {
+    maxRow.append(el('button', {
+      class: 'act ghost',
+      title: 'Drop the override; the fixed-value rule derives the maximum again',
+      onClick: async () => {
+        await saveCharacter((c) => {
+          if (c.hp) delete c.hp.override;
+          return c;
+        });
+        toast('Back to the rules - maximum HP derives again', 'ok');
+        draw();
+      },
+    }, 'Back to the rules'));
+  }
+  panel.append(maxRow);
 
   // Conditions
   const condRow = el('div', { style: 'margin-top:14px' });

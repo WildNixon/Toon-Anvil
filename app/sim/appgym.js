@@ -207,6 +207,34 @@ export const SUITES = [
         },
       },
       {
+        id: 'hp_override',
+        title: 'A rolled maximum wins, says so, and steps aside cleanly',
+        run(c, { sources }) {
+          c.feature('derive', 'hp', 'hp-override');
+          const base = {
+            classes: [{ class: 'fighter', level: 5, subclass: null }],
+            abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+          };
+          const d0 = derive(makeChar(base), sources);
+          c.eq(d0.hp.max, 34, 'the rules derive 34');
+          c.ok(d0.hp.derived, 'and say the number is theirs');
+
+          const d1 = derive(makeChar({ ...base, hp: { override: 60 } }), sources);
+          c.eq(d1.hp.max, 60, 'an override of 60 wins');
+          c.ok(!d1.hp.derived, 'and is flagged as not derived');
+
+          const d2 = derive(makeChar({ ...base,
+            hp: { override: 60, current: 50 } }), sources);
+          c.eq(d2.hp.current, 50, 'current rides within the rolled maximum');
+
+          const d3 = derive(makeChar({ ...base, hp: { current: 50 } }), sources);
+          c.eq(d3.hp.current, 34, 'cleared, current clamps back to the rules');
+
+          const d4 = derive(makeChar({ ...base, hp: { override: -5 } }), sources);
+          c.eq(d4.hp.max, 1, 'a nonsense override still floors at one');
+        },
+      },
+      {
         id: 'multiclass',
         title: 'Multiclassing sums levels without double-counting first-level HP',
         run(c, { sources }) {
@@ -3068,7 +3096,8 @@ export const BARS = {
   // And again (38 -> 40) with the shelf and its book detector.
   // And again (40 -> 42) with setup-from-the-shelf and the forecast.
   // And again (42 -> 43) with starting equipment.
-  minFeaturesCovered: 43,
+  // And again (43 -> 45) with HP overrides and the browsable bestiary.
+  minFeaturesCovered: 45,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.

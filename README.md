@@ -108,11 +108,13 @@ reports each one where it matters.
    Where this happens, "plays most like" says the subclasses can't be separated
    instead of inventing a resemblance. This is a ceiling of text-mapped
    simulation, not something a bug fix removes.
-6. **Hit points can't be rolled in the UI.** Max HP is derived using the 2024
-   fixed-value rule. `hp.override` in the character JSON wins if your table
-   rolls, but there's no field for it yet.
-7. **The bestiary starts empty.** It's search-driven — type a monster name.
-   All 330 are there; none are listed until you ask.
+6. **Rolled hit points have a field.** Max HP derives by the 2024
+   fixed-value rule; Play → Max HP takes your table's rolled number
+   instead, marks the tile *rolled*, and "Back to the rules" hands the
+   maximum back to the derivation.
+7. **The bestiary browses by default.** Open it and the first thirty of
+   330 are listed by challenge rating, with CR chips to narrow and an Open
+   button per row; typing still finds by name, type, or "cr 5".
 8. **Custom monsters, items and spells parse; the classifier is the weak
    link.** The statblock parser round-trips all 330 bundled monsters exactly —
    AC, HP, CR, every ability score, every action. What is unreliable is

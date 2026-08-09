@@ -385,6 +385,45 @@ export const FLOWS = [
   },
 
   {
+    id: 'play_hp_override',
+    title: 'A table that rolls hit points can say so on the sheet',
+    async run(c, { doc }) {
+      c.feature('ui', 'play', 'hp-override');
+      c.ok(await goToMode(doc, 'Play', (d = doc) => /Adjust HP/.test(mainText(d))),
+        'Play opens');
+      const maxOf = () => {
+        const m = /HP\s*\d+(?:\+\d+)?\s*of\s*(\d+)/
+          .exec(mainText(doc).replace(/\s+/g, ' '));
+        return m ? Number(m[1]) : null;
+      };
+      const before = await waitFor(() => maxOf());
+      c.ok(Number.isFinite(before), 'the tile shows a maximum', String(before));
+      if (!Number.isFinite(before)) return;
+
+      const inp = doc.querySelector('main input[aria-label="Max HP override"]');
+      c.ok(!!inp, 'the Max HP row is there');
+      if (!inp) return;
+      setField(inp, String(before + 6));
+      button(doc, 'Use rolled maximum')?.click();
+      const rolled = await waitFor(() => (maxOf() === before + 6 ? true : null),
+        { timeout: 6000 });
+      c.ok(!!rolled, 'the rolled maximum takes over', `${before} -> ${maxOf()}`);
+      // The chip, not the button label - 'Use rolled maximum' contains
+      // 'rolled' too, which would make a page-text check vacuous.
+      c.ok([...doc.querySelectorAll('main .stat .chip')]
+        .some((x) => x.textContent === 'rolled'),
+      "and the HP tile wears a 'rolled' chip");
+
+      button(doc, 'Back to the rules')?.click();
+      const backTo = await waitFor(() => (maxOf() === before ? true : null),
+        { timeout: 6000 });
+      c.ok(!!backTo, 'clearing hands the maximum back to the rules');
+      c.ok(![...doc.querySelectorAll('main .stat .chip')]
+        .some((x) => x.textContent === 'rolled'), 'chip and all');
+    },
+  },
+
+  {
     id: 'levelling_keeps_you_whole',
     title: 'Levelling up raises HP without leaving you wounded',
     async run(c, { doc }) {
@@ -888,19 +927,41 @@ export const FLOWS = [
 
   {
     id: 'dm_bestiary',
-    title: 'The bestiary finds a monster',
+    title: 'The bestiary browses by default and still finds by name',
     async run(c, { doc }) {
-      c.feature('ui', 'dm', 'bestiary');
+      c.feature('ui', 'dm', 'bestiary', 'browse');
       c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
       c.ok(await goToMode(doc, 'World', 'Encounter builder'), 'World opens');
       button(doc, 'Bestiary')?.click();
       await waitUntilSettled(doc);
       const search = await waitFor(() => doc.querySelector('main input[type=text]'));
       c.ok(!!search, 'the bestiary offers a search field');
+
+      // Empty query: a browse list, not a blank page - and rows, not
+      // statblocks (/Speed \d/ is a statblock-only marker here).
+      const listed = await waitFor(() => (/Showing 30 of \d+/
+        .test(mainText(doc)) ? true : null), { timeout: 6000 });
+      c.ok(!!listed, 'an empty search shows the first thirty');
+      c.ok(!/Speed\s*\d/.test(mainText(doc)),
+        'as rows, not three hundred statblocks');
+
+      button(doc, 'CR 5')?.click();
+      const cr5 = await waitFor(() => (/at CR 5/.test(mainText(doc))
+        ? true : null), { timeout: 6000 });
+      c.ok(!!cr5, 'a CR chip narrows the browse');
+
+      const open = allButtons(doc).find((b) => b.textContent.trim() === 'Open');
+      c.ok(!!open, 'each row can be opened');
+      open?.click();
+      const opened = await waitFor(() => (/Speed\s*\d/.test(mainText(doc))
+        ? true : null), { timeout: 6000 });
+      c.ok(!!opened, 'opening a row lands a statblock');
+
       setField(search, 'goblin');
-      const found = await waitFor(() => (/AC\s*\d+/.test(mainText(doc))
-        ? mainText(doc) : null), { timeout: 6000 });
-      c.ok(!!found, 'searching returns a statblock');
+      const found = await waitFor(() => (/Goblin/.test(mainText(doc))
+        && /Speed\s*\d/.test(mainText(doc)) ? mainText(doc) : null),
+      { timeout: 6000 });
+      c.ok(!!found, 'searching still finds by name');
       if (found) {
         c.ok(/HP\s*\d+/.test(found), 'the statblock shows hit points');
         c.ok(/CR/i.test(found), 'the statblock shows a challenge rating');
