@@ -1304,20 +1304,35 @@ export async function runPlayerView(CheckClass) {
     if (!ready) throw new Error('the player client never became interactive');
 
     // --- the nav is a player's nav ---------------------------------------
-    const navLabels = [...doc.querySelectorAll('#modes button')]
+    const navLabels = () => [...doc.querySelectorAll('#modes button')]
       .map((b) => b.textContent.trim());
-    check.ok(navLabels.includes('Table'),
-      'the shared table is in the nav', navLabels.join(', '));
-    check.ok(!navLabels.includes('DM'),
-      'the DM screen is not', navLabels.join(', '));
-    check.ok(!navLabels.includes('Homebrew'),
+    check.ok(navLabels().includes('Party'),
+      'the shared party screen is in the nav', navLabels().join(', '));
+    check.ok(!navLabels().includes('DM'),
+      'the DM screen is not', navLabels().join(', '));
+    check.ok(!navLabels().includes('Homebrew'),
       'and neither is the homebrew analyser');
-    check.ok(navLabels.includes('Play') && navLabels.includes('Build'),
-      'but their own sheet still is - a player owns their character fully');
+    check.ok(!navLabels().includes('Combat'),
+      'nor the solo tracker - the DM\'s runner is the fight');
+    check.ok(navLabels().includes('Play'),
+      'their own sheet is - a player owns their character fully');
+    check.ok(navLabels().includes('Build'),
+      'and Build is offered because the forge is open on a fresh table');
+
+    // The forge closing must take Build away while they watch.
+    await fetch('/api/table/forge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Toon-Token': dmToken },
+      body: JSON.stringify({ open: false }),
+    });
+    const buildGone = await waitFor(() => (!navLabels().includes('Build')
+      ? true : null), { timeout: 8000 });
+    check.ok(!!buildGone, 'closing the forge removes Build without a reload',
+      navLabels().join(', '));
 
     // --- the fight ---------------------------------------------------------
-    check.ok(await goToMode(doc, 'Table', (d = doc) => /Gym Ogre/.test(mainText(d))),
-      'the Table screen shows the fight the DM is running');
+    check.ok(await goToMode(doc, 'Party', (d = doc) => /Gym Ogre/.test(mainText(d))),
+      'the Party screen shows the fight the DM is running');
     const text = mainText(doc);
     check.ok(/Round 3/.test(text), 'including the round', text.slice(0, 120));
     check.ok(/Gym Ogre/.test(text), 'and the monster by name');

@@ -31,6 +31,9 @@ const MODES = [
   { id: 'build',     label: 'Build',     group: 'Your Hero', ribbon: true,
     load: () => import('./modes/build/build.js') },
   { id: 'combat',    label: 'Combat',    group: 'Adventure', ribbon: true,
+    // The solo tracker. At a table the DM's runner IS the fight; a second,
+    // unsynced initiative list is clutter that disagrees with the real one.
+    soloOnly: true,
     load: () => import('./modes/combat/combat.js') },
   { id: 'rp',        label: 'Roleplay',  group: 'Adventure', ribbon: true,
     load: () => import('./modes/rp/rp.js') },
@@ -38,7 +41,7 @@ const MODES = [
     load: () => import('./modes/shop/shop.js') },
   { id: 'chronicle', label: 'Chronicle', group: 'Adventure', ribbon: true,
     load: () => import('./modes/chronicle/chronicle.js') },
-  { id: 'table',     label: 'Table',     group: 'Table', tableOnly: true, ribbon: true,
+  { id: 'table',     label: 'Party',     group: 'Adventure', tableOnly: true, ribbon: true,
     load: () => import('./modes/table/table.js') },
   { id: 'dm',        label: 'DM',        group: 'Dungeon Master', dmOnly: true,
     load: () => import('./modes/dm/dm.js') },
@@ -51,11 +54,12 @@ const MODES = [
 
 /** Which modes belong in the nav for whoever is using this browser. */
 function visibleModes() {
-  return MODES.filter((m) => {
-    if (m.dmOnly && !session.isDm()) return false;
-    if (m.tableOnly && !session.isOpen()) return false;
-    return true;
-  });
+  return session.navFor({
+    tableOpen: session.isOpen(),
+    seat: session.isDm() ? 'dm' : 'player',
+    forgeOpen: session.forgeOpen(),
+    hasGrant: session.hasAnyGrant(),
+  }, MODES);
 }
 
 /* ------------------------------------------------------------------ */
@@ -118,7 +122,16 @@ export async function saveCharacter(patch) {
   // new maximum - a level 5 fighter reading 10 of 34 and looking wounded when
   // it has never been hit.
   const next = reconcileHp(edited);
-  await db.put('characters', next);
+  try {
+    await db.put('characters', next);
+  } catch (err) {
+    // The server said no - the level gate, a frozen field, somebody else's
+    // sheet. Its reason is written for a person; show it and keep the
+    // stored state untouched rather than pretending the save happened.
+    const { toast } = await import('./core/store.js');
+    toast(String(err.message || err), 'bad');
+    return character;
+  }
   setState({ character: next });
   recompute();
   const list = await db.list('characters');
@@ -367,6 +380,10 @@ async function watchTheTable() {
       await session.refresh();
       renderNav();
       if (!visibleModes().some((m) => m.id === getState().mode)) await renderMode();
+      // A table change can be a grant or the forge - the sheet's banner and
+      // Build's locks read them, so the visible mode repaints. Rare events;
+      // nothing worth protecting is typed on those screens.
+      else if (['sheet', 'build'].includes(getState().mode)) await renderMode();
     }
 
     if (touchedMe && mine) {

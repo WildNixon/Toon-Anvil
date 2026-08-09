@@ -1980,6 +1980,53 @@ export const SUITES = [
         },
       },
       {
+        id: 'nav_truth_table',
+        title: 'Who sees which screens, as one pure rule',
+        run(c, { session }) {
+          c.feature('seat', 'nav', 'grants');
+          // A miniature MODES table carrying every flag the rule reads.
+          const MODES = [
+            { id: 'sheet' }, { id: 'build' },
+            { id: 'combat', soloOnly: true },
+            { id: 'shop' },
+            { id: 'table', tableOnly: true },
+            { id: 'dm', dmOnly: true },
+            { id: 'settings', gear: true },
+          ];
+          const ids = (args) => session.navFor(args, MODES).map((m) => m.id);
+
+          c.eq(ids({ tableOpen: true, seat: 'dm' }).join(','), 'dm,settings',
+            'the DM at a table gets the lenses and the gear, nothing else');
+
+          const player = ids({ tableOpen: true, seat: 'player',
+            forgeOpen: false, hasGrant: false });
+          c.ok(!player.includes('combat'),
+            'the solo tracker is hidden at a table');
+          c.ok(!player.includes('build'),
+            'Build is hidden with the forge closed and no grant');
+          c.ok(!player.includes('dm'), 'the DM screen stays the DM\'s');
+          c.ok(player.includes('table') && player.includes('sheet')
+            && player.includes('shop'), 'Play, Party and the Market remain');
+
+          c.ok(ids({ tableOpen: true, seat: 'player',
+            forgeOpen: true, hasGrant: false }).includes('build'),
+          'the forge opening reveals Build');
+          c.ok(ids({ tableOpen: true, seat: 'player',
+            forgeOpen: false, hasGrant: true }).includes('build'),
+          'and so does a waiting grant');
+
+          // Solo is untouched for both seats - the regression that matters.
+          const soloDm = ids({ tableOpen: false, seat: 'dm',
+            forgeOpen: false, hasGrant: false });
+          c.eq(soloDm.join(','), 'sheet,build,combat,shop,dm,settings',
+            'solo DM seat keeps every tool');
+          const soloPlayer = ids({ tableOpen: false, seat: 'player',
+            forgeOpen: false, hasGrant: false });
+          c.eq(soloPlayer.join(','), 'sheet,build,combat,shop,settings',
+            'solo player seat keeps Build and Combat - no DM to gate them');
+        },
+      },
+      {
         id: 'seat_persists_on_this_device',
         title: 'The chosen seat is remembered, and clearable',
         run(c, { session }) {

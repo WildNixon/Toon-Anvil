@@ -127,6 +127,70 @@ export function isPlayer() { return !isDm(); }
 /** No table, no chosen seat: the first-run welcome should ask. */
 export function needsSeat() { return !isOpen() && !localRole(); }
 
+/* ------------------------------------------------------------------ */
+/* the forge and the grants                                            */
+/* ------------------------------------------------------------------ */
+
+/** Is character building open? Meaningless (false) with no table. */
+export function forgeOpen() { return Boolean(cached?.forgeOpen); }
+
+/** Grants visible to THIS browser - the server already scoped them. */
+export function grants() { return cached?.grants || {}; }
+
+/** The level this character may reach, or null. */
+export function myGrant(characterId) {
+  const g = grants()[characterId];
+  return g === undefined ? null : g;
+}
+
+/** Does any character this profile owns hold a grant? Drives the nav. */
+export function hasAnyGrant() {
+  const ids = cached?.me?.characterIds || [];
+  return ids.some((id) => id in grants());
+}
+
+/** DM only - the server refuses anyone else. */
+export async function setForge(open) {
+  const out = await api('/api/table/forge', {
+    method: 'POST', body: JSON.stringify({ open }),
+  });
+  await refresh();
+  return out;
+}
+
+/** DM only. characterId 'party' grants every player's character at once. */
+export async function grant({ characterId, toLevel = null, revoke = false }) {
+  const out = await api('/api/table/grant', {
+    method: 'POST', body: JSON.stringify({ characterId, toLevel, revoke }),
+  });
+  await refresh();
+  return out;
+}
+
+/**
+ * Which modes exist for whom - one pure rule, testable as a table.
+ *
+ * The DM at a table gets the lenses and the gear, nothing else: their job is
+ * orchestrating, and Play/Build/Market are the players' screens. A player
+ * gets screens about what they control - Build only while the forge is open
+ * or a grant is waiting, and never the solo Combat tracker while the DM is
+ * running the real fight. Solo (no table) is untouched for both seats.
+ *
+ * Navigation, not security: the server refuses what it refuses regardless.
+ */
+export function navFor({ tableOpen, seat, forgeOpen: forge, hasGrant }, modes) {
+  return modes.filter((m) => {
+    if (m.gear) return true;
+    if (tableOpen && seat === 'dm') return m.id === 'dm';
+    if (m.dmOnly && seat !== 'dm') return false;
+    if (m.tableOnly && !tableOpen) return false;
+    if (m.soloOnly && tableOpen) return false;
+    if (m.id === 'build' && tableOpen && seat === 'player'
+        && !forge && !hasGrant) return false;
+    return true;
+  });
+}
+
 /** Joined, or looking at a table we have not been let into yet. */
 export function needsJoin() { return isOpen() && !cached?.me; }
 
