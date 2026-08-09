@@ -103,17 +103,25 @@ reports each one where it matters.
    silently pricing them at zero; standard array assigns through selects
    that offer only unclaimed values. Manual remains the named escape hatch
    for tables that roll their own rules.
-4. **Reactions are never simulated.** The mapper understands them, and they are
-   the second most common mechanic in the test corpus, but the simulator has no
-   trigger model — so a reaction contributes nothing to any measured number.
-   `app/sim/executable.js` lists exactly what does and doesn't execute, and the
-   play guide says so per subclass.
-5. **27% of the reference corpus measures as tied.** The simulator scores every
-   feature action identically, because mapped text carries no structured
-   payload — "push 15 feet" and "frighten the target" are the same event to it.
-   Where this happens, "plays most like" says the subclasses can't be separated
-   instead of inventing a resemblance. This is a ceiling of text-mapped
-   simulation, not something a bug fix removes.
+4. **Reactions are simulated — a bounded model, honestly bounded.** The mapper
+   classifies each reaction's trigger and response from its prose, and the
+   simulator fires the ones it can model: *hit by an attack* and *taking
+   damage* triggers, answered by halving the damage, subtracting a parsed die,
+   gaining resistance to the triggering type, or striking back (one reaction
+   per round, RAW). Ten corpus subclasses now spend reactions in measurement —
+   the Berserker's Retaliation fires about once every four PC actions. Every
+   other family — reactions to misses, to an ally being hit, to spells, to
+   rolls, and any trigger the classifier can't read — stays inert, and the
+   play guide names the reason per instance. Known over-fire risk: unparsed
+   riders on a trigger ("before your first turn") are not honoured, so such a
+   reaction fires more often in the simulator than at a table.
+5. **17% of the reference corpus still measures as tied.** Feature actions now
+   score what they do — conditions inflicted, saves forced, forced movement,
+   parsed damage — so "push 15 feet" and "frighten on a failed save" finally
+   measure apart, and the tie rate fell from 27%. The remaining ceiling is
+   regex-lossy payload parsing: two subclasses whose features parse to the
+   same payload still measure identically, and "plays most like" says they
+   can't be separated instead of inventing a resemblance.
 6. **Rolled hit points have a field.** Max HP derives by the 2024
    fixed-value rule; Play → Max HP takes your table's rolled number
    instead, marks the tile *rolled*, and "Back to the rules" hands the

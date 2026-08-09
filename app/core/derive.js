@@ -384,10 +384,15 @@ function collectFeatures(ch, sources) {
         push({ ...f, effects: classEffects[f.name] || [] },
           `${cls.name} ${f.level}`, f.level, { classLevel: entry.level });
       }
-      // Subclass: SRD first, then homebrew - homebrew is looked up by id so an
-      // ingested subclass is indistinguishable from a bundled one here.
-      const sub = (cls.subclasses || []).find((s) => s.id === entry.subclass)
-        || (sources.homebrew || []).find((h) => h.id === entry.subclass);
+      // Subclass: homebrew FIRST, then bundled. On an id collision the
+      // ingested version wins - the user (or the corpus harness) put it
+      // there deliberately, and the bundled SRD copy carries thinner
+      // mechanics. The old SRD-first order silently shadowed every corpus
+      // brew whose id matched a bundled subclass, so the simulator measured
+      // the compendium's empty effect lists while claiming to measure the
+      // mapper's output.
+      const sub = (sources.homebrew || []).find((h) => h.id === entry.subclass)
+        || (cls.subclasses || []).find((s) => s.id === entry.subclass);
       if (sub) {
         for (const f of sub.features || []) {
           if (f.level > entry.level) continue;

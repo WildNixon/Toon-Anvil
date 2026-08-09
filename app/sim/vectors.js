@@ -43,6 +43,15 @@ export const AXIS_LABEL = {
 };
 
 /**
+ * Version of the MEASUREMENT SEMANTICS, stored on every record and checked
+ * alongside the content hash. The hash sees the brew; it cannot see a change
+ * in how the simulator resolves it. v1 records were measured while bundled
+ * SRD subclasses shadowed same-id corpus brews (derive resolved SRD first),
+ * so their numbers describe the compendium's effect lists, not the mapper's.
+ */
+export const MEASURE_VERSION = 2;
+
+/**
  * Stable content hash of a mapped brew.
  *
  * Keyed on the MECHANICS, not the prose, so re-ingesting the same file is a
@@ -67,6 +76,7 @@ export function measure(classId, subclassId, base, seeds = 6) {
     (n, r) => n + Object.values(r.coverage.features || {}).reduce((a, b) => a + b, 0), 0,
   );
   const actions = runs.reduce((n, r) => n + r.metrics.pcActions, 0);
+  const reactionUses = runs.reduce((n, r) => n + (r.metrics.reactionsUsed || 0), 0);
   return {
     stDpr: mean('stDpr'),
     wipeRate: mean('wipeRate'),
@@ -76,6 +86,12 @@ export function measure(classId, subclassId, base, seeds = 6) {
     // use is also scored as control. Kept because it is cheap and reads well in
     // the guide ("presses buttons" vs "swings a sword").
     featureRate: actions ? featureUses / actions : 0,
+    // Also reported, also not an axis. Reactions fire on the monster's turn,
+    // but normalising by PC actions keeps it on the same scale as featureRate.
+    // Zero here for a subclass with a modelled reaction is the tell that the
+    // trigger never occurred (or the wiring broke) - it is how the compendium-
+    // shadowing defect was caught.
+    reactionRate: actions ? reactionUses / actions : 0,
     dpr: mean('dpr'),
     downRate: mean('downRate'),
   };
@@ -286,7 +302,7 @@ export async function buildCorpusVectors(cfg) {
 
     const hash = brewHash(r.brew);
     const cached = cache?.[r.id];
-    if (cached && cached.hash === hash) {
+    if (cached && cached.hash === hash && cached.mv === MEASURE_VERSION) {
       records.push({ ...cached, cached: true });
       cacheHits.push(r.id);
     } else {
@@ -299,7 +315,7 @@ export async function buildCorpusVectors(cfg) {
       };
       records.push({
         id: r.id, name: r.name, class: r.class,
-        document: r.document, hash,
+        document: r.document, hash, mv: MEASURE_VERSION,
         coverage: r.coverage,
         metrics: measure(r.class, r.id, base, seeds),
       });

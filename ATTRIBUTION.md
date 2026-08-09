@@ -78,7 +78,7 @@ flagged with `"abilitiesPatched": true` in `monsters.json` and listed in
 
 ## The comparison index (`library/_vectors.json`)
 
-"Plays most like" positions your subclass against 92 measured open-licensed
+"Plays most like" positions your subclass against 94 measured open-licensed
 subclasses. The file that ships with this repo holds, for each one: its name,
 its class, the document it came from, and four numbers this tool measured by
 simulating it. **It contains no rules text, no descriptions and no mechanics** —

@@ -665,6 +665,19 @@ export const SUITES = [
             'the mapped resistance reaches the derived sheet');
           c.ok((d.damageRiders || []).length > 0,
             'the mapped rider reaches the derived sheet');
+
+          // Collision precedence: a brew that shares a BUNDLED subclass id
+          // must win, or the compendium's thinner copy silently shadows it.
+          // That shadowing is exactly how every SRD corpus brew came to be
+          // measured with empty effect lists.
+          const shadow = { ...brew, id: 'path-of-the-berserker' };
+          const ch2 = makeChar({
+            classes: [{ class: 'barbarian', level: 6,
+              subclass: 'path-of-the-berserker' }],
+          });
+          const d2 = derive(ch2, { ...sources, homebrew: [shadow] });
+          c.ok(d2.resistances.includes('cold'),
+            'on an id collision the ingested brew beats the bundled copy');
         },
       },
       {

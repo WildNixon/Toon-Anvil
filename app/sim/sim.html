@@ -178,7 +178,7 @@ $('#rebuildVectors').addEventListener('click', async () => {
     // The cache-shape gotcha: buildCorpusVectors expects an id-keyed map
     // (vectors.js reads cache[r.id]); loadVectors() returns .vectors as an
     // ARRAY. Passing it straight through would not error - it would just
-    // silently resimulate all ninety-two subclasses.
+    // silently resimulate the whole corpus.
     const before = await loadVectors().catch(() => null);
     let cache = null;
     if ($('#vecCache').checked && before?.vectors) {
