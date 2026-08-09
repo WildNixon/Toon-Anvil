@@ -243,35 +243,47 @@ export const FLOWS = [
     async run(c, { doc }) {
       c.feature('ui', 'build', 'abilities');
       c.ok(await goToMode(doc, 'Build', 'Ability scores'), 'Build mode opens');
-      button(doc, 'Point buy')?.click();
-      await waitUntilSettled(doc);
 
       const input = (name) => doc.querySelector(
         `main input[aria-label="${name} score"]`);
-      c.ok(!!input('Strength'), 'ability inputs carry their names now');
-      if (!input('Strength')) return;
-
-      // The previous flow leaves ROLLED scores behind; zero everything
-      // first so the arithmetic below is deterministic.
       const put = async (name, v) => {
         setField(input(name), String(v));
         await waitUntilSettled(doc);
       };
+
+      // The previous flow leaves UNSEEDED rolled scores behind. Zero them
+      // under MANUAL - point buy would (rightly) refuse edits while the
+      // stale set is over budget, which made this flow a coin toss.
+      button(doc, 'Manual')?.click();
+      await waitUntilSettled(doc);
+      c.ok(!!input('Strength'), 'ability inputs carry their names now');
+      if (!input('Strength')) return;
       for (const n of ['Strength', 'Dexterity', 'Constitution',
         'Intelligence', 'Wisdom', 'Charisma']) await put(n, 10);
+
+      button(doc, 'Point buy')?.click();
+      const clean = await waitFor(() => (/12 \/ 27 points spent/
+        .test(mainText(doc)) ? true : null), { timeout: 6000 });
+      c.ok(!!clean, 'a flat set reads 12 / 27');
 
       setField(input('Strength'), '18');
       await waitUntilSettled(doc);
       c.ok(input('Strength')?.value !== '18',
         'an 18 does not survive point buy', input('Strength')?.value);
 
-      // Spend to the last point, then the 28th is refused outright.
-      await put('Strength', 15);
-      await put('Dexterity', 15);
-      await put('Intelligence', 11);
-      const brim = await waitFor(() => (/27 \/ 27 points spent/
-        .test(mainText(doc)) ? true : null), { timeout: 6000 });
-      c.ok(!!brim, 'the budget can be spent to the last point');
+      // Spend to the last point - waiting for each step's OWN number, so
+      // an in-flight redraw can never be mistaken for a settled one.
+      const spendTo = async (name, v, expect) => {
+        setField(input(name), String(v));
+        const seen = await waitFor(() => (new RegExp(
+          `${expect} \\/ 27 points spent`).test(mainText(doc))
+          ? true : null), { timeout: 6000 });
+        c.ok(!!seen, `${name} ${v} lands at ${expect} / 27`);
+      };
+      await spendTo('Strength', 15, 19);
+      await spendTo('Dexterity', 15, 26);
+      await spendTo('Intelligence', 11, 27);
+      c.ok(true, 'the budget can be spent to the last point');
       setField(input('Wisdom'), '11');
       await waitUntilSettled(doc);
       c.eq(input('Wisdom')?.value, '10',

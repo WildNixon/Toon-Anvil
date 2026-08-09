@@ -114,12 +114,12 @@ export function axisDiagnostics(records) {
 
   // How much of the population the instrument cannot separate at all.
   //
-  // The simulator scores every feature action the same way - one control
-  // event - because the mapped text carries no structured payload; "push 15
-  // feet" and "frighten the target" are the same thing to it. So two subclasses
-  // whose only executable mechanic is a bonus-action feature WILL measure
-  // identically. That is a ceiling of text-mapped simulation, not a bug, and
-  // the number belongs in the artifact where it can be watched.
+  // Feature actions are now scored by their parsed payload (conditions,
+  // saves, forced movement, expected damage) and supported reactions fire,
+  // so "push 15 feet" and "frighten the target" finally measure apart. The
+  // REMAINING ceiling: payload parsing is regex-lossy, and two subclasses
+  // whose features parse to identical payloads still measure identically.
+  // The number lives in the artifact where it can be watched.
   const groups = new Map();
   for (const r of records) {
     const key = AXES.map((a) => r.metrics[a].toFixed(6)).join(',');

@@ -570,14 +570,32 @@ function executePcAction(action, state, enemies, rng, cov, opts = {}) {
       if (spend.resourceState) character.resourceState = spend.resourceState;
       bump(cov.features, action.action.name);
       bump(cov.effectTypes, 'action_option');
-      // Feature actions are overwhelmingly control - pulls, pushes, prone,
-      // stance switches - so they are scored on that axis, not on damage.
-      control += 1;
-      if (action.action.save) control += 1;
+      // Weighted by the parsed PAYLOAD, not a flat +1: "push 15 feet" and
+      // "frighten the target" were the same event to this line for the
+      // whole life of the corpus - the single largest cause of tied
+      // subclass vectors.
+      control += featureControlScore(action.action);
+      if (action.action.expectedDamage) {
+        // A deterministic AVERAGE, not a roll - rng-neutral on purpose,
+        // so no die is consumed that an ablation's other arm would not
+        // consume, and pairing stays exact.
+        dealt += action.action.expectedDamage;
+        if (!action.action.aoe) primary += action.action.expectedDamage;
+      }
       for (const ev of spend.events) bump(cov.eventTypes, ev.type);
     }
   }
   return { total: dealt, primary, control };
+}
+
+/**
+ * Deterministic control weight of a feature action's parsed payload.
+ * Exported so the gym can pin the arithmetic: base 1 for acting at all,
+ * +1 per named condition, +1 for a save, +0.5 for forced movement.
+ */
+export function featureControlScore(a) {
+  return 1 + (a.conditions?.length || 0) + (a.save ? 1 : 0)
+    + (a.forcedMove ? 0.5 : 0);
 }
 
 /* ------------------------------------------------------------------ */

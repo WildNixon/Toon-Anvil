@@ -709,13 +709,17 @@ function abilitiesPanel(ch) {
           if (!Number.isFinite(v)) v = score;
           if (isPB) {
             // Enforce, don't advise: out-of-range and over-budget changes
-            // revert. Manual is the named escape hatch.
+            // revert. Manual is the named escape hatch. The proposal is
+            // computed from the LATEST character, not this input's render
+            // closure - rapid sequential edits otherwise judge against a
+            // stale set and let a 28th point slip through.
             if (v < 8 || v > 15) {
               toast("Point buy runs 8-15 - Manual keeps anything.", 'warn');
               e.target.value = String(score);
               return;
             }
-            const check = pointBuySpend({ ...ch.abilities, [ab]: v });
+            const latest = getState().character?.abilities || ch.abilities;
+            const check = pointBuySpend({ ...latest, [ab]: v });
             if (check.spent > POINT_BUY_BUDGET) {
               toast(`That would spend ${check.spent} of ${POINT_BUY_BUDGET} points`, 'warn');
               e.target.value = String(score);

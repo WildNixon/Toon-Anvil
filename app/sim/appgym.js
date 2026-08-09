@@ -1204,6 +1204,47 @@ export const SUITES = [
         },
       },
       {
+        id: 'payload_weights',
+        title: 'A feature action scores what it DOES, not that it happened',
+        run(c, { sources, sim, monsters, spells, mechanics }) {
+          c.feature('integration', 'simulation', 'payloads');
+          c.eq(sim.featureControlScore({}), 1, 'acting at all is worth one');
+          c.eq(sim.featureControlScore({ forcedMove: 15 }), 1.5,
+            'a push is worth half a point more');
+          c.eq(sim.featureControlScore({
+            save: { ability: 'wis' }, conditions: ['frightened', 'prone'],
+            forcedMove: 15,
+          }), 4.5, 'save + two conditions + push = 4.5');
+
+          // Twin brews, identical but for the payload: control must move.
+          const mkBrew = (extra) => ({
+            id: 'gym-payload', name: 'Gym Payload', class: 'fighter',
+            ruleset: '2024',
+            features: [{ id: 'f1', name: 'Warp Step', level: 3,
+              text: 'Gym fixture.',
+              effects: [{ type: 'action_option', name: 'Warp Step',
+                action: 'bonus', cost: null, ...extra }] }],
+          });
+          const run = (brew) => sim.runCampaign({
+            classId: 'fighter', subclassId: 'gym-payload', seed: 1,
+            sources: { ...sources, homebrew: [brew] },
+            monsters, spells, mechanics, maxLevel: 4,
+          });
+          const rich = run(mkBrew({
+            save: { ability: 'wis', dc: 'spell' },
+            conditions: ['frightened'], forcedMove: 15,
+          }));
+          const flat = run(mkBrew({}));
+          // Policy scores feature actions identically regardless of payload
+          // (bestAttackScore * 0.9), so both arms choose the same actions at
+          // the same moments - only the per-use score differs. Strictness
+          // is therefore deterministic, not probabilistic.
+          c.ok(rich.metrics.control > flat.metrics.control,
+            'the payload strictly raises measured control',
+            `${rich.metrics.control} vs ${flat.metrics.control}`);
+        },
+      },
+      {
         id: 'measure_smoke',
         title: 'measure() answers every axis, deterministically',
         run(c, { sources, monsters, spells, mechanics, vec }) {
@@ -3633,6 +3674,33 @@ export const MUTATIONS = [
         }
         return r;
       } } }),
+  },
+  {
+    id: 'payload_scoring_flat',
+    what: 'payload fields are stripped - push 15 feet scores like frighten again',
+    // The pure featureControlScore pins survive this by design (a ctx patch
+    // cannot reach module internals) - the twin-brew strict inequality in
+    // payload_weights is the tripwire. Every field that scoring reads must
+    // go, save included: the first sweep left save behind and the rich arm
+    // kept a 2-vs-1 edge, so this mutation ESCAPED.
+    patch: (ctx) => ({ sim: { ...ctx.sim,
+      runCampaign: (cfg) => ctx.sim.runCampaign({
+        ...cfg,
+        sources: { ...cfg.sources,
+          homebrew: (cfg.sources.homebrew || []).map((b) => ({
+            ...b,
+            features: (b.features || []).map((f) => ({
+              ...f,
+              effects: (f.effects || []).map((e) => {
+                if (e.type !== 'action_option'
+                  && e.type !== 'reaction_option') return e;
+                const { conditions, forcedMove, aoe, expectedDamage, save,
+                  ...rest } = e;
+                return rest;
+              }),
+            })),
+          })) },
+      }) } }),
   },
   {
     id: 'reaction_never_fires',
