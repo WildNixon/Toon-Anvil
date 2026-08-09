@@ -13,14 +13,16 @@
 
 import { derive } from '../core/derive.js';
 import { seededRng } from '../core/rng.js';
-import { d20 } from '../core/dice.js';
+import { d20, roll } from '../core/dice.js';
 import {
   resolveAttack, resolveSpell, applyDamage, deathSave, fireTriggers,
-  shortRest, longRest, spendResource, useSlot,
+  shortRest, longRest, spendResource, useSlot, expectedDamage,
 } from '../core/engine.js';
 import { abilityMod, proficiencyBonus } from '../core/rules2024.js';
 import { buildEncounter, monsterTurn } from './encounter.js';
-import { chooseAction, shouldShortRest, hitDiceToSpend } from './policy.js';
+import {
+  chooseAction, chooseReaction, shouldShortRest, hitDiceToSpend,
+} from './policy.js';
 import { checkAll } from './invariants.js';
 
 /** Ability priority per class, used to assign the standard array. */
@@ -207,12 +209,16 @@ export function makeAllies(level) {
   }));
 }
 
-function runCombat(state, encounter, rng, cov, violations, where, allies) {
+function runCombat(state, encounter, rng, cov, violations, where, allies,
+  reactRng) {
   const { character, derived } = state;
   const pc = {
     name: derived.name, side: 'pc', ac: derived.ac,
     hp: derived.hp.current, hpMax: derived.hp.max, temp: derived.hp.temp,
     saves: derived.saves,
+    // One reaction per round, RAW - and the real limiter on reactions,
+    // since almost no corpus reaction parses a resource cost.
+    reactionUsed: false,
   };
   const enemies = encounter.monsters.map((m) => ({ ...m }));
   // Allies are owned by the adventuring DAY, not the fight. Rebuilding them at
@@ -231,6 +237,7 @@ function runCombat(state, encounter, rng, cov, violations, where, allies) {
   let pcActions = 0;
   let singleTargetDealt = 0;
   let control = 0;
+  let reactionsUsed = 0;
 
   // Initiative: PC vs the pack (monsters act as one block for simplicity -
   // individual monster initiative would add variance without changing the
@@ -248,6 +255,11 @@ function runCombat(state, encounter, rng, cov, violations, where, allies) {
       if (pc.hp <= 0 && side === 'pc') continue;
 
       if (side === 'pc') {
+        // RAW: your reaction refreshes at the START of your turn - so it
+        // stays available through a monster-first round one, which is
+        // exactly when "if you take damage before your first turn"
+        // features want it.
+        pc.reactionUsed = false;
         if (pc.hp > 0 && enemies.some((e) => e.hp > 0)) {
           pcActions += 1;
           const action = chooseAction({
@@ -296,21 +308,75 @@ function runCombat(state, encounter, rng, cov, violations, where, allies) {
         }
       } else {
         for (const mon of enemies.filter((e) => e.hp > 0)) {
+          // A counterattack can now kill a monster mid-phase; the filter
+          // above snapshotted the living set, so re-check per monster.
+          if (mon.hp <= 0) continue;
           const turn = monsterTurn(mon, party, rng);
           for (const hit of turn.hits) {
             // Apply to whoever was actually targeted - allies soak too, which
             // is the entire reason they are here.
             const victim = hit.target;
+
+            /* ---- the reaction seam --------------------------------- */
+            // Bounded model: hit_by_attack and takes_damage only, for the
+            // simulated character only (the abstract allies have no sheet
+            // for a reaction's payload to land on). The more specific
+            // bucket is tried first - an attack that hits also deals
+            // damage. Pre-roll (Shield-like) triggers are structurally
+            // unreachable here: monsterTurn resolves its to-hits before
+            // returning. Unparsed riders on the trigger ("before your
+            // first turn") are NOT honoured - the model over-fires there,
+            // and says so in the README rather than hiding it.
+            let amount = hit.amount;
+            let grantedResist = null;
+            let counterTarget = null;
+            if (victim === pc && pc.hp > 0 && !pc.reactionUsed && amount > 0) {
+              const reaction = (hit.kind === 'attack'
+                && chooseReaction(state.derived, { bucket: 'hit_by_attack', hit }))
+                || chooseReaction(state.derived, { bucket: 'takes_damage', hit });
+              if (reaction) {
+                const cost = reaction.cost;
+                const spend = cost
+                  ? spendResource(character, state.derived, cost.resource, cost.amount)
+                  : { events: [] };
+                if (!spend.error) {
+                  if (spend.resourceState) character.resourceState = spend.resourceState;
+                  pc.reactionUsed = true;
+                  reactionsUsed += 1;
+                  bump(cov.effectTypes, 'reaction_option');
+                  bump(cov.features, reaction.from || reaction.name);
+                  const resp = reaction.response || {};
+                  if (resp.kind === 'reduce_damage') {
+                    if (resp.halve) amount = Math.floor(amount / 2);
+                    else if (resp.dice) {
+                      amount = Math.max(0,
+                        amount - roll(resp.dice, { rng: reactRng }).total);
+                    } else if (resp.resist) {
+                      // Applies to the triggering hit only - surfaces as
+                      // mitigated:resistant in coverage via applyDamage.
+                      grantedResist = hit.type;
+                    }
+                  } else if (resp.kind === 'counterattack') {
+                    // RAW: you react to taking the damage - resolved AFTER
+                    // it lands, and only if it did not down you.
+                    counterTarget = mon;
+                  }
+                }
+              }
+            }
+
             // Resistances apply to the simulated character only - the abstract
             // allies have no sheet, so giving them defences would credit the
             // character's survival to teammates it does not really have.
             const res = applyDamage(
               { hp: { current: victim.hp }, hpMax: victim.hpMax, temp: victim.temp || 0 },
-              -hit.amount,
+              -amount,
               {
                 name: victim.name, source: hit.source, damageType: hit.type,
                 ...(victim === pc ? {
-                  resistances: state.derived.resistances || [],
+                  resistances: grantedResist
+                    ? [...(state.derived.resistances || []), grantedResist]
+                    : state.derived.resistances || [],
                   immunities: state.derived.immunities || [],
                   vulnerabilities: state.derived.vulnerabilities || [],
                 } : {}),
@@ -323,11 +389,31 @@ function runCombat(state, encounter, rng, cov, violations, where, allies) {
             // roll would make resistance invisible in dtpr.
             if (victim === pc) {
               const landed = res.events.find((e) => e.type === 'damage_taken');
-              damageTaken += landed ? landed.payload.amount : hit.amount;
+              damageTaken += landed ? landed.payload.amount : amount;
               for (const ev of res.events) bump(cov.eventTypes, ev.type);
               if (landed?.payload.mitigation) {
                 bump(cov.effectTypes, `mitigated:${landed.payload.mitigation}`);
               }
+            }
+
+            // The counterattack reuses the full PC attack path - riders,
+            // crit range, coverage, fumble triggers - on the REACTION
+            // stream. swingIndex 0 on purpose: a reaction is a different
+            // turn, so once-per-turn riders (Sneak Attack) are legal again.
+            // Its damage raises dpr per PC-turn: defensible - it is real
+            // output per turn cycle - but stated, not hidden. It earns no
+            // control: cpa stays a per-PC-turn axis.
+            if (counterTarget && pc.hp > 0 && counterTarget.hp > 0
+              && state.derived.attacks?.length) {
+              const best = state.derived.attacks.reduce((a, b) => (
+                expectedDamage(b, counterTarget.ac)
+                  > expectedDamage(a, counterTarget.ac) ? b : a));
+              const r = executePcAction(
+                { kind: 'attack', attack: best, target: counterTarget },
+                state, enemies, reactRng, cov, { swingIndex: 0 },
+              );
+              damageDealt += r.total;
+              singleTargetDealt += r.primary;
             }
           }
         }
@@ -373,7 +459,7 @@ function runCombat(state, encounter, rng, cov, violations, where, allies) {
 
   return {
     round, damageDealt, damageTaken, died, pcActions,
-    singleTargetDealt, control,
+    singleTargetDealt, control, reactionsUsed,
     survivedAtHp: pc.hp, hitRoundCap,
     enemiesDefeated: enemies.filter((e) => e.hp <= 0).length,
     enemyCount: enemies.length,
@@ -513,6 +599,14 @@ export function runCampaign(cfg) {
   const rng = seededRng(seed, `${classId}:${subclassId}`);
   const combatRng = rng.stream('combat');
   const encRng = rng.stream('encounter');
+  // Reaction dice live on their OWN stream, created unconditionally:
+  // stream(name) seeds from `${seed}:${name}` with no draws from the
+  // parent, so its existence never perturbs combat/encounter sequences -
+  // and a paired ablation's OFF arm (reaction stripped) keeps an
+  // identical combatRng sequence to the ON arm, which is the property
+  // the whole ablation instrument stands on. Inline draws from combatRng
+  // would desync the arms at the first reaction.
+  const reactRng = rng.stream('reaction');
 
   const cov = newCoverage();
   const violations = [];
@@ -553,7 +647,9 @@ export function runCampaign(cfg) {
 
     const levelStats = {
       level, encounters: 0, damageDealt: 0, damageTaken: 0,
-      rounds: 0, pcActions: 0, singleTargetDealt: 0, control: 0, downed: 0, wipes: 0, shortRests: 0, longRests: 0, roundCaps: 0,
+      rounds: 0, pcActions: 0, singleTargetDealt: 0, control: 0,
+      reactionsUsed: 0, downed: 0, wipes: 0, shortRests: 0, longRests: 0,
+      roundCaps: 0,
     };
 
     const { days, encounters: perDay } = pacing(level);
@@ -574,6 +670,7 @@ export function runCampaign(cfg) {
         const result = runCombat(
           state, encounter, combatRng, cov, violations,
           { classId, subclassId, level, day, encounter: e }, allies,
+          reactRng,
         );
 
         levelStats.encounters += 1;
@@ -583,6 +680,7 @@ export function runCampaign(cfg) {
         levelStats.pcActions += result.pcActions;
         levelStats.singleTargetDealt += result.singleTargetDealt;
         levelStats.control += result.control;
+        levelStats.reactionsUsed += result.reactionsUsed;
         totalRounds += result.round;
         if (result.hitRoundCap) levelStats.roundCaps += 1;
         if (result.survivedAtHp <= 0) levelStats.downed += 1;
@@ -682,6 +780,9 @@ function summarise(perLevel) {
     pcActions: actions,
     singleTargetDealt: sum('singleTargetDealt'),
     control: sum('control'),
+    // Reactions fire on the MONSTER'S turn, so they get their own count
+    // rather than inflating any per-action axis. Reported, not an axis.
+    reactionsUsed: sum('reactionsUsed'),
     // Damage per ACTION TAKEN is the headline offence number. Dividing by
     // rounds instead would score a character down for rounds in which the
     // fight was already over - measuring the allies, not the character.

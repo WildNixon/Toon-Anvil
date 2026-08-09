@@ -108,7 +108,8 @@ async function ablationsFor(sources) {
         if (eff.type === 'narrative_only') continue;
         // Only ablate effects with a measurable combat footprint.
         if (!['ac_formula', 'unarmed_strike', 'damage_rider', 'trigger',
-              'ability_substitution', 'action_option'].includes(eff.type)) continue;
+              'ability_substitution', 'action_option',
+              'reaction_option'].includes(eff.type)) continue;
         out.push({
           label: `${brew.name}: ${f.name} (${eff.type})`,
           brewId: brew.id, featureId: f.id, effectType: eff.type,

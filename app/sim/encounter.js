@@ -229,7 +229,10 @@ export function monsterTurn(monster, party, rng) {
       const hit = r.isCrit || (!r.isFumble && r.total >= target.ac);
       if (hit) {
         const dmg = roll(action.damage, { crit: r.isCrit, rng });
+        // kind lets the reaction model tell "hit by an attack" from "took
+        // damage from a save effect" - the two trigger differently.
         hits.push({ target, amount: dmg.total, type: action.damageType,
+                    kind: 'attack',
                     source: `${monster.name} (${action.name})` });
       }
       events.push({ type: 'attack', payload: {
@@ -243,6 +246,7 @@ export function monsterTurn(monster, party, rng) {
       const amount = saved ? (action.half ? Math.floor(full / 2) : 0) : full;
       if (amount > 0) {
         hits.push({ target, amount, type: action.damageType,
+                    kind: 'save',
                     source: `${monster.name} (${action.name})` });
       }
     }

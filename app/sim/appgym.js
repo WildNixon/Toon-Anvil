@@ -669,21 +669,36 @@ export const SUITES = [
       },
       {
         id: 'executable_registry',
-        title: 'The executable registry is honest about what runs',
+        title: 'The executable registry is honest about what runs, per reaction',
         async run(c, { hb, exec }) {
-          c.feature('homebrew', 'coverage');
+          c.feature('homebrew', 'coverage', 'reactions');
+          // Two reactions, one on each side of the bounded model: Riposte
+          // triggers on a MISS - a bucket the loop does not dispatch - and
+          // must land inert with the reason naming that bucket; the halve-
+          // on-hit runs. The old set-membership invariant cannot survive
+          // per-instance verdicts, so this scenario grew instance eyes.
           const brew = hb.accept(hb.suggest(hb.parse('markdown', [
             '## Gym Reactions',
             '### Riposte',
             'At 3rd level, when a creature misses you with a melee attack, you can '
             + 'use your Reaction to strike back.',
+            '### Stone Skin',
+            'At 6th level, when an attacker hits you with a weapon attack, you '
+            + 'can use your reaction to halve the damage that you take.',
           ].join('\n\n'), { filename: 'r.md' })));
           const split = exec.executableSplit(brew);
           c.ok(split.counts.total > 0, 'the split sees the brew\'s effects');
+          c.eq(split.executed.reaction_option, 1, 'the supported reaction runs');
+          c.eq(split.inert.reaction_option, 1, 'the unsupported one does not');
+          c.ok(/missed_by_attack/.test(split.reasons.reaction_option || ''),
+            'and the reason names the unmodelled trigger',
+            split.reasons.reaction_option);
           for (const t of Object.keys(split.executed)) {
+            if (t === 'reaction_option') continue;
             c.ok(exec.EXECUTABLE.has(t), `${t} is genuinely in the executable set`);
           }
           for (const t of Object.keys(split.inert)) {
+            if (t === 'reaction_option') continue;
             c.ok(!exec.EXECUTABLE.has(t), `${t} is correctly reported as inert`);
           }
         },
@@ -1139,6 +1154,53 @@ export const SUITES = [
           const d = sim.runCampaign({ ...cfg, seed: 5 });
           c.ok(JSON.stringify(d.metrics) !== JSON.stringify(a.metrics),
             'a different seed gives a different campaign');
+        },
+      },
+      {
+        id: 'reaction_ablation',
+        title: 'A reaction changes the numbers only when it fires',
+        run(c, { sources, sim, monsters, spells, mechanics }) {
+          c.feature('integration', 'simulation', 'reactions');
+          const mkBrew = (effects) => ({
+            id: 'gym-react', name: 'Gym Reactor', class: 'fighter',
+            ruleset: '2024',
+            features: [{ id: 'f1', name: 'Stone Skin', level: 3,
+              text: 'Gym fixture.', effects }],
+          });
+          const halver = mkBrew([{ type: 'reaction_option', name: 'Stone Skin',
+            action: 'reaction', trigger: 'hit_by_attack',
+            response: { kind: 'reduce_damage', halve: true } }]);
+          const counter = mkBrew([{ type: 'reaction_option', name: 'Riposte',
+            action: 'reaction', trigger: 'takes_damage',
+            response: { kind: 'counterattack' } }]);
+          const bare = mkBrew([{ type: 'narrative_only' }]);
+          const run = (brew, seed) => sim.runCampaign({
+            classId: 'fighter', subclassId: 'gym-react', seed,
+            sources: { ...sources, homebrew: [brew] },
+            monsters, spells, mechanics, maxLevel: 5,
+          });
+
+          for (const seed of [1, 2]) {
+            const on = run(halver, seed);
+            const off = run(bare, seed);
+            c.ok(on.metrics.reactionsUsed > 0,
+              `seed ${seed}: the halve-on-hit reaction fires`,
+              `${on.metrics.reactionsUsed} uses`);
+            c.eq(off.metrics.reactionsUsed, 0,
+              `seed ${seed}: stripped, it cannot`);
+            c.ok(on.metrics.damageTaken < off.metrics.damageTaken,
+              `seed ${seed}: halving strictly lowers damage taken`,
+              `${on.metrics.damageTaken} vs ${off.metrics.damageTaken}`);
+          }
+
+          const on2 = run(counter, 1);
+          const off2 = run(bare, 1);
+          c.ok(on2.metrics.damageDealt > off2.metrics.damageDealt,
+            'a counterattack strictly raises damage dealt',
+            `${on2.metrics.damageDealt} vs ${off2.metrics.damageDealt}`);
+
+          c.same(run(halver, 1).metrics, run(halver, 1).metrics,
+            'with a reaction in play, the same seed still reproduces exactly');
         },
       },
       {
@@ -3571,6 +3633,23 @@ export const MUTATIONS = [
         }
         return r;
       } } }),
+  },
+  {
+    id: 'reaction_never_fires',
+    what: 'reactions are stripped before the simulator sees them - the old world',
+    patch: (ctx) => ({ sim: { ...ctx.sim,
+      runCampaign: (cfg) => ctx.sim.runCampaign({
+        ...cfg,
+        sources: { ...cfg.sources,
+          homebrew: (cfg.sources.homebrew || []).map((b) => ({
+            ...b,
+            features: (b.features || []).map((f) => ({
+              ...f,
+              effects: (f.effects || [])
+                .filter((e) => e.type !== 'reaction_option'),
+            })),
+          })) },
+      }) } }),
   },
   {
     id: 'trigger_classifier_blind',

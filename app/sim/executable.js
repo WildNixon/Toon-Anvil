@@ -29,18 +29,49 @@ export const EXECUTABLE = new Set([
   'vulnerability',      // applied in applyDamage()
   'extra_attack',       // multiplies weapon swings per action
   'temp_hp',            // absorbed before HP in applyDamage()
+  // reaction_option is NOT in this set: reactions are judged one at a time
+  // by reactionVerdict() below, because the model is bounded - a halve-on-
+  // hit runs; a Cutting Words does not - and a type-level yes would smuggle
+  // every unsupported reaction into "measured".
 ]);
 
 /**
+ * The bounded reaction model: which trigger buckets the campaign loop
+ * actually dispatches, and which responses it can resolve.
+ */
+export const SUPPORTED_REACTION_TRIGGERS = new Set([
+  'hit_by_attack', 'takes_damage',
+]);
+
+/** Instance-level verdict for one reaction_option effect. */
+export function reactionVerdict(e) {
+  if (!e.trigger || e.trigger === 'other') {
+    return { executable: false, reason: 'trigger phrasing not recognised' };
+  }
+  if (!SUPPORTED_REACTION_TRIGGERS.has(e.trigger)) {
+    return { executable: false, reason: `trigger "${e.trigger}" not modelled` };
+  }
+  const k = e.response?.kind;
+  if (k !== 'reduce_damage' && k !== 'counterattack') {
+    return { executable: false,
+      reason: 'response is not a damage reduction or counterattack' };
+  }
+  if ((e.damageTypes || []).includes('chosen')) {
+    return { executable: false,
+      reason: 'damage-type condition is a player choice the sim cannot resolve' };
+  }
+  return { executable: true, reason: null };
+}
+
+/**
  * Mapped, but inert in combat - with the reason, so the report can say WHY
- * rather than just marking it absent.
+ * rather than just marking it absent. (reaction_option is absent here on
+ * purpose: its reasons are per-instance, built by executableSplit.)
  */
 export const NOT_EXECUTED = {
-  reaction_option: 'reactions have no trigger model yet, so they never fire',
   proficiency: 'skill and tool proficiencies do not affect simulated combat',
   condition_immunity: 'monsters in the corpus rarely apply conditions',
-  speed: 'movement is abstracted; positioning is not simulated',
-  sense: 'vision and senses are not simulated',
+  speed_grant: 'movement is abstracted; positioning is not simulated',
   narrative_only: 'flavour, by definition not mechanical',
 };
 
@@ -48,25 +79,44 @@ export const NOT_EXECUTED = {
 export function executableSplit(brew) {
   const executed = {};
   const inert = {};
+  const reactionNotes = [];
   for (const f of brew.features || []) {
     for (const e of f.effects || []) {
-      const bag = EXECUTABLE.has(e.type) ? executed : inert;
+      let runs;
+      if (e.type === 'reaction_option') {
+        const v = reactionVerdict(e);
+        runs = v.executable;
+        if (!v.executable) {
+          reactionNotes.push(`"${e.name || f.name}" (${v.reason})`);
+        }
+      } else {
+        runs = EXECUTABLE.has(e.type);
+      }
+      const bag = runs ? executed : inert;
       bag[e.type] = (bag[e.type] || 0) + 1;
     }
   }
   const nExec = Object.values(executed).reduce((a, b) => a + b, 0);
   const nInert = Object.values(inert).reduce((a, b) => a + b, 0);
+  const reasons = Object.fromEntries(
+    Object.keys(inert)
+      .filter((t) => NOT_EXECUTED[t])
+      .map((t) => [t, NOT_EXECUTED[t]]),
+  );
+  if (inert.reaction_option) {
+    // Per-instance honesty in the same {type: reason} shape the play
+    // guide already renders.
+    reasons.reaction_option = `${executed.reaction_option || 0} of ${
+      (executed.reaction_option || 0) + inert.reaction_option} modelled; `
+      + `inert: ${reactionNotes.join('; ')}`;
+  }
   return {
     executed,
     inert,
     counts: { executed: nExec, inert: nInert, total: nExec + nInert },
     // The number that should be quoted next to any simulated result.
     executableCoverage: nExec + nInert ? nExec / (nExec + nInert) : 0,
-    reasons: Object.fromEntries(
-      Object.keys(inert)
-        .filter((t) => NOT_EXECUTED[t])
-        .map((t) => [t, NOT_EXECUTED[t]]),
-    ),
+    reasons,
   };
 }
 

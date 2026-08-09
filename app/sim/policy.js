@@ -18,6 +18,7 @@
 
 import { expectedDamage, highestAvailableSlot, canAfford } from '../core/engine.js';
 import { average } from '../core/dice.js';
+import { reactionVerdict } from './executable.js';
 
 /** Fraction of max HP below which we consider a combatant in danger. */
 export const DANGER_HP = 0.35;
@@ -221,6 +222,27 @@ function bestAttackScore(derived) {
 /* ------------------------------------------------------------------ */
 
 /** Should the party short rest now? */
+/**
+ * The first affordable, executable reaction matching this event - the same
+ * first-match posture as bestFeatureAction, because reactions have no
+ * comparable score either. `event` is {bucket, hit}; the verdict comes from
+ * executable.js so the registry's honesty and the sim's behaviour cannot
+ * disagree. derived.reactions has existed since derive first shipped and
+ * was read by NOTHING until this function.
+ */
+export function chooseReaction(derived, event) {
+  for (const r of derived.reactions || []) {
+    if (r.trigger !== event.bucket) continue;
+    if (!reactionVerdict(r).executable) continue;
+    if (r.damageTypes?.length && !r.damageTypes.includes(event.hit.type)) continue;
+    // Nearly no corpus reaction parses a cost, so most ride free - the real
+    // limiter is the once-per-round reaction budget in the campaign loop.
+    if (!canAfford(derived, r.cost)) continue;
+    return r;
+  }
+  return null;
+}
+
 export function shouldShortRest(derived, encountersSinceRest) {
   const hpFrac = derived.hp.current / Math.max(1, derived.hp.max);
   const shortResources = derived.resources.filter((r) => r.recharge === 'short');
