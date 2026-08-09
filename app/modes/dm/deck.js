@@ -24,6 +24,7 @@ import { weatherFor } from '../../core/weather.js';
 import { statTile } from '../../ui/kit.js';
 import { mapView, PIN_KINDS } from '../../ui/map.js';
 import { db } from '../../core/db.js';
+import { detect, parse } from '../../homebrew/adapters.js';
 import { dmData } from './shared.js';
 
 export const title = 'Deck';
@@ -35,6 +36,8 @@ let campaign = null;
 let all = [];
 let mapRecord = null;
 let mapHandle = null;
+// Setting-ingest review state: sections awaiting the DM's filing.
+let ingest = null;   // { source, sections: [{ title, body, filedAs }] }
 
 export async function render(root) {
   container = root;
@@ -73,6 +76,7 @@ function draw() {
   columns.append(economyPanel());
   container.append(columns);
   container.append(regionsPanel());
+  container.append(ingestPanel());
   container.append(campaignPanel());
 }
 
@@ -544,6 +548,167 @@ function regionsPanel() {
   }, 'Add region'));
   panel.append(add);
   return panel;
+}
+
+/* ------------------------------------------------------------------ */
+/* setting ingest - split, then file it                                */
+/* ------------------------------------------------------------------ */
+
+function ingestPanel() {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Ingest a setting'));
+
+  if (!ingest) {
+    panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
+      'Drop a setting document (.md or .txt) or paste its text. It splits '
+      + 'into sections by heading, and you file each one - as a region, a '
+      + 'faction, an NPC, or campaign lore - with one click. Nothing is '
+      + 'guessed on your behalf; you know your setting, the parser does not.'));
+
+    const file = el('input', {
+      type: 'file', accept: '.md,.markdown,.txt',
+      'aria-label': 'Setting document', style: 'max-width:280px',
+    });
+    file.addEventListener('change', async () => {
+      const f = file.files?.[0];
+      if (!f) return;
+      splitText(await f.text(), f.name);
+    });
+    panel.append(file);
+
+    const paste = el('textarea', {
+      placeholder: 'or paste the setting text here...',
+      'aria-label': 'Setting text', style: 'min-height:70px;margin-top:8px',
+    });
+    const row = el('div', { class: 'btnrow', style: 'margin-top:8px' });
+    row.append(el('button', {
+      class: 'act ghost small',
+      onClick: () => {
+        const v = paste.value.trim();
+        if (!v) return toast('Paste some setting text first', 'warn');
+        splitText(v, 'pasted text');
+        return null;
+      },
+    }, 'Split the text'));
+    panel.append(paste, row);
+    return panel;
+  }
+
+  panel.append(el('p', { class: 'muted', style: 'font-size:13px;margin:0 0 8px' },
+    `${ingest.sections.length} sections from ${ingest.source}. File what `
+    + 'earns a place; skip the rest.'));
+
+  for (const s of ingest.sections) {
+    const row = el('div', {
+      style: 'padding:8px 0;border-bottom:1px solid var(--etch)',
+    });
+    const head = el('div', {
+      style: 'display:flex;gap:8px;align-items:baseline;flex-wrap:wrap',
+    });
+    head.append(el('strong', { style: 'flex:1;min-width:140px' }, s.title));
+    if (s.filedAs) {
+      head.append(el('span', { class: 'chip ok' }, `filed as ${s.filedAs}`));
+    } else {
+      for (const [kind, act] of [
+        ['region', fileAsRegion], ['faction', fileAsFaction],
+        ['npc', fileAsNpc], ['lore', fileAsLore],
+      ]) {
+        head.append(el('button', {
+          class: 'act ghost small',
+          onClick: async () => { await act(s); s.filedAs = kind; draw(); },
+        }, kind));
+      }
+    }
+    row.append(head);
+    row.append(el('p', {
+      class: 'muted', style: 'font-size:12px;margin:4px 0 0',
+    }, s.body.slice(0, 180) + (s.body.length > 180 ? '…' : '')));
+    panel.append(row);
+  }
+
+  panel.append(el('div', { class: 'btnrow', style: 'margin-top:10px' },
+    el('button', {
+      class: 'act ghost small',
+      onClick: () => { ingest = null; draw(); },
+    }, 'Done - clear the bench')));
+  return panel;
+}
+
+/** Reuse the homebrew section splitter: brew.features IS heading+body. */
+function splitText(text, filename) {
+  try {
+    const brew = parse(detect(filename, text), text, { filename });
+    const sections = (brew.features || [])
+      .filter((f) => f.name && f.text)
+      .map((f) => ({ title: f.name, body: f.text, filedAs: null }));
+    if (brew.flavor?.lede) {
+      sections.unshift({ title: brew.name || 'Preamble',
+        body: brew.flavor.lede, filedAs: null });
+    }
+    if (!sections.length) {
+      toast('No headed sections found - is there any # or Title-cased structure?', 'warn');
+      return;
+    }
+    ingest = { source: filename, sections };
+    draw();
+  } catch (err) {
+    toast(`Could not split that: ${err.message}`, 'bad');
+  }
+}
+
+// Ingested text lands where the DM points it. Bodies are clipped - a
+// campaign record is an instrument panel, not an archive; the source
+// document remains the archive.
+async function fileAsRegion(s) {
+  const region = newRegion(s.title, guessTerrain(s.body));
+  region.note = s.body.slice(0, 500);
+  campaign.regions.push(region);
+  if (!campaign.currentRegionId) campaign.currentRegionId = region.id;
+  await saveCampaign(campaign);
+  toast(`${s.title} is a region`, 'ok');
+}
+
+async function fileAsFaction(s) {
+  const f = newFaction(s.title, campaign.factions.length);
+  // The ingested text becomes the SECRET agenda, private by default.
+  f.agenda = s.body.slice(0, 500);
+  campaign.factions.push(f);
+  await saveCampaign(campaign);
+  toast(`${s.title} is a faction (agenda private)`, 'ok');
+}
+
+async function fileAsNpc(s) {
+  await db.put('npcs', {
+    id: `npc-${s.title.toLowerCase().replace(/\W+/g, '-').slice(0, 30)}`,
+    name: s.title, where: '', want: '', disposition: 0,
+    firstMet: new Date().toISOString(),
+    notes: [s.body.slice(0, 500)],
+  });
+  toast(`${s.title} is an NPC`, 'ok');
+}
+
+async function fileAsLore(s) {
+  campaign.lore = campaign.lore || [];
+  campaign.lore.push({ title: s.title, text: s.body, source: 'ingest' });
+  await saveCampaign(campaign);
+  toast(`${s.title} kept as lore`, 'ok');
+}
+
+/** A light keyword nudge for the terrain select - a default, not a verdict. */
+function guessTerrain(text) {
+  const t = text.toLowerCase();
+  const hints = [
+    ['mountain', /mountain|peak|ridge|cliff|highland/],
+    ['coast', /coast|harbou?r|port|shore|bay|island/],
+    ['swamp', /swamp|marsh|bog|mire|fen/],
+    ['desert', /desert|dune|sand|waste/],
+    ['arctic', /ice|frozen|tundra|glacier|snow/],
+    ['urban', /city|town|street|market|district/],
+    ['underdark', /cave|cavern|underground|deep|tunnel/],
+    ['grave', /grave|tomb|crypt|barrow|dead/],
+  ];
+  for (const [terrain, re] of hints) if (re.test(t)) return terrain;
+  return 'forest';
 }
 
 /* ------------------------------------------------------------------ */

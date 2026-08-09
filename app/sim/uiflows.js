@@ -944,15 +944,21 @@ export const FLOWS = [
       // And the coin that leaves the purse is the coin on the label.
       button(doc, 'Generate stock')?.click();
       await waitUntilSettled(doc);
-      const purse = () => readNumberAfter(doc, 'Purse');
-      const before = purse();
+      // Compare the WHOLE purse line: a copper-priced purchase leaves the
+      // leading GP figure untouched, and reading only that number once made
+      // this check blind to a real, correct debit.
+      const purseText = () => {
+        const m = /Purse\s*(.*?)\s*Carrying/.exec(mainText(doc).replace(/\s+/g, ' '));
+        return m ? m[1] : null;
+      };
+      const before = purseText();
       const buy = allButtons(doc).find((b) => b.textContent.trim() === 'Buy'
         && !b.disabled && !b.className.includes('ghost'));
-      if (buy && Number.isFinite(before)) {
+      if (buy && before) {
         buy.click();
-        const paid = await waitFor(() => (purse() !== before ? true : null),
+        const paid = await waitFor(() => (purseText() !== before ? true : null),
           { timeout: 6000 });
-        c.ok(!!paid, 'buying at x2 debits the purse', `${before} -> ${purse()}`);
+        c.ok(!!paid, 'buying at x2 debits the purse', `${before} -> ${purseText()}`);
       } else {
         c.ok(true, 'nothing affordable at x2 - which is also the dial working');
       }
@@ -1756,6 +1762,33 @@ export async function runPlayerView(CheckClass) {
     dmToken = opened.body.token;
     check.ok(!!opened.body.code, 'the DM opened a table', opened.body.code);
 
+    // A world in progress: a campaign with a secret agenda and a map with a
+    // hidden pin - the player's screens must carry the day and the sky, and
+    // never the secrets.
+    await api('/api/campaigns/gym-pv-camp', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Toon-Token': dmToken },
+      body: JSON.stringify({ id: 'gym-pv-camp', name: 'PV Realm', active: true,
+        day: 7, seed: 4242, currentRegionId: 'reg-pv',
+        regions: [{ id: 'reg-pv', name: 'Proof Vale', terrain: 'forest',
+          priceMod: 1, note: '' }],
+        factions: [{ id: 'f-pv', name: 'The Ledger', standing: 1,
+          agenda: 'SECRETAGENDA', public: true }],
+        mapId: 'gym-pv-map', lore: [] }),
+    });
+    await api('/api/maps/gym-pv-map', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Toon-Token': dmToken },
+      body: JSON.stringify({ id: 'gym-pv-map', name: 'PV Map',
+        image: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', w: 1, h: 1,
+        pins: [
+          { id: 'pv-shown', x: 0.3, y: 0.3, kind: 'location',
+            label: 'Shown Pin', revealed: true },
+          { id: 'pv-hidden', x: 0.7, y: 0.7, kind: 'quest',
+            label: 'HIDDENPIN', revealed: false },
+        ] }),
+    });
+
     // A fight in progress, with a number the DM is keeping to themselves.
     await api('/api/encounters/current', {
       method: 'PUT',
@@ -1859,6 +1892,28 @@ export async function runPlayerView(CheckClass) {
     });
     check.eq(refused.status, 403,
       'and the server refuses the write regardless of what the UI offers');
+
+    // --- the world reaches the player, minus the secrets -----------------
+    const worldText = mainText(doc).replace(/\s+/g, ' ');
+    check.ok(/Day 7/.test(worldText),
+      'the day is on the Party screen - an in-world fact, always shared');
+    check.ok(/Proof Vale/.test(worldText), 'and where the party stands');
+    check.ok(/The Ledger/.test(worldText),
+      'a public faction shows its standing');
+    check.ok(!worldText.includes('SECRETAGENDA'),
+      'with no agenda anywhere on screen');
+
+    const campWire = await fetch('/api/campaigns/gym-pv-camp', {
+      headers: { 'X-Toon-Token': joined.body.token },
+    }).then((r) => r.text());
+    check.ok(!campWire.includes('SECRETAGENDA'),
+      'nor anywhere in the payload');
+
+    const mapWire = await fetch('/api/maps/gym-pv-map', {
+      headers: { 'X-Toon-Token': joined.body.token },
+    }).then((r) => r.text());
+    check.ok(mapWire.includes('Shown Pin') && !mapWire.includes('HIDDENPIN'),
+      'the map arrives with only its revealed pins');
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {
@@ -1866,6 +1921,10 @@ export async function runPlayerView(CheckClass) {
     try {
       if (dmToken) {
         await api('/api/encounters/current', {
+          method: 'DELETE', headers: { 'X-Toon-Token': dmToken } });
+        await api('/api/campaigns/gym-pv-camp', {
+          method: 'DELETE', headers: { 'X-Toon-Token': dmToken } });
+        await api('/api/maps/gym-pv-map', {
           method: 'DELETE', headers: { 'X-Toon-Token': dmToken } });
       }
       await api('/api/table/close', { method: 'POST' });

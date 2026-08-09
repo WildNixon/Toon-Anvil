@@ -138,14 +138,15 @@ and gold, for the evening session). Settings → Appearance switches them; the
 default follows your device. Type is Cinzel and Alegreya with IBM Plex Mono
 for numbers — all SIL OFL, bundled as woff2, no CDN.
 
-Navigation is grouped by what you are doing, and **who you are decides what
-exists**. Solo, everything is yours. At a table, a player's menu is Play,
-Party, Roleplay, Market and Chronicle — plus Build when the forge is open or
-a level-up waits — and the DM's menu is the DM screen and the gear, nothing
-else. A **hero ribbon** under the top bar follows players across every
-screen: name, an HP bar with quick damage/heal, AC, conditions, and a
-character switcher. Its damage button calls the same engine rule as the
-sheet's, so the two can never disagree.
+**Two apps, one world.** The seat picks the whole app, and the **seat
+plaque** in the top bar says which at all times — oak-gold **HERO** or
+crimson **DUNGEON MASTER**, the entire chrome retinting with it. Solo,
+clicking the plaque flips the app; at a table it is a lock, because the
+table decides. The Hero app is Play, Party, Roleplay, Market, Chronicle —
+plus Build when the forge is open or a level-up waits — with the **hero
+ribbon** following you everywhere: name, HP bar with quick damage/heal, AC,
+conditions, character switcher, its damage the same engine rule as the
+sheet's. The DM app is the captain's screens and nothing else.
 
 **Seats.** First run asks whether this device belongs to a player or the
 Dungeon Master, and remembers. A player's menu is about playing — no DM
@@ -174,12 +175,13 @@ nothing to break when an upstream URL moves. If a dependency is missing,
 
 ## Running a session
 
-The **DM** screen is the campaign through four lenses, built to stay open at
-the table, all of it working with no network.
+The **DM app** is five screens, built to stay open at the table, all of it
+working with no network.
 
-| Lens | What it shows |
+| Screen | What it shows |
 |---|---|
 | **Stage** | The live now: the fight (one initiative list, party and monsters together, resistances applied by the engine), who is at the table with their claims, party vitals — and the DM's levers: the forge, per-character and party-wide level-up grants, assigning characters. |
+| **Deck** | The campaign as a control panel. The in-game **day** and its **weather** (computed from the campaign's seed — deterministic, so every screen derives the same sky and any day is recomputable), the **interactive map** (drop the setting's image; pan, zoom, pin locations, factions, quests and the party; reveal pins one by one), **factions** with standing sliders, public toggles and SECRET agendas plus a standing-over-days chart, and the **economy**: a price dial per region that the players' Market actually charges — turn it and their open screens re-price, live. Also ingests a setting document: split by headings, file each section as a region, faction, NPC or lore with one click. |
 | **World** | The prep: bestiary, encounter builder, treasure hoards, improv generators, rules reference — behind sub-tabs, each with its own search. Nothing here redraws off the live feed, so a half-typed search survives a player's die roll. |
 | **Story** | The whole party's event log as it happens — every roll, purchase and promise with the character's name on it — plus the open threads: promises unkept, secrets unused, NPCs met once. Read-only: the story is what the table did. |
 | **Setup** | Before the campaign: open the table (the code shows big, and only on the server's own machine), the forge toggle, and the homebrew workshop — homebrew is added and accepted by the DM here, before the start, and stays a DM-only tool after. |
@@ -267,6 +269,13 @@ screen: the initiative order, the round, whose turn it is, their own line
 marked — and the whole party's vitals beside it. It is the same renderer the DM uses, in read-only mode — two renderers
 for one initiative order is how the two views end up disagreeing about whose
 turn it is.
+
+**The world reaches the players — minus the secrets.** The day and the
+weather are always shared (in-world facts, computed client-side from the
+same seed the DM uses). The map shows players **only revealed pins**, and a
+faction only if the DM marked it public; agendas, hidden pins and pin notes
+are stripped by the **server**, never merely undrawn. The Market wears the
+current region's price dial and says so above the counter.
 
 **Enemy hit points are hidden by default**, with a toggle for the DM. Players
 see a band — unhurt, hurt, bloodied, down — which is roughly what you can tell

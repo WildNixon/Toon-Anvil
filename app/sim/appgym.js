@@ -2810,10 +2810,10 @@ export const BARS = {
   // landed. A coverage bar that never moves as the suite grows stops being a
   // bar and becomes decoration - it would read green forever while the ratio
   // of things tested to things shipped quietly fell.
-  // Raised again (32 -> 34) with the forge, the grants, the join gate and
-  // the story feed. The ratchet only means something if it moves when the
+  // Raised again (34 -> 38) with the shells, the Deck, the weather, the map
+  // and the economy. The ratchet only means something if it moves when the
   // app grows.
-  minFeaturesCovered: 34,
+  minFeaturesCovered: 38,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.
