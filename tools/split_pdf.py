@@ -259,7 +259,11 @@ def blocks_from(pages: list[str]) -> list[dict]:
             t = line.strip()
             if not (3 <= len(t) <= 64):
                 continue
-            if t.endswith((".", ",", ";", ":")) and not t.endswith("Spells:"):
+            # A trailing colon is HEADING punctuation ("Quint Farm:",
+            # "Upriver:") - a whole adventure produced two blocks because
+            # every one of its headings ended this way. Sentence punctuation
+            # still disqualifies.
+            if t.endswith((".", ",", ";")):
                 continue
             if not re.match(r"^[A-Z0-9]", t):
                 continue
@@ -270,17 +274,41 @@ def blocks_from(pages: list[str]) -> list[dict]:
             if caps / max(1, len(words)) < 0.55:
                 continue
             nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
-            if len(nxt) < 25:
+            # A size-and-type line under a caps heading is a creature header
+            # no matter how short it runs - "Tiny beast, Unaligned" is 21
+            # characters and the 25-char floor was eating the creature name.
+            if len(nxt) < 25 and not SIZE_LINE.match(nxt):
                 continue
             marks.append(i)
+
+        # No text left behind. Text before the first heading - or a whole
+        # page with no heading-shaped line at all - used to VANISH, which
+        # broke the splitter's own credo (unclassified is kept, silence is
+        # not) and put a floor under every downstream number: the census
+        # cannot count a statblock the block stream never carried.
+        if not marks:
+            body = text.strip()
+            if len(body) >= 60:
+                out.append({"title": "", "text": body, "page": pageno,
+                            "chars": len(body), "untitled": True})
+            continue
+        lead = "\n".join(lines[:marks[0]]).strip()
+        if len(lead) >= 60:
+            out.append({"title": "", "text": lead, "page": pageno,
+                        "chars": len(lead), "untitled": True})
 
         for j, at in enumerate(marks):
             end = marks[j + 1] if j + 1 < len(marks) else len(lines)
             body = "\n".join(lines[at + 1:end]).strip()
-            if len(body) < 60:
+            # Short bodies are NOT discarded any more: a statblock's own
+            # label lines ("Armor Class 17" over a one-line body) are
+            # heading-shaped, and dropping them deleted the very lines the
+            # stitcher needs. The 60-char floor now applies only to
+            # untitled fragments above.
+            if not body and not lines[at].strip():
                 continue
             out.append({
-                "title": lines[at].strip(),
+                "title": lines[at].strip().rstrip(":"),
                 "text": body,
                 "page": pageno,
                 "chars": len(body),
@@ -297,41 +325,85 @@ def blocks_from(pages: list[str]) -> list[dict]:
 # blocks. The parser was blamed for this before the cause was found.
 STATBLOCK_START = re.compile(r"Armor Class\s*\d+", re.I)
 STATBLOCK_END = re.compile(r"Challenge\s*[\d/]+|CR\s*[\d/]+", re.I)
+# The size-and-type line every 5e statblock opens with ("Large aberration,
+# Lawful Evil"). It is how the next creature's HEADER is told apart from one
+# more action heading once the challenge rating has been seen.
+SIZE_LINE = re.compile(
+    r"^\s*(?:Tiny|Small|Medium|Large|Huge|Gargantuan)\b", re.I)
 # Headings that continue a statblock rather than beginning something new.
 CONTINUATION = re.compile(
     r"^\s*(?:actions?|reactions?|bonus actions?|legendary actions?|traits?"
     r"|lair actions?|regional effects?|villain actions?"
     r"|(?:str|dex|con|int|wis|cha)\b.*"
-    r"|[A-Z][A-Za-z'()\- ]{0,40}\.?)\s*$",
+    r"|[A-Z][A-Za-z'()\-\d/ ]{0,40}\.?)\s*$",
 )
+
+
+def _starts_statblock(b: dict) -> bool:
+    """The run's start signal, in the TITLE or the head of the text.
+
+    blocks_from no longer discards short-bodied label blocks, so "Armor
+    Class 17" now arrives as a block TITLE with a one-line body - the old
+    text-only test never saw it.
+    """
+    return bool(STATBLOCK_START.search(b["title"])
+                or STATBLOCK_START.search(b["text"][:400]))
+
+
+def _is_name_block(b: dict) -> bool:
+    """A creature-name heading directly above its statblock: a real name for
+    a title (not a label or container) over a size line or nothing at all."""
+    if not b.get("title") or is_heading_title(b["title"]):
+        return False
+    body = b["text"].strip()
+    return not body or (len(body) <= 200 and bool(SIZE_LINE.match(body)))
 
 
 def stitch_statblocks(blocks: list[dict]) -> list[dict]:
     """Re-join the pieces of a statblock into one block.
 
-    Starts at a block containing "Armor Class N" and absorbs following blocks
-    until the challenge rating has been seen AND a following block looks like a
-    new creature rather than a continuation - or until nothing statblock-shaped
-    remains. Conservative on purpose: over-merging two creatures is worse than
-    under-merging one, so a second "Armor Class" always ends the run.
+    Starts at a block whose title or head carries "Armor Class N", pulls the
+    creature-NAME block back in from just above (its body is the size line,
+    so it is never mistaken for a trailing action), and absorbs following
+    blocks until the challenge rating has been seen AND a following block
+    looks like a new creature rather than a continuation. Conservative on
+    purpose: over-merging two creatures is worse than under-merging one, so
+    a second "Armor Class" always ends the run, and so does the next
+    creature's size line.
     """
     out: list[dict] = []
     i = 0
     while i < len(blocks):
         b = blocks[i]
-        if not STATBLOCK_START.search(b["text"][:400]):
+        if not _starts_statblock(b):
             out.append(b)
             i += 1
             continue
 
         merged = dict(b)
-        parts = [b["text"]]
-        seen_cr = bool(STATBLOCK_END.search(b["text"]))
+        # The start block's own title is content when it is a LABEL ("Armor
+        # Class 17") - fold it into the text. A name title stays a title.
+        if STATBLOCK_START.search(b["title"]):
+            parts = [f"{b['title']}\n{b['text']}"]
+        else:
+            parts = [b["text"]]
+        # Pull the creature's name back in from the block above.
+        if out and _is_name_block(out[-1]) and b["page"] - out[-1]["page"] <= 1:
+            name = out.pop()
+            merged["title"] = name["title"]
+            merged["page"] = name["page"]
+            if name["text"].strip():
+                parts.insert(0, name["text"])
+        seen_cr = bool(STATBLOCK_END.search(parts[0]))
         j = i + 1
         while j < len(blocks):
             nxt = blocks[j]
-            # A second statblock always ends the run, whatever else is true.
-            if STATBLOCK_START.search(nxt["text"][:400]):
+            # A second statblock always ends the run, whatever else is true -
+            # and so does the next creature's header (a size line right under
+            # a name-shaped title).
+            if _starts_statblock(nxt):
+                break
+            if seen_cr and SIZE_LINE.match(nxt["text"]):
                 break
             # Once the challenge rating has been seen, only continuation-shaped
             # headings keep the run going.
@@ -657,20 +729,58 @@ def selftest() -> dict:
     mons = _srd_monsters(3)
     m0 = mons[0]
 
-    # 1. KNOWN DEFECT, pinned so it cannot be forgotten: a whole statblock
-    #    under its name heading currently SHATTERS. Every label line (Armor
-    #    Class, Hit Points, the score row) is heading-shaped, so blocks_from
-    #    marks each one - and then DISCARDS the sub-60-char bodies between
-    #    them, deleting the AC line before the stitcher can see a start
-    #    signal. This is the Monster Manual's 81 orphan blocks in miniature.
-    #    The stitching fix flips this case to assert ONE monster.
+    # 1. FLIPPED from KNOWN_DEFECT_whole_statblock_shatters: a whole
+    #    statblock under its name heading is now ONE classified monster
+    #    carrying the creature's name. It used to shatter - every label line
+    #    is heading-shaped, and the sub-60-char bodies between them were
+    #    silently discarded, deleting the AC line before the stitcher could
+    #    see a start signal. blocks_from now keeps every marked block and
+    #    the stitcher starts on a title OR text signal and pulls the name
+    #    block back in from above.
     page = f"{m0['name'].upper()}\n{_render_fixture(m0)}"
     blocks = blocks_from([page])
-    kinds = [classify(b)[0] for b in blocks]
-    case("KNOWN_DEFECT_whole_statblock_shatters",
-         kinds.count("monster") == 0
-         and not any("Armor Class" in b["text"] for b in blocks),
-         f"kinds={kinds} (flip to =1 monster when stitching is fixed)")
+    monsters = [b for b in blocks if classify(b)[0] == "monster"]
+    case("whole_statblock_is_one_monster",
+         len(monsters) == 1
+         and monsters[0]["title"].lower() == m0["name"].lower(),
+         f"monsters={[b['title'] for b in monsters]}")
+
+    # 1b. TWO statblocks on one page come out as two, each under its own
+    #     name - the size line under a name heading is the boundary.
+    page2 = (f"{m0['name'].upper()}\n{_render_fixture(m0)}\n"
+             f"{mons[1]['name'].upper()}\n{_render_fixture(mons[1])}")
+    blocks2 = blocks_from([page2])
+    monsters2 = [b for b in blocks2 if classify(b)[0] == "monster"]
+    case("two_statblocks_two_monsters",
+         len(monsters2) == 2
+         and {b["title"].lower() for b in monsters2}
+         == {m0["name"].lower(), mons[1]["name"].lower()},
+         f"monsters={[b['title'] for b in monsters2]}")
+
+    # 1c. No text left behind: a page with no heading-shaped line at all
+    #     still reaches the block stream (as an untitled block), so the
+    #     census can count what it carries.
+    plain = ("The road to the mill winds through fields of blighted wheat. "
+             "Anyone searching the millhouse finds the ledger the smugglers "
+             "kept, and the miller will talk if pressed politely.")
+    lead_blocks = blocks_from([plain])
+    case("headingless_page_survives",
+         len(lead_blocks) == 1 and lead_blocks[0].get("untitled") is True
+         and "ledger" in lead_blocks[0]["text"],
+         f"blocks={len(lead_blocks)}")
+
+    # 1d. Colon headings ("Quint Farm:") mark blocks - a whole adventure
+    #     yielded two blocks because every heading ended with a colon.
+    colon_page = ("Quint Farm:\nThe farmstead sits a mile east of the river "
+                  "crossing, its barn newly burned and its well fouled.\n"
+                  "Upriver:\nThe lumber camp pays double for an escort, and "
+                  "the foreman knows more than he admits about the fires.")
+    colon_blocks = blocks_from([colon_page])
+    case("colon_headings_mark_blocks",
+         len(colon_blocks) == 2
+         and colon_blocks[0]["title"] == "Quint Farm"
+         and colon_blocks[1]["title"] == "Upriver",
+         f"titles={[b['title'] for b in colon_blocks]}")
 
     # 2. The stitcher rejoins a statblock fragmented at its action headings -
     #    the designed case: the run STARTS at a block whose head carries
