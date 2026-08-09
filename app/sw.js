@@ -18,7 +18,7 @@
  * between "installed" and "actually usable on a train".
  */
 
-const VERSION = 'toon-anvil-v6';
+const VERSION = 'toon-anvil-v7';
 
 /** Immutable between releases: safe to serve from cache without asking. */
 const IMMUTABLE = /\/(data\/fonts|data\/compendium|icons)\//;
@@ -54,7 +54,12 @@ const SHELL = [
   './modes/shop/shop.js',
   './modes/rp/rp.js',
   './modes/chronicle/chronicle.js',
-  './modes/dm/dm.js',
+  './modes/dm/shared.js',
+  './modes/dm/stage-mode.js',
+  './modes/dm/world-mode.js',
+  './modes/dm/story-mode.js',
+  './modes/dm/setup-mode.js',
+  './modes/dm/deck.js',
   './modes/dm/stage.js',
   './modes/dm/world.js',
   './modes/dm/story.js',

@@ -125,10 +125,11 @@ function seatPanel() {
 
   const dm = session.isDm();
   panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
-    `This device is ${dm ? "in the DM's seat: the DM screen and the homebrew "
-      + 'analyser are in the menu' : "in a player's seat: the menu stays "
-      + 'about playing'}. This tidies the menu, nothing more - at a real `
-    + 'table the server decides what you may change.'));
+    `This device is ${dm ? "in the DM's seat: the whole app is the "
+      + "captain's screens - Stage, Deck, World, Story, Setup"
+      : "in a player's seat: the whole app is about playing"}. `
+    + 'The plaque in the top bar switches it too. At a real table the '
+    + 'server decides what you may change, whatever the menu shows.'));
 
   panel.append(el('button', {
     class: 'act' + (dm ? ' ghost' : ''),

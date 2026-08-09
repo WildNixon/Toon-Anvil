@@ -80,9 +80,12 @@ let roleMemory = null;
 function ephemeralSeat() {
   const p = new URLSearchParams(location.search);
   if (p.get('storage') !== 'memory') return null;
-  // Default DM: a sandbox exists to try everything. ?seat=player narrows it,
-  // ?seat=ask shows the first-run welcome (the gym uses this to test it).
-  return p.get('seat') || 'dm';
+  // Default HERO seat: the sandbox opens as the player app, and the seat
+  // plaque is one click from the DM shell. (It used to default to DM, but
+  // under pure shells that would boot a sandbox with no Build - and both
+  // the person and the test harness reach for Build first.)
+  // ?seat=dm boots the DM shell; ?seat=ask shows the first-run welcome.
+  return p.get('seat') || 'player';
 }
 
 /** The seat chosen on THIS device, before any table has a say. */
@@ -170,23 +173,26 @@ export async function grant({ characterId, toLevel = null, revoke = false }) {
 /**
  * Which modes exist for whom - one pure rule, testable as a table.
  *
- * The DM at a table gets the lenses and the gear, nothing else: their job is
- * orchestrating, and Play/Build/Market are the players' screens. A player
- * gets screens about what they control - Build only while the forge is open
- * or a grant is waiting, and never the solo Combat tracker while the DM is
- * running the real fight. Solo (no table) is untouched for both seats.
+ * Two shells. The seat picks one, whole: the DM's app is the captain's
+ * screens (Stage, Deck, World, Story, Setup) and nothing else; the player's
+ * app is about what they control - Build only while the forge is open or a
+ * grant is waiting, the solo Combat tracker never while a table runs the
+ * real fight. Settings' gear serves both. The seat plaque in the top bar is
+ * the switch (solo) and the lock (at a table).
  *
  * Navigation, not security: the server refuses what it refuses regardless.
  */
 export function navFor({ tableOpen, seat, forgeOpen: forge, hasGrant }, modes) {
+  const shell = seat === 'dm' ? 'dm' : 'player';
   return modes.filter((m) => {
-    if (m.gear) return true;
-    if (tableOpen && seat === 'dm') return m.id === 'dm';
-    if (m.dmOnly && seat !== 'dm') return false;
+    if (m.gear) return true;                       // Settings serves both shells
+    // THE hard split: a mode belongs to one shell, and the seat picks the
+    // shell. The DM's app is the same solo and at a table - that is the
+    // whole point of it being an app rather than a tab.
+    if ((m.shell || 'player') !== shell) return false;
     if (m.tableOnly && !tableOpen) return false;
     if (m.soloOnly && tableOpen) return false;
-    if (m.id === 'build' && tableOpen && seat === 'player'
-        && !forge && !hasGrant) return false;
+    if (m.id === 'build' && tableOpen && !forge && !hasGrant) return false;
     return true;
   });
 }

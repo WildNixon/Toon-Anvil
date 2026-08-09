@@ -47,9 +47,12 @@ export async function render(root) {
   // updates - so the previous one is dropped first.
   if (unsubscribe) unsubscribe();
   unsubscribe = live.subscribe(['encounters', 'table', 'characters'], async () => {
-    // Only redraw if this screen is still the one mounted. A stale listener
-    // writing into a detached node is invisible until it is not.
-    if (!container.isConnected) { unsubscribe?.(); unsubscribe = null; return; }
+    // Only redraw if this screen still OWNS the view. The container is #view
+    // itself, which is always connected - the honest check is the mode stamp,
+    // or a stale listener paints the Party screen over whatever replaced it.
+    if (container.dataset.rendered !== 'table') {
+      unsubscribe?.(); unsubscribe = null; return;
+    }
     await refresh();
     draw();
   });

@@ -87,6 +87,7 @@
   --chrome-hover:  rgba(241, 232, 210, .10);
   --chrome-raised: #2b2117;
   --chrome-gold:   #b18a3c;
+  --nav-current:   #8e2a1c;
 
   --display: 'Cinzel', Georgia, 'Times New Roman', serif;
   --mono: 'Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
@@ -173,6 +174,20 @@
   --gold-soft: rgba(138, 106, 36, .35);
   --focus:     #2f5d50;
   --shadow: 0 2px 0 rgba(46, 36, 24, .18);
+}
+
+/* THE SEAT decides the whole chrome. Hero = waxed oak with gold; the
+   Dungeon Master's command chrome is deep crimson - you cannot mistake
+   which app you are holding, in either page theme (chrome tokens are
+   deliberately theme-invariant). */
+:root[data-seat='dm'] {
+  --chrome:        #2c1518;
+  --chrome-ink:    #f3e6d8;
+  --chrome-dim:    rgba(243, 230, 216, .62);
+  --chrome-hover:  rgba(243, 230, 216, .10);
+  --chrome-raised: #38191d;
+  --chrome-gold:   #c08a52;
+  --nav-current:   #6f1d13;
 }
 
 * { box-sizing: border-box; }
@@ -313,7 +328,7 @@ nav.modes button {
 }
 nav.modes button:hover { color: var(--chrome-ink); background: var(--chrome-hover); }
 nav.modes button[aria-current='true'] {
-  background: var(--accent); color: var(--zinc); border-color: var(--accent);
+  background: var(--nav-current); color: var(--zinc); border-color: var(--nav-current);
 }
 
 /* Grouped navigation: a gilt hairline between realms, a whispered label. */
@@ -328,6 +343,23 @@ nav.modes button[aria-current='true'] {
   color: var(--chrome-gold); opacity: .9; margin-right: 4px;
   user-select: none;
 }
+.seat-plaque {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase; white-space: nowrap;
+  border: 1px solid rgba(0, 0, 0, .35); border-radius: var(--radius);
+  padding: 7px 12px; cursor: pointer;
+  background: #b18a3c; color: #221a11;             /* Hero: oak-gold */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 1px 0 rgba(0, 0, 0, .3);
+}
+:root[data-seat='dm'] .seat-plaque {
+  background: #8e2a1c; color: #f7f1e3;             /* DM: heraldic crimson */
+}
+.seat-plaque[aria-disabled='true'] {
+  cursor: default;
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .3);
+}
+.seat-plaque:not([aria-disabled='true']):hover { filter: brightness(1.1); }
+
 .gearbtn { margin-left: auto; }
 .gearbtn svg { display: block; width: 16px; height: 16px; }
 

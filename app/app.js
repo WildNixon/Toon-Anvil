@@ -16,36 +16,47 @@ import * as live from './core/live.js';
 import * as theme from './ui/theme.js';
 
 /**
- * `dmOnly` hides a mode from players at a table; `tableOnly` shows one only
- * when there IS a table. Solo play sees everything except the table view,
- * because with nobody else at the table there is nothing to show.
+ * TWO SHELLS. `shell` decides which app a mode belongs to, and the seat
+ * decides which shell exists - the DM's app is the captain's screens and
+ * nothing else, the player's app is about what they control. The seat
+ * plaque in the top bar is the switch (solo) and the lock (at a table).
+ * `tableOnly` / `soloOnly` refine within a shell; the gear serves both.
  *
- * This is navigation, not security. A player who types the hash reaches the
- * mode; what stops them changing anything is the server refusing the write.
- * Hiding these is about giving a player a screen that is about their game
- * rather than one with the DM's tools greyed out in it.
+ * This is navigation, not security. A player who types a hash reaches
+ * nothing the server would not refuse anyway.
  */
 const MODES = [
-  { id: 'sheet',     label: 'Play',      group: 'Your Hero', ribbon: true,
+  { id: 'sheet',     label: 'Play',      shell: 'player', group: 'Your Hero', ribbon: true,
     load: () => import('./modes/sheet/sheet.js') },
-  { id: 'build',     label: 'Build',     group: 'Your Hero', ribbon: true,
+  { id: 'build',     label: 'Build',     shell: 'player', group: 'Your Hero', ribbon: true,
     load: () => import('./modes/build/build.js') },
-  { id: 'combat',    label: 'Combat',    group: 'Adventure', ribbon: true,
+  { id: 'combat',    label: 'Combat',    shell: 'player', group: 'Adventure', ribbon: true,
     // The solo tracker. At a table the DM's runner IS the fight; a second,
     // unsynced initiative list is clutter that disagrees with the real one.
     soloOnly: true,
     load: () => import('./modes/combat/combat.js') },
-  { id: 'rp',        label: 'Roleplay',  group: 'Adventure', ribbon: true,
+  { id: 'rp',        label: 'Roleplay',  shell: 'player', group: 'Adventure', ribbon: true,
     load: () => import('./modes/rp/rp.js') },
-  { id: 'shop',      label: 'Market',    group: 'Adventure', ribbon: true,
+  { id: 'shop',      label: 'Market',    shell: 'player', group: 'Adventure', ribbon: true,
     load: () => import('./modes/shop/shop.js') },
-  { id: 'chronicle', label: 'Chronicle', group: 'Adventure', ribbon: true,
+  { id: 'chronicle', label: 'Chronicle', shell: 'player', group: 'Adventure', ribbon: true,
     load: () => import('./modes/chronicle/chronicle.js') },
-  { id: 'table',     label: 'Party',     group: 'Adventure', tableOnly: true, ribbon: true,
+  { id: 'table',     label: 'Party',     shell: 'player', group: 'Adventure', tableOnly: true, ribbon: true,
     load: () => import('./modes/table/table.js') },
-  { id: 'dm',        label: 'DM',        group: 'Dungeon Master', dmOnly: true,
-    load: () => import('./modes/dm/dm.js') },
-  // No group: rendered as the gear pinned to the right.
+
+  // The DM shell: an entirely different app. Same solo as at a table.
+  { id: 'dm-stage',  label: 'Stage', shell: 'dm', group: 'The Session',
+    load: () => import('./modes/dm/stage-mode.js') },
+  { id: 'dm-deck',   label: 'Deck',  shell: 'dm', group: 'The Session',
+    load: () => import('./modes/dm/deck.js') },
+  { id: 'dm-world',  label: 'World', shell: 'dm', group: 'The Campaign',
+    load: () => import('./modes/dm/world-mode.js') },
+  { id: 'dm-story',  label: 'Story', shell: 'dm', group: 'The Campaign',
+    load: () => import('./modes/dm/story-mode.js') },
+  { id: 'dm-setup',  label: 'Setup', shell: 'dm', group: 'The Campaign',
+    load: () => import('./modes/dm/setup-mode.js') },
+
+  // No shell: the gear serves both.
   { id: 'settings',  label: 'Settings',  gear: true,
     load: () => import('./modes/settings/settings.js') },
 ];
@@ -202,8 +213,13 @@ export async function selectCharacter(id) {
 /* ------------------------------------------------------------------ */
 
 let currentMode = null;
+let renderSeq = 0;
 
 async function renderMode() {
+  // Renders await module imports, and two calls can be in flight when the
+  // seat resolves mid-boot. Only the NEWEST call may paint - a stale async
+  // render finishing last must not win the screen.
+  const seq = ++renderSeq;
   const { mode } = getState();
   const view = $('#view');
   // A hash can point at a mode this browser should not be on - a player who
@@ -225,8 +241,10 @@ async function renderMode() {
   view.innerHTML = '<div class="empty">Loading&hellip;</div>';
   try {
     const mod = await entry.load();
+    if (seq !== renderSeq) return;
     view.innerHTML = '';
     await mod.render(view);
+    if (seq !== renderSeq) return;
   } catch (err) {
     console.error(`[app] mode "${entry.id}" failed`, err);
     view.innerHTML = `<div class="panel accent rivets">
@@ -263,7 +281,42 @@ const GEAR_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
   + '<path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1'
   + 'M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>';
 
+/**
+ * The seat plaque: which app this is, always on screen.
+ *
+ * Solo it IS the switch - one click flips the whole shell. At a table it is
+ * a lock, because the table decides the seat. Lives OUTSIDE nav#modes on
+ * purpose (the tests sweep nav labels), and its text is never the exact
+ * string 'DM' (a nav label the tests assert about).
+ */
+function renderSeatPlaque() {
+  const host = $('#seat');
+  if (!host) return;
+  const dm = session.isDm();
+  const locked = session.isOpen();
+  host.dataset.seat = dm ? 'dm' : 'player';
+  host.textContent = dm ? 'Dungeon Master' : 'Hero';
+  host.title = locked
+    ? 'A table is open - your seat there decides'
+    : `Switch to the ${dm ? 'Hero' : "Dungeon Master's"} seat`;
+  host.setAttribute('aria-disabled', String(locked));
+  host.onclick = locked ? null : async () => {
+    session.setLocalRole(dm ? 'player' : 'dm');
+    applySeatAttr();
+    await refreshChrome();
+    // A shell switch is a mode switch too: the mode you were on does not
+    // exist over here. refreshChrome's visibility re-check handles it.
+  };
+  applySeatAttr();
+}
+
+/** The whole chrome tints off this attribute - crimson command vs oak. */
+function applySeatAttr() {
+  document.documentElement.dataset.seat = session.isDm() ? 'dm' : 'player';
+}
+
 function renderNav() {
+  renderSeatPlaque();
   const nav = $('#modes');
   const { mode } = getState();
   nav.innerHTML = '';
@@ -701,17 +754,24 @@ async function boot() {
   ]);
   setState({ characters, homebrew, ready: true });
 
-  const hash = location.hash.replace('#', '');
-  const mode = visibleModes().some((m) => m.id === hash) ? hash : 'build';
 
   const last = localStorage.getItem('toonanvil.lastCharacter');
   if (last && characters.some((c) => c.id === last)) await selectCharacter(last);
   else if (characters.length) await selectCharacter(characters[0].id);
 
-  setState({ mode });
   // Who am I at this table? With none open the answer is "the only person
-  // here", which is what solo play already assumed.
+  // here". This must land BEFORE the boot mode is chosen: which shell exists
+  // depends on the seat, and the seat is not knowable from stale local state
+  // - a device remembered as DM booting into an open table is a player.
   await session.refresh();
+
+  // Legacy hash: the DM screen used to be one mode with lens tabs.
+  const rawHash = location.hash.replace('#', '');
+  const hash = rawHash === 'dm' ? 'dm-stage' : rawHash;
+  const mode = visibleModes().some((m) => m.id === hash)
+    ? hash
+    : (visibleModes()[0]?.id || 'build');
+  setState({ mode });
 
   // Watch BEFORE anything renders. The watcher baselines on the current
   // revision the moment it starts; putting it after the first paint left a

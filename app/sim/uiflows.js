@@ -117,6 +117,25 @@ export async function goToMode(doc, label, expect = null) {
   return true;
 }
 
+/**
+ * Put the app in the right SHELL before driving it.
+ *
+ * The seat plaque (#seat) is clicked by id, never by label - its text is a
+ * word the nav also cares about, and label lookups are how tests drive the
+ * wrong control. A no-op when already seated.
+ */
+export async function ensureSeat(doc, seat) {
+  const plaque = doc.querySelector('#seat');
+  if (!plaque) return false;
+  if (plaque.dataset.seat === seat) return true;
+  plaque.click();
+  const flipped = await waitFor(() => (
+    doc.querySelector('#seat')?.dataset.seat === seat ? true : null),
+  { timeout: 6000 });
+  await waitUntilSettled(doc);
+  return Boolean(flipped);
+}
+
 /** Numbers visible on screen, for asserting that a display actually moved. */
 export function readNumberAfter(doc, label) {
   const t = mainText(doc);
@@ -294,6 +313,39 @@ export const FLOWS = [
       const off = await waitFor(() => button(doc, 'Poisoned')?.className === before,
         { timeout: 5000 });
       c.ok(!!off, 'the condition can be removed again');
+    },
+  },
+
+  {
+    id: 'seat_switch',
+    title: 'The plaque flips the whole app, and says so',
+    async run(c, { doc, win }) {
+      c.feature('ui', 'seat', 'shell');
+      const labels = () => [...doc.querySelectorAll('#modes button')]
+        .map((b) => b.textContent.trim());
+      const plaque = () => doc.querySelector('#seat');
+
+      c.ok(!!plaque(), 'the seat plaque is always in the top bar');
+      c.eq(plaque().dataset.seat, 'player', 'a sandbox opens in the Hero seat');
+      c.eq(plaque().textContent, 'Hero', 'and the plaque names it');
+      c.ok(labels().includes('Play') && !labels().includes('Stage'),
+        "the Hero shell is the player's app", labels().join(', '));
+
+      c.ok(await ensureSeat(doc, 'dm'), 'one click takes the DM seat');
+      c.eq(win.document.documentElement.dataset.seat, 'dm',
+        'the whole chrome tints off the seat attribute');
+      c.eq(plaque().textContent, 'Dungeon Master', 'the plaque changed');
+      c.ok(labels().includes('Stage') && labels().includes('Deck')
+        && !labels().includes('Play'),
+      "the DM shell is the captain's app - not one player screen in it",
+      labels().join(', '));
+      c.ok(doc.querySelector('#ribbon')?.hidden === true,
+        'the hero ribbon does not follow the DM');
+
+      c.ok(await ensureSeat(doc, 'player'), 'and one click back');
+      c.eq(win.document.documentElement.dataset.seat, 'player',
+        'the attribute follows');
+      c.ok(labels().includes('Play'), 'the player app returns');
     },
   },
 
@@ -578,11 +630,9 @@ export const FLOWS = [
     title: 'Run a fight through the encounter runner',
     async run(c, { doc }) {
       c.feature('ui', 'dm', 'runner', 'combat');
-      // Stage is the default lens: the runner is on screen the moment DM
-      // mode opens - the fight is the DM's home screen now.
-      c.ok(await goToMode(doc, 'DM', 'Encounter'), 'DM mode opens on the Stage');
-      button(doc, 'Stage')?.click();
-      await waitUntilSettled(doc);
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is one plaque click away");
+      c.ok(await goToMode(doc, 'Stage', 'Encounter'),
+        'Stage opens with the runner - the fight is the first screen');
 
       // Add the party member built by an earlier flow.
       const addPc = allButtons(doc).find((b) => /^\+ /.test(b.textContent.trim()));
@@ -639,11 +689,10 @@ export const FLOWS = [
     title: 'The party dashboard shows the numbers a DM looks up',
     async run(c, { doc }) {
       c.feature('ui', 'dm', 'party');
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
       // The party board shares the Stage with the fight - the two things a
       // DM glances at mid-session, one screen.
-      c.ok(await goToMode(doc, 'DM', 'Pass. Perc'), 'the Stage shows the party board');
-      button(doc, 'Stage')?.click();
-      await waitUntilSettled(doc);
+      c.ok(await goToMode(doc, 'Stage', 'Pass. Perc'), 'the Stage shows the party board');
       const t = mainText(doc).replace(/\s+/g, ' ');
       c.ok(/Pass\. Perc/.test(t), 'passive Perception is a column');
       c.ok(/Saving throws/.test(t), 'saving throws are shown');
@@ -657,9 +706,8 @@ export const FLOWS = [
     title: 'Roll a hoard and hand it to a character',
     async run(c, { doc }) {
       c.feature('ui', 'dm', 'loot');
-      c.ok(await goToMode(doc, 'DM'), 'DM mode opens');
-      button(doc, 'World')?.click();
-      await waitUntilSettled(doc);
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'World', 'Encounter builder'), 'World opens');
       button(doc, 'Treasure')?.click();
       await waitUntilSettled(doc);
 
@@ -686,9 +734,8 @@ export const FLOWS = [
     title: 'Improvise an NPC, a rumour and an encounter',
     async run(c, { doc }) {
       c.feature('ui', 'dm', 'generators');
-      c.ok(await goToMode(doc, 'DM'), 'DM mode opens');
-      button(doc, 'World')?.click();
-      await waitUntilSettled(doc);
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'World', 'Encounter builder'), 'World opens');
       button(doc, 'Improvise')?.click();
       await waitUntilSettled(doc);
 
@@ -723,9 +770,8 @@ export const FLOWS = [
     title: 'The bestiary finds a monster',
     async run(c, { doc }) {
       c.feature('ui', 'dm', 'bestiary');
-      c.ok(await goToMode(doc, 'DM'), 'DM mode opens');
-      button(doc, 'World')?.click();
-      await waitUntilSettled(doc);
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'World', 'Encounter builder'), 'World opens');
       button(doc, 'Bestiary')?.click();
       await waitUntilSettled(doc);
       const search = await waitFor(() => doc.querySelector('main input[type=text]'));
@@ -891,12 +937,12 @@ export const FLOWS = [
     title: 'Extracted subclasses can be selected and combined',
     async run(c, { doc }) {
       c.feature('ui', 'homebrew', 'library', 'pdf');
-      // The workshop lives in the DM's Setup lens now.
-      c.ok(await goToMode(doc, 'DM'), 'DM mode opens');
-      button(doc, 'Setup')?.click();
+      // The workshop lives in the DM shell's Setup screen.
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'Setup'), 'Setup opens');
       const bench = await waitFor(() => (/Open library|Hide library/
         .test(mainText(doc)) ? true : null), { timeout: 10000 });
-      c.ok(!!bench, 'the Setup lens carries the homebrew workshop');
+      c.ok(!!bench, 'Setup carries the homebrew workshop');
       const opener = button(doc, 'Open library');
       if (opener) { opener.click(); await waitUntilSettled(doc); }
 
@@ -954,12 +1000,12 @@ export const FLOWS = [
       // Tolerate whatever a previous flow left behind. These flows share one
       // app instance on purpose - that IS the integration - so a flow must not
       // assume it is the first to touch a toggle.
-      // The workshop lives in the DM's Setup lens now.
-      c.ok(await goToMode(doc, 'DM'), 'DM mode opens');
-      button(doc, 'Setup')?.click();
+      // The workshop lives in the DM shell's Setup screen.
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'Setup'), 'Setup opens');
       const bench = await waitFor(() => (/Open library|Hide library/
         .test(mainText(doc)) ? true : null), { timeout: 10000 });
-      c.ok(!!bench, 'the Setup lens carries the homebrew workshop');
+      c.ok(!!bench, 'Setup carries the homebrew workshop');
       const open = button(doc, 'Open library');
       if (open) { open.click(); await waitUntilSettled(doc); }
       c.ok(!!button(doc, 'Hide library'), 'the library is open');
@@ -1118,28 +1164,38 @@ export async function runRoleGate(CheckClass) {
 
     const labels = () => [...doc.querySelectorAll('#modes button')]
       .map((b) => b.textContent.trim());
-    check.ok(!labels().includes('DM') && !labels().includes('Homebrew'),
-      "a player's menu is about playing", labels().join(', '));
+    check.ok(!labels().includes('DM') && !labels().includes('Stage')
+      && !labels().includes('Deck'),
+    "a player's menu carries none of the captain's screens", labels().join(', '));
     check.ok(labels().includes('Play') && labels().includes('Build'),
       'and still owns their character fully');
+    check.eq(doc.querySelector('#seat')?.textContent, 'Hero',
+      'the plaque says which app this is');
 
     check.ok(await goToMode(doc, 'Settings', 'Seat'), 'Settings shows the Seat panel');
     button(doc, "Take the DM's seat")?.click();
-    const dmNav = await waitFor(() => (labels().includes('DM') ? true : null),
+    const dmNav = await waitFor(() => (labels().includes('Stage') ? true : null),
       { timeout: 5000 });
-    check.ok(!!dmNav, "taking the DM's seat reveals the DM screen");
-    // The homebrew workshop is inside the DM's Setup lens now, not the nav.
-    check.ok(await goToMode(doc, 'DM'), 'the DM screen opens');
-    button(doc, 'Setup')?.click();
+    check.ok(!!dmNav, "taking the DM's seat swaps in the whole DM shell");
+    check.ok(['Deck', 'World', 'Story', 'Setup']
+      .every((l) => labels().includes(l)),
+    'all five captain screens are there', labels().join(', '));
+    check.ok(!labels().includes('Play') && !labels().includes('Build'),
+      "and the player's screens are gone - it is a different app");
+    check.eq(doc.querySelector('#seat')?.textContent, 'Dungeon Master',
+      'the plaque changed with it');
+
+    // The homebrew workshop lives in Setup.
+    check.ok(await goToMode(doc, 'Setup'), 'Setup opens');
     const workshop = await waitFor(() => (/homebrew|workshop/i
       .test(mainText(doc)) ? true : null), { timeout: 8000 });
-    check.ok(!!workshop, 'and its Setup lens carries the homebrew workshop');
+    check.ok(!!workshop, 'and carries the homebrew workshop');
 
-    check.ok(await goToMode(doc, 'Settings', 'Seat'), 'back to Settings');
-    button(doc, "Return to the player's seat")?.click();
-    const back = await waitFor(() => (!labels().includes('DM') ? true : null),
+    // The plaque itself is the way back - one click, no Settings trip.
+    doc.querySelector('#seat')?.click();
+    const back = await waitFor(() => (labels().includes('Play') ? true : null),
       { timeout: 5000 });
-    check.ok(!!back, 'and the seat can be handed back');
+    check.ok(!!back, 'clicking the plaque hands the seat back');
 
     check.eq(localStorage.getItem('toonanvil.role'), realRoleBefore,
       'a sandbox seat never touches the real preference');
@@ -1406,6 +1462,11 @@ export async function runTwoClient(CheckClass) {
   const t0 = performance.now();
   let error = null;
   const frames = [];
+  // These clients boot with NO table open, so the REAL device seat decides
+  // their shell - and a machine remembered as DM would boot a Build-less
+  // app and fail for the wrong reason. Force the player shell, restore after.
+  const realRole = localStorage.getItem('toonanvil.role');
+  localStorage.setItem('toonanvil.role', 'player');
   try {
     check.feature('ui', 'live', 'sync', 'multiplayer');
 
@@ -1470,6 +1531,8 @@ export async function runTwoClient(CheckClass) {
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {
+    if (realRole === null) localStorage.removeItem('toonanvil.role');
+    else localStorage.setItem('toonanvil.role', realRole);
     for (const f of frames) f.remove();
     // Always, even on the throw paths above.
     try { await api(`/api/characters/${PROBE_ID}`, { method: 'DELETE' }); }

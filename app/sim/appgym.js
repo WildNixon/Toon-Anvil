@@ -1981,30 +1981,40 @@ export const SUITES = [
       },
       {
         id: 'nav_truth_table',
-        title: 'Who sees which screens, as one pure rule',
+        title: 'Two shells: who sees which app, as one pure rule',
         run(c, { session }) {
-          c.feature('seat', 'nav', 'grants');
+          c.feature('seat', 'nav', 'shell', 'grants');
           // A miniature MODES table carrying every flag the rule reads.
           const MODES = [
-            { id: 'sheet' }, { id: 'build' },
-            { id: 'combat', soloOnly: true },
-            { id: 'shop' },
-            { id: 'table', tableOnly: true },
-            { id: 'dm', dmOnly: true },
+            { id: 'sheet', shell: 'player' }, { id: 'build', shell: 'player' },
+            { id: 'combat', shell: 'player', soloOnly: true },
+            { id: 'shop', shell: 'player' },
+            { id: 'table', shell: 'player', tableOnly: true },
+            { id: 'dm-stage', shell: 'dm' }, { id: 'dm-deck', shell: 'dm' },
+            { id: 'dm-world', shell: 'dm' }, { id: 'dm-story', shell: 'dm' },
+            { id: 'dm-setup', shell: 'dm' },
             { id: 'settings', gear: true },
           ];
           const ids = (args) => session.navFor(args, MODES).map((m) => m.id);
+          const DM_SHELL = 'dm-stage,dm-deck,dm-world,dm-story,dm-setup,settings';
 
-          c.eq(ids({ tableOpen: true, seat: 'dm' }).join(','), 'dm,settings',
-            'the DM at a table gets the lenses and the gear, nothing else');
+          // The claim worth pinning: the DM's app is the SAME app solo and
+          // at a table. The seat picks the shell, whole.
+          c.eq(ids({ tableOpen: false, seat: 'dm' }).join(','), DM_SHELL,
+            'the DM shell, solo');
+          c.eq(ids({ tableOpen: true, seat: 'dm' }).join(','), DM_SHELL,
+            'and the identical DM shell at a table');
+          c.ok(!ids({ tableOpen: false, seat: 'dm' }).includes('build'),
+            'not one player screen in it');
 
           const player = ids({ tableOpen: true, seat: 'player',
             forgeOpen: false, hasGrant: false });
+          c.ok(!player.some((id) => id.startsWith('dm-')),
+            "a player never sees a captain's screen");
           c.ok(!player.includes('combat'),
             'the solo tracker is hidden at a table');
           c.ok(!player.includes('build'),
             'Build is hidden with the forge closed and no grant');
-          c.ok(!player.includes('dm'), 'the DM screen stays the DM\'s');
           c.ok(player.includes('table') && player.includes('sheet')
             && player.includes('shop'), 'Play, Party and the Market remain');
 
@@ -2015,18 +2025,13 @@ export const SUITES = [
             forgeOpen: false, hasGrant: true }).includes('build'),
           'and so does a waiting grant');
 
-          // Solo is untouched for both seats - the regression that matters.
-          const soloDm = ids({ tableOpen: false, seat: 'dm',
-            forgeOpen: false, hasGrant: false });
-          c.eq(soloDm.join(','), 'sheet,build,combat,shop,dm,settings',
-            'solo DM seat keeps every tool');
-          const soloPlayer = ids({ tableOpen: false, seat: 'player',
-            forgeOpen: false, hasGrant: false });
-          c.eq(soloPlayer.join(','), 'sheet,build,combat,shop,settings',
-            'solo player seat keeps Build and Combat - no DM to gate them');
+          c.eq(ids({ tableOpen: false, seat: 'player',
+            forgeOpen: false, hasGrant: false }).join(','),
+          'sheet,build,combat,shop,settings',
+          'solo player seat keeps Build and Combat - no DM to gate them');
         },
       },
-      {
+            {
         id: 'seat_persists_on_this_device',
         title: 'The chosen seat is remembered, and clearable',
         run(c, { session }) {
