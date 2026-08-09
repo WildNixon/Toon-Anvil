@@ -12,7 +12,9 @@ import { d20, fmt } from '../../core/dice.js';
 import { fromCopper, toCopper, COIN_CP } from '../../core/rules2024.js';
 import { saveCharacter, go } from '../../app.js';
 import { unitPrice, sellBack } from './pricing.js';
-import { activeCampaign, currentRegion, priceModFor } from '../../core/campaign.js';
+import {
+  activeCampaign, currentRegion, priceModFor, stampDay,
+} from '../../core/campaign.js';
 import { weatherFor } from '../../core/weather.js';
 import { dataFile } from '../../core/db.js';
 import * as live from '../../core/live.js';
@@ -256,10 +258,12 @@ async function buy(item, priceCp) {
     return c;
   });
   item.qty -= 1;
-  await log('purchase', {
+  // Stamped with the campaign's day so the Deck's spending chart has a
+  // real x-axis - unstamped, every purchase piled up at day zero.
+  await log('purchase', stampDay({
     item: item.name, price: fromCopper(priceCp), priceCp,
     vendor: shop.name, kind: item.kind,
-  });
+  }, campaign), { campaignId: campaign?.id });
   toast(`Bought ${item.name} for ${fromCopper(priceCp)}`, 'ok');
   draw();
   return null;
@@ -336,7 +340,8 @@ async function adjustPurse(cp) {
     c.currency = subtractCoins(c.currency || {}, derived.copper - next);
     return c;
   });
-  await log('gold_change', { delta: cp, total: fromCopper(next) });
+  await log('gold_change', stampDay({ delta: cp, total: fromCopper(next) },
+    campaign), { campaignId: campaign?.id });
   draw();
 }
 
@@ -346,7 +351,9 @@ async function sell(item, priceCp) {
     c.currency = subtractCoins(c.currency || {}, -priceCp);
     return c;
   });
-  await log('sale', { item: item.name, price: fromCopper(priceCp), priceCp });
+  await log('sale', stampDay(
+    { item: item.name, price: fromCopper(priceCp), priceCp }, campaign),
+  { campaignId: campaign?.id });
   toast(`Sold ${item.name} for ${fromCopper(priceCp)}`, 'ok');
   draw();
 }

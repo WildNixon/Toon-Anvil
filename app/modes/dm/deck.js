@@ -19,8 +19,8 @@ import {
   newRegion, newFaction, currentRegion,
 } from '../../core/campaign.js';
 import { query } from '../../core/events.js';
-import { lineChart } from '../../ui/chart.js';
-import { weatherFor } from '../../core/weather.js';
+import { lineChart, barChart } from '../../ui/chart.js';
+import { weatherFor, forecastFor } from '../../core/weather.js';
 import { statTile, dial } from '../../ui/kit.js';
 import { mapView, PIN_KINDS } from '../../ui/map.js';
 import { db } from '../../core/db.js';
@@ -198,6 +198,30 @@ function dialsPanel() {
     }, `Today: ${sky.event}`));
   }
 
+  // The week ahead, computed - never stored. Deterministic weather means
+  // seven pure calls; players could derive the same week from the public
+  // seed, which is the point. Tiles never say 'The sky' and sit below the
+  // stats grid, so the flow regexes that read the first match stay true.
+  if (region) {
+    panel.append(el('div', { class: 'eyebrow', style: 'margin:2px 0 4px' },
+      'The week ahead'));
+    const week = el('div', {
+      style: 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px',
+    });
+    forecastFor(tables, {
+      seed: campaign.seed, day: campaign.day, region,
+    }, 7).forEach((f, i) => {
+      if (!f) return;
+      week.append(el('span', {
+        class: 'mono muted',
+        style: 'font-size:11px;padding:3px 8px;border:1px solid var(--etch);'
+          + 'border-radius:3px' + (f.event ? ';color:var(--accent-text)' : ''),
+        ...(f.event ? { title: f.event } : {}),
+      }, `${i === 0 ? 'Today' : `Day ${f.day}`} — ${f.summary}${f.event ? ' !' : ''}`));
+    });
+    panel.append(week);
+  }
+
   const row = el('div', { class: 'btnrow' });
   row.append(el('button', {
     class: 'act',
@@ -337,6 +361,12 @@ function mapPanel() {
       draw();
     },
   });
+  // The map at a glance, without opening a single pin.
+  const pins = mapRecord.pins || [];
+  panel.append(el('p', { class: 'mono muted', style: 'font-size:11px;margin:6px 0 0' },
+    `${pins.length} pin${pins.length === 1 ? '' : 's'} · `
+    + `${pins.filter((p) => !p.revealed).length} hidden from players · `
+    + `party in ${currentRegion(campaign)?.name || 'no region'}`));
   panel.append(el('p', { class: 'welcome-fine', style: 'margin-top:6px' },
     'Wheel to zoom, drag to pan. Dim pins are hidden from players; the '
     + 'server never sends them what you have not revealed. Drop the party '
@@ -466,6 +496,23 @@ function factionsPanel() {
       'Standing over the days'));
     const canvas = el('canvas', { 'aria-label': 'Faction standings over time' });
     panel.append(canvas);
+    // A chart with unnamed lines is decoration. The legend chips carry the
+    // same colours the series draw with - each faction's own.
+    const legend = el('div', {
+      class: 'chart-legend',
+      style: 'display:flex;gap:12px;flex-wrap:wrap;font-size:11px;margin-top:4px',
+    });
+    for (const f of campaign.factions) {
+      const item = el('span', {
+        style: 'display:inline-flex;align-items:center;gap:5px',
+      });
+      item.append(el('span', {
+        style: `width:10px;height:10px;border-radius:2px;background:${f.colour}`,
+      }));
+      item.append(el('span', { class: 'muted' }, f.name));
+      legend.append(item);
+    }
+    panel.append(legend);
     drawStandingsChart(canvas);
   }
   return panel;
@@ -546,20 +593,20 @@ function economyPanel() {
 }
 
 async function drawSpendChart(canvas) {
-  const events = await query({ type: 'purchase' });
+  // Scoped to THIS campaign: purchases are day-stamped and campaign-tagged
+  // at the shop's log site now. Old unstamped events carry no campaignId
+  // and rightly drop out - they belong to no world.
+  const events = await query({ type: 'purchase', campaignId: campaign.id });
   const byDay = new Map();
   for (const ev of events) {
-    // Purchases predate the calendar; bucket the dateless under day 0.
     const day = ev.payload?.day ?? 0;
     byDay.set(day, (byDay.get(day) || 0) + (Number(ev.payload?.priceCp) || 0));
   }
-  const points = [...byDay.entries()]
-    .map(([x, y]) => ({ x, y: Math.round(y / 100) }));
-  if (!points.length) points.push({ x: campaign.day, y: 0 });
-  lineChart(canvas, {
-    series: [{ label: 'gp spent', colour: '--gold', points }],
-    yMin: 0,
-  });
+  const bars = [...byDay.entries()].sort((a, b) => a[0] - b[0])
+    .map(([day, cp]) => ({ label: `d${day}`, value: Math.round(cp / 100),
+      colour: '--gold' }));
+  if (!bars.length) bars.push({ label: `d${campaign.day}`, value: 0, colour: '--gold' });
+  barChart(canvas, { bars });
 }
 
 /* ------------------------------------------------------------------ */

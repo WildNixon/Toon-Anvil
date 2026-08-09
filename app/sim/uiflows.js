@@ -854,6 +854,76 @@ export const FLOWS = [
   },
 
   {
+    id: 'deck_day_and_dials',
+    title: 'The week ahead is on the Deck, and every dial takes a typed number',
+    async run(c, { doc }) {
+      c.feature('ui', 'deck', 'forecast', 'dials');
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'Deck', 'campaign'), 'the Deck opens');
+
+      // The forecast strip and the sky tile derive from one pure function;
+      // asserting Today's tile against the sky tile asserts exactly that.
+      // Read the tile's .v node directly - adjacent divs concatenate in
+      // textContent without whitespace, so a regex over mainText captures
+      // 'drizzleThe' (the value plus the next tile's label).
+      const week = await waitFor(() => (/The week ahead/.test(mainText(doc))
+        ? true : null), { timeout: 8000 });
+      c.ok(!!week, 'the week ahead is on the Deck');
+      const skyTile = [...doc.querySelectorAll('main .stat')]
+        .find((s) => s.querySelector('.k')?.textContent === 'The sky');
+      const sky = skyTile?.querySelector('.v')?.textContent;
+      c.ok(!!sky && sky !== '—', 'the sky tile reads');
+      c.ok(mainText(doc).replace(/\s+/g, ' ').includes(`Today — ${sky}`),
+        "the strip's Today matches the sky tile", sky);
+
+      // A typed number drives the standing slider - and the legend names it.
+      const fname = doc.querySelector('main input[aria-label="New faction name"]');
+      c.ok(!!fname, 'a faction can be added');
+      if (!fname) return;
+      setField(fname, 'Gym Watch');
+      button(doc, 'Add faction')?.click();
+      const numIn = await waitFor(() => doc.querySelector(
+        'main input[aria-label="Gym Watch standing value"]'), { timeout: 8000 });
+      c.ok(!!numIn, 'the dial pairs a number with the slider');
+      if (!numIn) return;
+      setField(numIn, '5');
+      c.eq(doc.querySelector('main input[aria-label="Gym Watch standing"]')?.value,
+        '5', 'the typed number drives the slider');
+      const legend = await waitFor(() => {
+        const lg = doc.querySelector('.chart-legend');
+        return lg && lg.textContent.includes('Gym Watch') ? true : null;
+      }, { timeout: 6000 });
+      c.ok(!!legend, 'the chart legend names the faction');
+
+      // Same pairing on the price dial - then restore the x2 the market
+      // flow expects to find later.
+      const priceNum = doc.querySelector(
+        'main input[aria-label="The Vale price dial value"]');
+      c.ok(!!priceNum, 'the price dial pairs a number too');
+      if (priceNum) {
+        setField(priceNum, '1.5');
+        c.eq(doc.querySelector(
+          'main input[aria-label="The Vale price dial"]')?.value, '1.5',
+        'typing a price moves the dial');
+        await waitUntilSettled(doc);
+        const restore = doc.querySelector(
+          'main input[aria-label="The Vale price dial value"]');
+        if (restore) { setField(restore, '1'); await waitUntilSettled(doc); }
+      }
+
+      // The manual hand on the calendar.
+      const jump = doc.querySelector('main input[aria-label="Jump to day"]');
+      c.ok(!!jump, 'the calendar takes a typed day');
+      if (!jump) return;
+      setField(jump, '40');
+      button(doc, 'Go to that day')?.click();
+      const landed = await waitFor(() => (readNumberAfter(doc, 'Day') === 40
+        ? true : null), { timeout: 6000 });
+      c.ok(!!landed, 'day 40 dawns on demand', String(readNumberAfter(doc, 'Day')));
+    },
+  },
+
+  {
     id: 'map_pins',
     title: 'The map takes an image, holds pins, and remembers them',
     async run(c, { doc, win }) {

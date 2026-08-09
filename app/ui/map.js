@@ -126,7 +126,9 @@ export function mapView(host, {
         'data-id': pin.id,
         'data-kind': pin.kind,
         style: `left:${(pin.x * 100).toFixed(2)}%;top:${(pin.y * 100).toFixed(2)}%`,
-        title: pin.label,
+        // The note rides the tooltip: hover answers "what is this place"
+        // without opening the editor.
+        title: pin.note ? `${pin.label} — ${pin.note}` : pin.label,
         'aria-label': `${pin.label} — ${pin.kind}`
           + (pin.revealed ? '' : ' (hidden from players)'),
         onClick: () => {

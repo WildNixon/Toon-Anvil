@@ -94,6 +94,16 @@ export function newRegion(name, terrain = 'forest') {
   };
 }
 
+/**
+ * Stamp the campaign's in-world day onto an event payload, pure and
+ * non-mutating. Wealth events (purchase, sale, gold_change) were once
+ * logged without a day or a campaign, which quietly reduced the Deck's
+ * "coin spent, by day" chart to a single bucket at day zero.
+ */
+export function stampDay(payload, campaign) {
+  return campaign ? { ...payload, day: campaign.day } : payload;
+}
+
 const FACTION_COLOURS = ['#8e2a1c', '#2f5d50', '#8a6a24', '#2e4a6b',
   '#6b2e5f', '#5c5c34'];
 

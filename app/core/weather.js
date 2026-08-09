@@ -60,3 +60,13 @@ export function weatherFor(tables, { seed, day, region }) {
     source: 'authored',
   };
 }
+
+/**
+ * The next n skies, pure - one weatherFor per day, nothing stored. The
+ * Deck's forecast strip is exactly this; a player could compute the same
+ * week from the public seed, which is the point.
+ */
+export function forecastFor(tables, { seed, day, region }, n = 7) {
+  return Array.from({ length: n },
+    (_, i) => weatherFor(tables, { seed, day: day + i, region }));
+}

@@ -2212,6 +2212,45 @@ export const SUITES = [
           await table.close();
         },
       },
+      {
+        id: 'forecast_pure',
+        title: 'Seven days ahead is seven calls, and each day is its own',
+        run(c, { campaign, tables }) {
+          c.feature('campaign', 'weather', 'forecast');
+          const { forecastFor, weatherFor } = campaign;
+          const region = { id: 'reg-t', terrain: 'forest' };
+          const args = { seed: 1234, day: 14, region };
+          const week = forecastFor(tables, args, 7);
+          c.eq(week.length, 7, 'seven skies come back');
+          let eachDay = true;
+          let matches = true;
+          for (let i = 0; i < week.length; i += 1) {
+            if (week[i]?.day !== 14 + i) eachDay = false;
+            const solo = weatherFor(tables, { ...args, day: 14 + i });
+            if (JSON.stringify(week[i]) !== JSON.stringify(solo)) matches = false;
+          }
+          c.ok(eachDay, 'each entry is stamped with its own day');
+          c.ok(matches,
+            'and each equals weatherFor of that day - one function, one truth');
+          c.eq(JSON.stringify(forecastFor(tables, args, 7)),
+            JSON.stringify(week), 'twice over, identical - deterministic');
+        },
+      },
+      {
+        id: 'purchase_stamp_pure',
+        title: 'A purchase knows what day it was',
+        run(c, { campaign }) {
+          c.feature('campaign', 'economy', 'events');
+          const { stampDay } = campaign;
+          const p = { item: 'rope', priceCp: 100 };
+          const stamped = stampDay(p, { day: 7 });
+          c.eq(stamped.day, 7, 'the campaign day lands on the payload');
+          c.eq(stamped.item, 'rope', 'the rest of the payload survives');
+          c.ok(!('day' in p), 'the original is not mutated');
+          c.ok(!('day' in stampDay(p, null)),
+            'and with no campaign there is no day to claim');
+        },
+      },
     ],
   },
 
@@ -2884,7 +2923,8 @@ export const BARS = {
   // and the economy. The ratchet only means something if it moves when the
   // app grows.
   // And again (38 -> 40) with the shelf and its book detector.
-  minFeaturesCovered: 40,
+  // And again (40 -> 42) with setup-from-the-shelf and the forecast.
+  minFeaturesCovered: 42,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.
@@ -3116,6 +3156,20 @@ export const MUTATIONS = [
         }
         return r;
       } } }),
+  },
+  {
+    id: 'purchase_forgets_the_day',
+    what: 'stampDay stops stamping - the spend chart collapses to day 0',
+    patch: (ctx) => ({ campaign: { ...ctx.campaign, stampDay: (p) => p } }),
+  },
+  {
+    id: 'forecast_frozen',
+    what: 'forecastFor answers today seven times over',
+    // A frozen week LOOKS plausible on screen; only the per-entry day
+    // stamp assertion can tell it from a real one.
+    patch: (ctx) => ({ campaign: { ...ctx.campaign,
+      forecastFor: (t, a, n = 7) => Array.from({ length: n },
+        () => ctx.campaign.weatherFor(t, a)) } }),
   },
   {
     id: 'shelf_detector_blind',

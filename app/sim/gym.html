@@ -88,8 +88,8 @@ import * as parseContent from '../homebrew/parse-content.js';
 import * as providers from '../core/providers.js';
 import * as session from '../core/session.js';
 import * as theme from '../ui/theme.js';
-import { weatherFor } from '../core/weather.js';
-import { newCampaign, newRegion } from '../core/campaign.js';
+import { weatherFor, forecastFor } from '../core/weather.js';
+import { newCampaign, newRegion, stampDay } from '../core/campaign.js';
 import { unitPrice, sellBack } from '../modes/shop/pricing.js';
 import { FIXTURE_NAME, fixturePdfBytes } from './fixtures.js';
 
@@ -123,7 +123,8 @@ async function buildCtx() {
     providers,
     session,
     theme,
-    campaign: { weatherFor, newCampaign, newRegion, unitPrice, sellBack },
+    campaign: { weatherFor, forecastFor, newCampaign, newRegion, stampDay,
+      unitPrice, sellBack },
     dbTokenKey: 'toonanvil.token',
     // Raw HTTP on purpose. Going through ServerAdapter would test the client;
     // the whole question here is what the SERVER refuses.
