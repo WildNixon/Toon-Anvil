@@ -82,6 +82,7 @@ def grouping_eval(book_dir: Path) -> dict | None:
             # every book whose grouping already worked.
             probes = [title, str(b.get("text") or "")[:400]]
             for f in b.get("features", []) or []:
+                probes.append(str(f.get("name") or ""))
                 probes.append(str(f.get("text") or "")[:400])
             for probe in probes:
                 m = SUBCLASS_IN_TEXT.search(probe)

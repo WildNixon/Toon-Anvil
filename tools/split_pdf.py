@@ -55,9 +55,12 @@ LEVEL_RE = re.compile(
     #   "5th level Wyrmforger feature"  bare subheading, very common
     # The prefix is OPTIONAL. Requiring it missed all 295 feature markers in
     # Armokil's archive, which is why a 39-subclass document read as one.
+    # The ordinal-to-"level" joint accepts a hyphen: official UA titles its
+    # features "3rd-level College of Eloquence feature", and the whitespace-
+    # only form missed every one of them.
     r"Level\s+(\d+)\s*:"
     r"|(?:(?:at|beginning at|starting at|when you reach)\s+)?"
-    r"(\d+)(?:st|nd|rd|th)\s+level",
+    r"(\d+)(?:st|nd|rd|th)[-\s]+level",
     re.I)
 
 
@@ -270,8 +273,14 @@ def blocks_from(pages: list[str]) -> list[dict]:
             words = t.split()
             if len(words) > 8:
                 continue
-            caps = sum(1 for w in words if re.match(r"^[A-Z0-9(]", w))
-            if caps / max(1, len(words)) < 0.55:
+            # Title-case convention lowercases connectors, so they must not
+            # count against the caps ratio: "College of the Gym" is 2/4 the
+            # naive way and a perfectly good heading - as is every "Path of
+            # the X" subclass name in the game.
+            connectors = {"of", "the", "and", "a", "an", "or", "in", "to"}
+            counted = [w for w in words if w.lower() not in connectors]
+            caps = sum(1 for w in counted if re.match(r"^[A-Z0-9(]", w))
+            if caps / max(1, len(counted)) < 0.55:
                 continue
             nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
             # A size-and-type line under a caps heading is a creature header
@@ -568,6 +577,12 @@ def classify(block: dict) -> tuple[str, float, str]:
 
     if LEVEL_RE.search(t):
         return "subclass_feature", 0.75, LEVEL_RE.search(t).group(0).strip()
+    # 2020-era UA puts the level marker in the SUBHEADING and writes pure
+    # prose beneath it - "3rd-level Oath of Heroism feature" over a body
+    # with no level phrasing at all. Reading only the body dropped whole
+    # subclasses with perfect names into unclassified.
+    if LEVEL_RE.search(title):
+        return "subclass_feature", 0.7, f"level in title: {title[:40]}"
 
     # Equipment tables survive extraction as cost/weight runs.
     if re.search(r"\b\d+\s*(?:gp|sp|cp)\b", t, re.I) and re.search(
@@ -651,39 +666,83 @@ def subclass_named_in(text: str) -> str | None:
     return name if 2 <= len(name) <= 40 else None
 
 
-def assemble_subclasses(features: list[dict], doc_title: str) -> list[dict]:
+def assemble_subclasses(features: list[dict], doc_title: str,
+                        anchors: list[dict] | None = None) -> list[dict]:
     """Group level-gated feature blocks into subclasses.
 
-    Two signals, in order of trustworthiness:
+    Three signals, in order of trustworthiness:
 
     1. The text says which subclass it belongs to - "3rd level Toymaker
        feature". Explicit, so features are grouped by that name no matter how
        far apart they sit or how their levels run.
-    2. Nothing says. Fall back to level ordering: a new subclass starts where
-       the level sequence resets. Imperfect, and stated as such - WotC's own
-       Unearthed Arcana writes "At 3rd level" with no subclass name, so this
-       path still carries the whole document's uncertainty.
+    2. An ANCHOR heading - a block titled like a subclass name ("College of
+       Creation") sitting above the features. Real documents are built this
+       way, and ignoring the headings named groups after their first feature.
+       A feature attaches to the nearest preceding anchor within five pages.
+    3. Nothing says. Fall back to level ordering: a new subclass starts where
+       the level sequence resets. Imperfect, and stated as such.
 
     Every result keeps its page range and records which signal named it, so a
     human can check the guesses and ignore the certainties.
     """
+    anchors = sorted(anchors or [], key=lambda a: a["order"])
     named: dict[str, dict] = {}
     unnamed: list[dict] = []
+
+    def anchor_for(f: dict):
+        order = f.get("order")
+        if order is None:
+            return None
+        best = None
+        for a in anchors:
+            if a["order"] < order and f["page"] - a["page"] <= 5:
+                best = a
+        return best
 
     for f in features:
         lvl = level_of(f["title"] + " " + f["text"][:300])
         entry = {"name": f["title"], "level": lvl, "text": f["text"], "page": f["page"]}
         sub = subclass_named_in(f["text"]) or subclass_named_in(f["title"])
+        source = "text"
+        intro = ""
+        if not sub:
+            a = anchor_for(f)
+            if a:
+                sub, source, intro = a["name"], "anchor", a.get("text", "")
         if sub:
-            g = named.setdefault(sub, {
+            key = re.sub(r"\s+", " ", sub.lower())
+            g = named.setdefault(key, {
                 "name": sub, "features": [], "firstPage": f["page"],
-                "candidateNames": [sub], "nameSource": "text",
+                "candidateNames": [sub], "nameSource": source,
+                "introText": intro,
             })
             g["features"].append(entry)
             g["firstPage"] = min(g["firstPage"], f["page"])
             g["lastPage"] = max(g.get("lastPage", f["page"]), f["page"])
+            # In-text naming outranks an anchor for the same group.
+            if source == "text" and g["nameSource"] == "anchor":
+                g["nameSource"] = "text"
         else:
             unnamed.append(entry)
+
+    # The same subclass can arrive under two names: the anchor heading says
+    # "Path of the Dapper" while the in-text marker says "3rd level Dapper
+    # feature". Merge a short key into the anchor key it suffixes - the
+    # full name is the real one, and features carrying the short form are
+    # confirmation, not a second subclass.
+    for short in [k for k in list(named) if len(k) >= 4]:
+        for full in list(named):
+            if full != short and full.endswith(" " + short) \
+                    and short in named and full in named:
+                g_full, g_short = named[full], named.pop(short)
+                g_full["features"].extend(g_short["features"])
+                g_full["firstPage"] = min(g_full["firstPage"],
+                                          g_short["firstPage"])
+                g_full["lastPage"] = max(g_full.get("lastPage", 0),
+                                         g_short.get("lastPage", 0))
+                if g_short["nameSource"] == "text":
+                    g_full["nameSource"] = "text"
+                break
 
     groups: list[dict] = list(named.values())
 
@@ -711,10 +770,28 @@ def assemble_subclasses(features: list[dict], doc_title: str) -> list[dict]:
     for g in groups:
         if len(g["features"]) < 2:
             continue
+        # An inferred group is a GUESS assembled from level ordering alone.
+        # Two stray level-marked blocks make a "subclass" out of noise - the
+        # Monster Manual shipped one called SPELLCASTING that way. A guess
+        # needs at least three features to be worth showing; a named or
+        # anchored group has outside evidence and keeps the lower bar.
+        if g.get("nameSource", "inferred") == "inferred" \
+                and len(g["features"]) < 3:
+            continue
         name = (g["name"] or (g["candidateNames"][0] if g["candidateNames"]
                               else g["features"][0]["name"]))
-        joined = " ".join(f["text"] for f in g["features"])[:4000].lower()
-        cls = next((c for c in CLASSES if c in joined), None)
+        # The name's own shape is the strongest class signal there is -
+        # "College of X" is a bard subclass wherever the word bard hides.
+        # The anchor's intro prose is next ("Bards of this college...");
+        # the features' joined text is the last resort, and it is the one
+        # that called the Twilight Domain a druid.
+        cls = next((c for s, c in NAME_SHAPE_CLASS if s.search(name)), None)
+        if not cls:
+            intro = str(g.get("introText") or "").lower()
+            cls = next((c for c in CLASSES if c in intro), None)
+        if not cls:
+            joined = " ".join(f["text"] for f in g["features"])[:4000].lower()
+            cls = next((c for c in CLASSES if c in joined), None)
         out.append({
             "id": re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-"),
             "name": name,
@@ -744,6 +821,11 @@ def assemble_subclasses(features: list[dict], doc_title: str) -> list[dict]:
                 f"pages {g['firstPage']}-{g.get('lastPage')} for anything the "
                 "text did not label."
                 if g.get("nameSource") == "text" else
+                "Assembled from PDF text. The document shows this name as a "
+                "heading above these features, so they are grouped under it. "
+                f"Check pages {g['firstPage']}-{g.get('lastPage')} in case a "
+                "neighbouring subclass's features sat under the same heading."
+                if g.get("nameSource") == "anchor" else
                 "Assembled from PDF text. Nothing in the document says which "
                 "subclass these features belong to, so the grouping is inferred "
                 "from level ordering and may split or merge subclasses "
@@ -948,9 +1030,18 @@ def selftest() -> dict:
     # --- subclass grouping, in the three styles real documents use -------
 
     def assemble_pages(pages: list[str]) -> list[dict]:
+        # Mirrors split(): stream order annotated, anchors collected from
+        # name-shaped titles, both handed to the assembler.
         blocks = blocks_from(pages)
+        for i, b in enumerate(blocks):
+            b["order"] = i
         feats = [b for b in blocks if classify(b)[0] == "subclass_feature"]
-        return assemble_subclasses(feats, "gym-fixture")
+        anchors = [{"name": b["title"].strip(), "page": b["page"],
+                    "order": b["order"], "text": b["text"][:300]}
+                   for b in blocks
+                   if b.get("title")
+                   and SUBCLASS_NAME_SHAPE.match(b["title"].strip())]
+        return assemble_subclasses(feats, "gym-fixture", anchors)
 
     # 2a. In-text naming (the Armokil style): "3rd-level Gymnast feature"
     #     as a subheading inside the feature text. This path has worked
@@ -982,11 +1073,11 @@ def selftest() -> dict:
          and all(g["nameSource"] == "text" for g in groups_a),
          f"names={sorted(g['name'] for g in groups_a)}")
 
-    # 2b. KNOWN DEFECT, pinned: the level marker in the TITLE and pure
-    #     prose in the body - how 2020-era UA is written. classify() only
-    #     searches the body for level phrasing, so every one of these
-    #     features lands unclassified and NOTHING assembles. The fix makes
-    #     this case assemble one NAMED College of the Gym.
+    # 2b. FLIPPED from KNOWN_DEFECT_level_in_title_features_lost: the level
+    #     marker in the TITLE and pure prose in the body - how 2020-era UA
+    #     is written. classify() now reads the title too, and the name in
+    #     the marker groups AND classes the result ("College of" = bard,
+    #     wherever the word bard hides).
     style_b = "\n".join([
         "3rd-level College of the Gym feature",
         "You learn to turn an audience's applause into a palpable force "
@@ -999,14 +1090,17 @@ def selftest() -> dict:
         "every friend emboldened beyond their ordinary limits.",
     ])
     groups_b = assemble_pages([style_b])
-    case("KNOWN_DEFECT_level_in_title_features_lost",
-         len(groups_b) == 0,
-         f"groups={len(groups_b)} (fix flips this to one named College)")
+    case("level_in_title_features_assemble",
+         len(groups_b) == 1
+         and groups_b[0]["name"] == "College of the Gym"
+         and groups_b[0]["nameSource"] == "text"
+         and groups_b[0]["class"] == "bard"
+         and [f["level"] for f in groups_b[0]["features"]] == [3, 6, 14],
+         f"groups={[(g['name'], g.get('class')) for g in groups_b]}")
 
-    # 2c. KNOWN DEFECT, pinned: an anchor heading over bare "At 3rd
-    #     level..." prose - the subclass NAME is a heading the assembler
-    #     never reads, so the group ships named after its first feature.
-    #     The fix flips this to name the group from the anchor.
+    # 2c. FLIPPED from KNOWN_DEFECT_anchor_name_lost: an anchor heading
+    #     over bare "At 3rd level..." prose now names the group, and the
+    #     shape of the name supplies the class.
     style_c = "\n".join([
         "College of the Gym",
         "Bards of this college treat the training hall as a stage and "
@@ -1022,11 +1116,45 @@ def selftest() -> dict:
         "watched it regains expended Bardic Inspiration immediately.",
     ])
     groups_c = assemble_pages([style_c])
-    case("KNOWN_DEFECT_anchor_name_lost",
+    case("anchor_names_the_group",
          len(groups_c) == 1
-         and groups_c[0]["name"] != "College of the Gym",
-         f"names={[g['name'] for g in groups_c]} "
-         "(fix flips this to the anchor's name)")
+         and groups_c[0]["name"] == "College of the Gym"
+         and groups_c[0]["nameSource"] == "anchor"
+         and groups_c[0]["class"] == "bard",
+         f"groups={[(g['name'], g.get('nameSource')) for g in groups_c]}")
+
+    # 2d. Two stray level-marked blocks with no name and no anchor are a
+    #     GUESS, and a two-feature guess is noise - the Monster Manual
+    #     shipped a "SPELLCASTING" subclass that way. Three or more still
+    #     assemble as an inferred group.
+    frag = "\n".join([
+        "LOOSE END ONE",
+        "At 3rd level, something entirely unrelated to a subclass "
+        "happens in the middle of an adventure's boxed text.",
+        "LOOSE END TWO",
+        "At 6th level, another stray reference appears in a different "
+        "chapter with no connection to the first.",
+    ])
+    case("two_feature_guess_dropped", len(assemble_pages([frag])) == 0,
+         "")
+    run4 = "\n".join([
+        "OPENING STANCE",
+        "At 3rd level, you adopt a stance that steadies your allies "
+        "whenever you hold your ground beside them in a fight.",
+        "MEASURED ADVANCE",
+        "At 6th level, you may move through allied spaces freely and "
+        "grant one ally the same freedom until your next turn begins.",
+        "COUNTER TEMPO",
+        "At 10th level, when an enemy misses you, you can lend your "
+        "reaction to an ally so they may strike in your place instead.",
+        "FINAL CADENCE",
+        "At 14th level, once per rest you can grant every ally within "
+        "thirty feet one immediate weapon attack as their tempo peaks.",
+    ])
+    groups_d = assemble_pages([run4])
+    case("four_feature_run_still_infers",
+         len(groups_d) == 1 and groups_d[0]["nameSource"] == "inferred",
+         f"groups={len(groups_d)}")
 
     failed = [c for c in cases if not c["ok"]]
     return {"ok": not failed, "passed": len(cases) - len(failed),
@@ -1042,20 +1170,36 @@ def split(path: Path) -> dict:
     stem = re.sub(r"[^A-Za-z0-9._-]+", "-", path.stem).strip("-")
     out_dir = OUT_ROOT / stem
     out_dir.mkdir(parents=True, exist_ok=True)
+    # A re-split owns this directory. Kind files are only written when they
+    # have content, so a run that finds NO subclasses would otherwise leave
+    # the previous run's subclasses.json sitting there as truth - which is
+    # exactly how a retired false positive kept haunting the yield report.
+    for old in out_dir.glob("*.json"):
+        if not old.name.startswith("_"):
+            old.unlink()
 
     pages = extract_pages(path)
     blocks = blocks_from(pages)
 
     buckets: dict[str, list] = {}
-    for b in blocks:
+    for i, b in enumerate(blocks):
+        b["order"] = i
         kind, conf, evidence = classify(b)
         b["kind"] = kind
         b["confidence"] = conf
         b["evidence"] = evidence
         buckets.setdefault(kind, []).append(b)
 
+    # Anchor headings: any block titled like a subclass name, whatever it
+    # classified as - the intro prose under "College of Creation" is
+    # unclassified, and that is fine; the TITLE is the anchor.
+    anchors = [{"name": b["title"].strip(), "page": b["page"],
+                "order": b["order"], "text": b["text"][:300]}
+               for b in blocks
+               if b.get("title") and SUBCLASS_NAME_SHAPE.match(b["title"].strip())]
+
     subclasses = assemble_subclasses(
-        buckets.get("subclass_feature", []), path.stem)
+        buckets.get("subclass_feature", []), path.stem, anchors)
 
     written = {}
     for kind, items in sorted(buckets.items()):
