@@ -102,18 +102,31 @@ def _pick_gutter(words: list[dict], left: float, right: float):
     if width <= 0:
         return None
 
+    # A few words may legitimately STRADDLE the gutter: a full-width
+    # small-caps title crosses it on exactly the pages that need the split
+    # most, and demanding zero crossers left those pages line-zipped. But
+    # only TITLE-SIZED words are forgiven - an ordinary body-height word
+    # crossing the candidate is real evidence of single-column prose, and
+    # forgiving those cut an adventure's statblocks in half vertically.
+    def _h(w):
+        return w.get("bottom", 0) - w.get("top", 0)
+
+    heights = sorted(_h(w) for w in words)
+    median_h = heights[len(heights) // 2] or 1.0
+
     best = None
     for frac in [0.40 + i * 0.01 for i in range(21)]:
         x = left + width * frac
-        crossing = sum(1 for w in words if w["x0"] < x < w["x1"])
-        if crossing == 0:
+        crossers = [w for w in words if w["x0"] < x < w["x1"]]
+        body = sum(1 for w in crossers if _h(w) < 1.5 * median_h)
+        if body == 0 and len(crossers) <= 3:
             l_n = sum(1 for w in words if w["x1"] <= x)
             r_n = sum(1 for w in words if w["x0"] >= x)
             if l_n < 8 or r_n < 8:
                 continue
             balance = min(l_n, r_n) / max(l_n, r_n)
-            if best is None or balance > best[1]:
-                best = (x, balance)
+            if best is None or (len(crossers), -balance) < (best[1], -best[2]):
+                best = (x, len(crossers), balance)
     return best[0] if best else None
 
 
@@ -128,6 +141,107 @@ def _column_split(page):
     """
     words = page.extract_words(use_text_flow=False, keep_blank_chars=False)
     return _pick_gutter(words, float(page.bbox[0]), float(page.bbox[2]))
+
+
+def _scatter_score(text: str) -> float:
+    """Case alternations inside words, per thousand characters.
+
+    Zipped text - two overlapping streams merged character by character -
+    reads "This pYlayStesTt dIocCum ent". Real prose almost never puts a
+    capital between two lowercase letters mid-word, so the rate of that
+    pattern is a direct, text-level detector for the pathology. Clean pages
+    measure near zero; a zipped page measures in the tens.
+    """
+    if not text:
+        return 0.0
+    hits = len(re.findall(r"[a-z][A-Z][a-z]", text))
+    return hits * 1000.0 / max(1, len(text))
+
+
+def _window_scatter(text: str, span: int = 300) -> float:
+    """The scatter score of the WORST span-sized window of the text."""
+    if len(text) <= span:
+        return _scatter_score(text)
+    step = span // 2
+    return max(_scatter_score(text[i:i + span])
+               for i in range(0, len(text) - step, step))
+
+
+def _lines_from_chars(chars: list[dict]) -> str:
+    """Rebuild text by clustering glyphs on their BASELINE, not their top.
+
+    Two failure modes share one cure. A small-caps heading draws its initial
+    as a LARGE glyph - different top, same baseline as the rest of the word -
+    and top-clustering strands the initials on their own line ("M S ARRIOR
+    OF THE YSTIC RTS ONK"). Some UA PDFs also carry two text streams offset
+    by under two points; their TOPS fall within the default tolerance, so
+    the two texts zip together character by character, but their BASELINES
+    differ cleanly. Clustering on bottom with a tight tolerance merges the
+    initial into its word and separates the overlapped streams into their
+    own lines.
+
+    Known cost, accepted: a three-line drop cap shares a baseline with the
+    LAST line it spans, so its letter lands there rather than on the first -
+    one stray letter, against whole paragraphs of zip.
+
+    The baseline is read from the char's text matrix (matrix[5], the y
+    translation), NOT from `bottom`: bottom is the glyph BOX, and a 29pt
+    initial's box dips several points deeper than its 15pt neighbours on
+    the very same baseline, which kept the initials stranded. The matrix
+    is in bottom-up PDF space, so lines sort descending.
+    """
+    real = [c for c in chars if str(c.get("text") or "").strip("\x00")]
+    if not real:
+        return ""
+    use_matrix = bool(real[0].get("matrix"))
+
+    def baseline(c):
+        return c["matrix"][5] if use_matrix else -c["bottom"]
+
+    orderable = sorted(real, key=lambda c: -baseline(c))
+    lines: list[list[dict]] = []
+    for c in orderable:
+        if lines and abs(baseline(c) - baseline(lines[-1][-1])) <= 1.0:
+            lines[-1].append(c)
+        else:
+            lines.append([c])
+    out = []
+    for line in lines:
+        line.sort(key=lambda c: c["x0"])
+        parts = []
+        prev = None
+        for c in line:
+            if prev is not None:
+                gap = c["x0"] - prev["x1"]
+                if gap > max(1.0, 0.22 * min(prev["size"], c["size"])):
+                    parts.append(" ")
+            parts.append(c["text"])
+            prev = c
+        out.append("".join(parts))
+    return "\n".join(out)
+
+
+def _region_text(region) -> str:
+    """One column's text: the standard extraction unless it is ZIPPED.
+
+    The baseline rebuild only wins when the default output measures badly
+    scattered AND the rebuild measures materially cleaner - so the twelve
+    books that extract fine keep their exact bytes, and the gate cannot
+    trade a good extraction for a different-but-equal one.
+    """
+    text = region.extract_text(layout=True) or ""
+    # The score is taken over the WORST 300-char window, not the region
+    # average: one scattered "LEVEL 3:" heading inside three thousand clean
+    # characters dilutes to nothing region-wide, and those stranded
+    # headings were exactly what kept slipping through. The halving guard
+    # still protects clean regions - rebuilding clean text reproduces the
+    # same words, so a CamelCase-driven window cannot halve.
+    score = _window_scatter(text)
+    if score > 8.0:
+        rebuilt = _lines_from_chars(region.chars)
+        if _window_scatter(rebuilt) < score / 2:
+            return rebuilt
+    return text
 
 
 def extract_pages(path: Path) -> list[str]:
@@ -153,11 +267,11 @@ def extract_pages(path: Path) -> list[str]:
                     left_col = page.crop((x0, top, gutter, bottom))
                     right_col = page.crop((gutter, top, x1, bottom))
                     text = "\n".join([
-                        left_col.extract_text(layout=True) or "",
-                        right_col.extract_text(layout=True) or "",
+                        _region_text(left_col),
+                        _region_text(right_col),
                     ])
                 else:
-                    text = page.extract_text(layout=True) or ""
+                    text = _region_text(page)
             except Exception:                          # noqa: BLE001
                 text = page.extract_text() or ""
             # layout=True pads with runs of spaces to preserve position; collapse
@@ -1013,7 +1127,8 @@ def selftest() -> dict:
     #    Monster Manual's bread and butter - art in one column, a statblock
     #    in the other - and rejecting its gutter zips the columns.
     def col(x0, x1, n, y0=50):
-        return [{"x0": x0, "x1": x1, "top": y0 + i * 12} for i in range(n)]
+        return [{"x0": x0, "x1": x1, "top": y0 + i * 12,
+                 "bottom": y0 + i * 12 + 10} for i in range(n)]
     balanced = col(40, 280, 40) + col(320, 560, 40)
     case("gutter_balanced_two_col",
          _pick_gutter(balanced, 0, 600) is not None, "")
@@ -1023,9 +1138,25 @@ def selftest() -> dict:
          "art-beside-statblock layout must still split")
     # Single-column prose: words span the centre, so no zero-crossing band.
     prose = [{"x0": 40 + (i % 4) * 130, "x1": 40 + (i % 4) * 130 + 140,
-              "top": 50 + i * 12} for i in range(48)]
+              "top": 50 + i * 12, "bottom": 50 + i * 12 + 10}
+             for i in range(48)]
     case("gutter_single_col_refused",
          _pick_gutter(prose, 0, 600) is None, "")
+    # A full-width TITLE straddles the gutter on exactly the pages that
+    # need the split most - title-sized crossers must not veto it...
+    spanned = (balanced
+               + [{"x0": 250, "x1": 350, "top": 12, "bottom": 34},
+                  {"x0": 260, "x1": 340, "top": 12, "bottom": 34}])
+    case("gutter_survives_spanning_title",
+         _pick_gutter(spanned, 0, 600) is not None, "")
+    # ...but BODY-sized crossers are real evidence of one column, and even
+    # a couple of them must refuse the split - forgiving those once cut an
+    # adventure's statblocks in half vertically.
+    body_crossed = (balanced
+                    + [{"x0": 250, "x1": 350, "top": 300, "bottom": 310},
+                       {"x0": 255, "x1": 345, "top": 420, "bottom": 430}])
+    case("gutter_refused_on_body_crossers",
+         _pick_gutter(body_crossed, 0, 600) is None, "")
 
     # --- subclass grouping, in the three styles real documents use -------
 
@@ -1155,6 +1286,49 @@ def selftest() -> dict:
     case("four_feature_run_still_infers",
          len(groups_d) == 1 and groups_d[0]["nameSource"] == "inferred",
          f"groups={len(groups_d)}")
+
+    # --- overlapping-stream extraction (the small-caps scatter) ----------
+
+    def ch(text, x0, ty, size, dip=0.0):
+        # `dip` models the glyph BOX reaching below the shared baseline -
+        # the bigger the glyph, the deeper its box - while matrix[5]
+        # carries the true baseline.
+        w = size * 0.55
+        return {"text": text, "x0": x0, "x1": x0 + w, "size": size,
+                "bottom": 900 - ty + dip,
+                "matrix": (1, 0, 0, 1, x0, ty)}
+
+    # 3a. A small-caps heading: the large initial shares its BASELINE with
+    #     the smaller capitals even though its glyph BOX dips deeper, so
+    #     matrix clustering reunites the word that box-bottom clustering
+    #     strands as "W" + "ARRIOR".
+    caps = [ch("W", 50, 700, 16, dip=3.2)] + [
+        ch(letter, 60 + i * 6, 700, 11)
+        for i, letter in enumerate("ARRIOR")]
+    case("smallcaps_initial_rejoins_word",
+         _lines_from_chars(caps).strip() == "WARRIOR",
+         repr(_lines_from_chars(caps)))
+
+    # 3b. Two text streams offset by under two points zip together under
+    #     top-tolerance; their baselines differ, so they come out as two
+    #     clean lines - both texts survive, neither mangles the other.
+    run_a = [ch(c, 50 + i * 5, 700.0, 10) for i, c in enumerate("articles")]
+    run_b = [ch(c, 51 + i * 5, 698.2, 10) for i, c in enumerate("playtest")]
+    two = _lines_from_chars(run_a + run_b).split("\n")
+    case("offset_streams_separate",
+         len(two) == 2
+         and [t.strip() for t in two] == ["articles", "playtest"],
+         repr(two))
+
+    # 3c. The scatter score tells zipped text from prose, and the GATE only
+    #     fires on the zipped side - a clean page keeps its exact default
+    #     extraction bytes.
+    zipped = "This pYlayStesTt dIocCum ent iUs paBrt oCf aL seAriesS"
+    prose = ("This playtest document is part of a series of articles that "
+             "present material for the game.")
+    case("scatter_score_separates",
+         _scatter_score(zipped) > 8.0 and _scatter_score(prose) < 2.0,
+         f"zipped={_scatter_score(zipped):.1f} prose={_scatter_score(prose):.1f}")
 
     failed = [c for c in cases if not c["ok"]]
     return {"ok": not failed, "passed": len(cases) - len(failed),

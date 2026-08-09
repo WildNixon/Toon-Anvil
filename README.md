@@ -162,9 +162,17 @@ reports each one where it matters.
    library's combine tool remains the correction for what's left — a guess
    you can correct beats a guess you can't — and every result still carries
    its coverage number and its **named / anchored / guessed** provenance.
-   The remaining ceiling is upstream: a few UA PDFs render headings in
-   small-caps that extraction scatters into letter salad, and no grouping
-   signal survives that. Saving the source page as HTML sidesteps it.
+   The small-caps letter salad that used to be this list's ceiling is
+   fixed at the glyph level: some UA PDFs carry two text streams offset by
+   under two points (merged and zipped character-by-character by
+   top-tolerance extraction) and draw display initials whose boxes dip
+   below their neighbours. Lines are now clustered on the TRUE baseline
+   from each glyph's text matrix — but only where a case-alternation
+   scatter score proves the default extraction is zipped and the rebuild
+   measurably cures it, so books that extract cleanly keep their exact
+   bytes. What remains for those documents is structural, not textual:
+   2026-format UA marks feature levels in tables rather than prose, which
+   the grouping signals do not yet read.
 
 **Not planned:** anything that reads D&D Beyond, and any bulk crawl of a
 homebrew site.
