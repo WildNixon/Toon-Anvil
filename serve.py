@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parent
 APP = ROOT / "app"
 DATA = ROOT / "data"
 
-KINDS = {"characters", "campaigns", "homebrew", "npcs", "shops", "encounters",
+KINDS = {"characters", "campaigns", "homebrew", "npcs", "shops", "encounters", "maps",
          # Content ingested from a dropped PDF or written by hand. Kept apart
          # from app/data/compendium so the bundled SRD can be rebuilt without
          # taking somebody's homebrew with it.
@@ -1141,7 +1141,8 @@ class Handler(SimpleHTTPRequestHandler):
                 mod = self._table()
                 if mod:
                     fn = {"encounters": mod.redact_encounter,
-                          "campaigns": mod.redact_campaign}.get(parts[1])
+                          "campaigns": mod.redact_campaign,
+                          "maps": mod.redact_map}.get(parts[1])
                     if fn:
                         me = mod.whoami(self._token())
                         records = [fn(r, me) for r in records]
@@ -1159,7 +1160,8 @@ class Handler(SimpleHTTPRequestHandler):
             mod = self._table()
             if mod:
                 fn = {"encounters": mod.redact_encounter,
-                      "campaigns": mod.redact_campaign}.get(parts[1])
+                      "campaigns": mod.redact_campaign,
+                      "maps": mod.redact_map}.get(parts[1])
                 if fn:
                     record = fn(record, mod.whoami(self._token()))
             return self._send_json(record)

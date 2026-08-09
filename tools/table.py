@@ -274,7 +274,7 @@ def consume_grant(character_id: str, record: dict | None) -> bool:
 
 # Kinds a player may never write, whatever they own. These change the shared
 # world rather than one character.
-SHARED_KINDS = {"homebrew", "campaigns", "npcs", "shops", "encounters",
+SHARED_KINDS = {"homebrew", "campaigns", "npcs", "shops", "encounters", "maps",
                 "custom-monsters", "custom-items", "custom-spells"}
 
 
@@ -461,6 +461,26 @@ def redact_campaign(record: dict, profile: dict | None) -> dict:
         if isinstance(f, dict) and f.get("public")
     ]
     out.pop("lore", None)
+    return out
+
+
+def redact_map(record: dict, profile: dict | None) -> dict:
+    """Players see only revealed pins, and never a pin's DM note.
+
+    The map image itself is shared - a table looks at the same map. What the
+    DM has not revealed simply is not in the payload, so there is nothing
+    for a curious network tab to find.
+    """
+    if not isinstance(record, dict):
+        return record
+    if profile is None or profile.get("role") == "dm":
+        return record
+    out = dict(record)
+    out["pins"] = [
+        {k: v for k, v in p.items() if k != "note"}
+        for p in (record.get("pins") or [])
+        if isinstance(p, dict) and p.get("revealed")
+    ]
     return out
 
 

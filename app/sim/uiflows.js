@@ -845,6 +845,74 @@ export const FLOWS = [
   },
 
   {
+    id: 'map_pins',
+    title: 'The map takes an image, holds pins, and remembers them',
+    async run(c, { doc, win }) {
+      c.feature('ui', 'deck', 'map');
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'Deck', 'campaign'), 'the Deck opens');
+
+      // deck_campaign already founded a campaign in this shared frame; if
+      // running in isolation, found one now.
+      if (!/Gym Realm/.test(mainText(doc))) {
+        const name = doc.querySelector('main input[aria-label="Campaign name"]');
+        if (name) {
+          setField(name, 'Gym Realm');
+          button(doc, 'Found the campaign')?.click();
+          await waitUntilSettled(doc);
+        }
+      }
+
+      // A tiny generated map, pasted - the path a test can drive.
+      // Big enough that a click inside the frame lands ON the image - the
+      // component rightly refuses to pin the void beyond the map's edge.
+      const px = win.document.createElement('canvas');
+      px.width = 800; px.height = 600;
+      const g = px.getContext('2d');
+      g.fillStyle = '#8a6a24'; g.fillRect(0, 0, 800, 600);
+      const url = doc.querySelector('main input[aria-label="Map image URL"]');
+      c.ok(!!url, 'the map can be pasted as a URL');
+      if (!url) return;
+      setField(url, px.toDataURL());
+      button(doc, 'Use this image')?.click();
+      const mounted = await waitFor(() => doc.querySelector('.map-frame'),
+        { timeout: 8000 });
+      c.ok(!!mounted, 'the map mounts with pan and zoom');
+
+      // Place a location pin by arming placement and clicking the frame.
+      button(doc, '+ location')?.click();
+      const frame = doc.querySelector('.map-frame');
+      const rect = frame.getBoundingClientRect();
+      frame.dispatchEvent(new win.MouseEvent('click', {
+        bubbles: true, clientX: rect.left + 60, clientY: rect.top + 60,
+      }));
+      const pin = await waitFor(() => doc.querySelector('.map-pin'),
+        { timeout: 6000 });
+      c.ok(!!pin, 'clicking the armed map drops a pin');
+      c.ok(/location/.test(pin?.getAttribute('aria-label') || ''),
+        'the pin announces itself', pin?.getAttribute('aria-label'));
+      c.ok(/hidden from players/.test(pin?.getAttribute('aria-label') || ''),
+        'and starts hidden from players');
+
+      // Reveal it through the editor the click opened.
+      const reveal = await waitFor(() => button(doc, 'Hidden'), { timeout: 5000 });
+      c.ok(!!reveal, 'the pin editor offers the reveal toggle');
+      reveal?.click();
+      const shown = await waitFor(() => button(doc, 'Revealed'), { timeout: 5000 });
+      c.ok(!!shown, 'one click reveals it');
+
+      // The pin survives a full mode round-trip - it was written, not drawn.
+      c.ok(await goToMode(doc, 'Story'), 'leave the Deck');
+      c.ok(await goToMode(doc, 'Deck', 'campaign'), 'and return');
+      const still = await waitFor(() => doc.querySelector('.map-pin'),
+        { timeout: 8000 });
+      c.ok(!!still, 'the pin is still on the map');
+      c.ok(!/hidden from players/.test(still?.getAttribute('aria-label') || ''),
+        'still revealed');
+    },
+  },
+
+  {
     id: 'settings_connectors',
     title: 'Settings is honest about what is not connected',
     async run(c, { doc }) {

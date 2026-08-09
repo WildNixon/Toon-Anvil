@@ -20,6 +20,8 @@ import {
 } from '../../core/campaign.js';
 import { weatherFor } from '../../core/weather.js';
 import { statTile } from '../../ui/kit.js';
+import { mapView, PIN_KINDS } from '../../ui/map.js';
+import { db } from '../../core/db.js';
 import { dmData } from './shared.js';
 
 export const title = 'Deck';
@@ -29,6 +31,8 @@ let unsubscribe = null;
 let tables = null;
 let campaign = null;
 let all = [];
+let mapRecord = null;
+let mapHandle = null;
 
 export async function render(root) {
   container = root;
@@ -37,7 +41,7 @@ export async function render(root) {
   draw();
 
   if (unsubscribe) unsubscribe();
-  unsubscribe = live.subscribe(['campaigns', 'table'], async () => {
+  unsubscribe = live.subscribe(['campaigns', 'maps', 'table'], async () => {
     if (container.dataset.rendered !== 'dm-deck') {
       unsubscribe?.(); unsubscribe = null; return;
     }
@@ -49,6 +53,9 @@ export async function render(root) {
 async function refresh() {
   all = await listCampaigns();
   campaign = await activeCampaign();
+  mapRecord = campaign?.mapId
+    ? await db.get('maps', campaign.mapId).catch(() => null)
+    : null;
 }
 
 function draw() {
@@ -58,6 +65,7 @@ function draw() {
     return;
   }
   container.append(dialsPanel());
+  container.append(mapPanel());
   container.append(regionsPanel());
   container.append(campaignPanel());
 }
@@ -112,6 +120,132 @@ function dialsPanel() {
   }, 'Advance the day'));
   panel.append(row);
   return panel;
+}
+
+/* ------------------------------------------------------------------ */
+/* the map                                                             */
+/* ------------------------------------------------------------------ */
+
+async function saveMap() {
+  if (mapRecord) await db.put('maps', mapRecord);
+}
+
+function mapPanel() {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'The map'));
+
+  if (!mapRecord) {
+    panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
+      "Drop the setting's map - the one from the book, or exported from any "
+      + 'map tool. Pan, zoom, pin the places and the party; reveal pins to '
+      + 'the players one by one.'));
+
+    const file = el('input', {
+      type: 'file', accept: 'image/*', 'aria-label': 'Map image file',
+      style: 'max-width:280px',
+    });
+    file.addEventListener('change', () => {
+      const f = file.files?.[0];
+      if (!f) return;
+      if (f.size > 8 * 1024 * 1024) {
+        toast('That image is over 8 MB - export it smaller', 'bad');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => adoptImage(String(reader.result), f.name);
+      reader.readAsDataURL(f);
+    });
+    panel.append(file);
+
+    // The paste fallback: also what an automated test can drive, since
+    // nothing can populate a file input.
+    const url = el('input', {
+      type: 'text', placeholder: 'or paste an image / data: URL...',
+      'aria-label': 'Map image URL', style: 'max-width:280px;margin-top:8px',
+    });
+    const row = el('div', { class: 'btnrow', style: 'margin-top:8px' });
+    row.append(url);
+    row.append(el('button', {
+      class: 'act ghost small',
+      onClick: () => {
+        const v = url.value.trim();
+        if (!v) return toast('Paste an image URL first', 'warn');
+        adoptImage(v, campaign.name);
+        return null;
+      },
+    }, 'Use this image'));
+    panel.append(row);
+    return panel;
+  }
+
+  const bar = el('div', { class: 'btnrow', style: 'margin-bottom:8px' });
+  for (const kind of PIN_KINDS) {
+    bar.append(el('button', {
+      class: 'act ghost small',
+      title: `Then click the map to place the ${kind} pin`,
+      onClick: () => {
+        mapHandle?.armPlacement(kind);
+        toast(`Click the map to place the ${kind}`, 'ok');
+      },
+    }, `+ ${kind}`));
+  }
+  bar.append(el('button', {
+    class: 'act ghost small',
+    onClick: async () => {
+      if (!window.confirm('Remove the map and every pin on it?')) return;
+      await db.del('maps', mapRecord.id).catch(() => null);
+      campaign.mapId = null;
+      await saveCampaign(campaign);
+      mapRecord = null;
+      draw();
+    },
+  }, 'Remove map'));
+  panel.append(bar);
+
+  const host = el('div', {});
+  panel.append(host);
+  mapHandle = mapView(host, {
+    record: mapRecord,
+    editable: true,
+    regions: campaign.regions,
+    onChange: () => saveMap(),
+    onPartyMoved: async (regionId) => {
+      if (campaign.currentRegionId === regionId) return;
+      const region = campaign.regions.find((r) => r.id === regionId);
+      campaign.currentRegionId = regionId;
+      await saveCampaign(campaign);
+      await log('region_moved',
+        { regionId, regionName: region?.name, day: campaign.day },
+        { campaignId: campaign.id });
+      toast(`The party crossed into ${region?.name || 'a new region'}`, 'ok');
+      draw();
+    },
+  });
+  panel.append(el('p', { class: 'welcome-fine', style: 'margin-top:6px' },
+    'Wheel to zoom, drag to pan. Dim pins are hidden from players; the '
+    + 'server never sends them what you have not revealed. Drop the party '
+    + 'flag near a regioned pin and the party moves there.'));
+  return panel;
+}
+
+async function adoptImage(src, name) {
+  const probe = new Image();
+  probe.onload = async () => {
+    mapRecord = {
+      id: `map-${campaign.id}`,
+      name: name || campaign.name,
+      image: src,
+      w: probe.naturalWidth, h: probe.naturalHeight,
+      pins: [],
+    };
+    await db.put('maps', mapRecord);
+    campaign.mapId = mapRecord.id;
+    await saveCampaign(campaign);
+    toast('The map is on the table', 'ok');
+    draw();
+  };
+  probe.onerror = () => toast('That does not load as an image', 'bad');
+  probe.src = src;
 }
 
 /* ------------------------------------------------------------------ */

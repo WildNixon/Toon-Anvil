@@ -1630,7 +1630,8 @@ export const SUITES = [
           if (!kim.ok) { c.ok(false, 'the player joined'); return; }
 
           for (const kind of ['homebrew', 'custom-monsters', 'custom-items',
-            'custom-spells', 'npcs', 'shops', 'campaigns', 'encounters']) {
+            'custom-spells', 'npcs', 'shops', 'campaigns', 'encounters',
+            'maps']) {
             // eslint-disable-next-line no-await-in-loop
             const r = await table.put(kind, 'gym-shared', { name: 'Mine' }, kim.token);
             c.eq(r.status, 403, `a player cannot write ${kind}`);
@@ -2044,6 +2045,53 @@ export const SUITES = [
             'while the DM keeps every word');
 
           await table.del('campaigns', 'gym-camp', dm.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'map_pins_stay_hidden',
+        title: 'An unrevealed pin never reaches a player, on either route',
+        async run(c, { table }) {
+          c.feature('campaign', 'map', 'security');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          const record = {
+            id: 'gym-map', name: 'Gym Map',
+            image: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
+            w: 1, h: 1,
+            pins: [
+              { id: 'p-shown', x: 0.2, y: 0.2, kind: 'location',
+                label: 'The Winch House', note: 'smugglers below',
+                revealed: true },
+              { id: 'p-hidden', x: 0.8, y: 0.8, kind: 'quest',
+                label: 'HIDDEN: The Vault', note: 'the real hoard',
+                revealed: false },
+            ],
+          };
+          const put = await table.put('maps', 'gym-map', record, dm.token);
+          c.eq(put.status, 200, 'the DM writes the map');
+
+          const mine = await table.get('maps', 'gym-map', kim.token);
+          c.eq(mine.pins?.length, 1, 'the player receives only revealed pins');
+          c.eq(mine.pins?.[0]?.label, 'The Winch House', 'the right one');
+          c.eq(mine.pins?.[0]?.note, undefined,
+            'and even a revealed pin keeps its DM note at home');
+          c.ok(!JSON.stringify(mine).includes('HIDDEN'),
+            'no trace of the hidden pin in the payload');
+
+          const listed = await fetch('/api/maps', {
+            headers: { 'X-Toon-Token': kim.token } }).then((r) => r.json());
+          const fromList = listed.find((x) => x.id === 'gym-map');
+          c.ok(fromList && !JSON.stringify(fromList).includes('HIDDEN'),
+            'the list route redacts identically');
+
+          const asDm = await table.get('maps', 'gym-map', dm.token);
+          c.eq(asDm.pins?.length, 2, 'the DM keeps every pin');
+
+          await table.del('maps', 'gym-map', dm.token);
           await table.close();
         },
       },

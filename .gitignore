@@ -19,6 +19,8 @@ data/events.jsonl
 # The fight currently on the table: whose turn it is, who is hurt, and every
 # monster's hit points. Live play state, not something to publish.
 data/encounters/
+# The campaign's world map images - personal play data like the rest.
+data/maps/
 # Who is at the table, and every join token. Ending a session deletes it;
 # it must never reach a commit.
 data/table.json

@@ -571,6 +571,43 @@ th {
   border: 1px dashed var(--etch); border-radius: var(--radius);
 }
 
+/* ---------- the campaign map ---------- */
+
+.map-frame {
+  position: relative; overflow: hidden;
+  height: clamp(320px, 55vh, 620px);
+  background: var(--paper);
+  border: 1px solid var(--etch); border-radius: var(--radius);
+  touch-action: none; cursor: grab;
+}
+.map-frame:active { cursor: grabbing; }
+.map-frame.placing { cursor: crosshair; }
+.map-layer {
+  position: absolute; left: 0; top: 0;
+  transform-origin: 0 0;
+  --k: 1;
+}
+.map-img { display: block; max-width: none; user-select: none; }
+.map-pin {
+  position: absolute;
+  /* Counter-scaled so a pin stays pin-sized at any zoom. */
+  transform: translate(-50%, -100%) scale(calc(1 / var(--k)));
+  transform-origin: 50% 100%;
+  font-size: 20px; line-height: 1;
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--accent);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 0 3px rgba(255, 255, 255, .4);
+  padding: 2px;
+}
+.map-pin[data-kind='party'] { color: #2e6b46; font-size: 24px; }
+.map-pin[data-kind='quest'] { color: #8a6a24; }
+.map-pin[data-kind='faction'] { color: #2e4a6b; }
+.map-pin.hidden-pin { opacity: .45; filter: grayscale(.6); }
+.map-editor {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  padding: 8px 0;
+}
+
 /* ---------- welcome: the first-run seat choice ---------- */
 
 .welcome {

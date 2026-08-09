@@ -22,7 +22,7 @@
  * compendium files so that the bundled SRD data stays exactly as shipped and
  * can be rebuilt at any time without taking somebody's homebrew with it.
  */
-export const KINDS = ['characters', 'campaigns', 'homebrew', 'npcs', 'shops',
+export const KINDS = ['characters', 'campaigns', 'homebrew', 'npcs', 'shops', 'maps',
   'encounters',
   'custom-monsters', 'custom-items', 'custom-spells', 'profiles'];
 
