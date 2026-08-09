@@ -359,6 +359,48 @@ def _is_name_block(b: dict) -> bool:
     return not body or (len(body) <= 200 and bool(SIZE_LINE.match(body)))
 
 
+def _name_shaped(line: str) -> bool:
+    """A line that could be a creature's name heading."""
+    t = line.strip()
+    if not (2 <= len(t) <= 40) or len(t.split()) > 5:
+        return False
+    if t.endswith((".", ",", ";", ":")) or not re.match(r"^[A-Z0-9]", t):
+        return False
+    return not (is_heading_title(t) or SIZE_LINE.match(t))
+
+
+def _rescue_name_from_tail(prev: dict):
+    """Cut a creature name (and its size line) off the END of a block.
+
+    In the Monster Manual, 209 of 216 refused AC-orphans were fully
+    stitched statblocks whose NAME line sat at the tail of the preceding
+    lore block or the previous page's last block - the statblock itself
+    started at its Armor Class line, classify refused the label title, and
+    a complete creature was lost for want of two lines. This fires only
+    when a statblock run needs a name, and a heading directly above a
+    statblock is almost always that name.
+
+    Returns (name, size_line_or_None) and MUTATES prev, or None.
+    """
+    lines = prev["text"].rstrip().split("\n")
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if not lines:
+        return None
+    if SIZE_LINE.match(lines[-1].strip()) and len(lines) >= 2 \
+            and _name_shaped(lines[-2]):
+        size = lines.pop().strip()
+        name = lines.pop().strip()
+    elif _name_shaped(lines[-1]):
+        size = None
+        name = lines.pop().strip()
+    else:
+        return None
+    prev["text"] = "\n".join(lines).rstrip()
+    prev["chars"] = len(prev["text"])
+    return name, size
+
+
 def stitch_statblocks(blocks: list[dict]) -> list[dict]:
     """Re-join the pieces of a statblock into one block.
 
@@ -387,13 +429,22 @@ def stitch_statblocks(blocks: list[dict]) -> list[dict]:
             parts = [f"{b['title']}\n{b['text']}"]
         else:
             parts = [b["text"]]
-        # Pull the creature's name back in from the block above.
+        # Pull the creature's name back in from the block above - either a
+        # whole name block, or a name line stranded at the tail of whatever
+        # was emitted last (the page-break case).
         if out and _is_name_block(out[-1]) and b["page"] - out[-1]["page"] <= 1:
             name = out.pop()
             merged["title"] = name["title"]
             merged["page"] = name["page"]
             if name["text"].strip():
                 parts.insert(0, name["text"])
+        elif ((not merged["title"] or is_heading_title(merged["title"]))
+                and out and b["page"] - out[-1]["page"] <= 1):
+            rescued = _rescue_name_from_tail(out[-1])
+            if rescued:
+                merged["title"] = rescued[0]
+                if rescued[1]:
+                    parts.insert(0, rescued[1])
         seen_cr = bool(STATBLOCK_END.search(parts[0]))
         j = i + 1
         while j < len(blocks):
@@ -768,6 +819,24 @@ def selftest() -> dict:
          len(lead_blocks) == 1 and lead_blocks[0].get("untitled") is True
          and "ledger" in lead_blocks[0]["text"],
          f"blocks={len(lead_blocks)}")
+
+    # 1e. The page-break case: the creature's name is the LAST line of one
+    #     page and its statblock opens the next. The name is rescued off the
+    #     previous block's tail; without it the statblock classifies under a
+    #     label title and is refused - 209 of the Monster Manual's 216
+    #     refused AC-orphans died exactly this way.
+    lore = ("The old mill has stood empty for a decade, and the ferrymen "
+            "refuse to moor within sight of it after dark. Those who ask "
+            "in the village hear the same name whispered.")
+    page_a = f"CHAPTER TWO\n{lore}\n{mons[2]['name'].upper()}"
+    page_b = _render_fixture(mons[2])
+    split_blocks = blocks_from([page_a, page_b])
+    split_monsters = [b for b in split_blocks
+                      if classify(b)[0] == "monster"]
+    case("page_break_name_rescued",
+         len(split_monsters) == 1
+         and split_monsters[0]["title"].lower() == mons[2]["name"].lower(),
+         f"monsters={[b['title'] for b in split_monsters]}")
 
     # 1d. Colon headings ("Quint Farm:") mark blocks - a whole adventure
     #     yielded two blocks because every heading ended with a colon.
