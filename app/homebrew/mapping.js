@@ -14,6 +14,9 @@
  * Anything unmatched stays narrative_only and still renders on the sheet.
  */
 
+import { average } from '../core/dice.js';
+import { CONDITIONS } from '../core/rules2024.js';
+
 const ABIL = {
   strength: 'str', dexterity: 'dex', constitution: 'con',
   intelligence: 'int', wisdom: 'wis', charisma: 'cha',
@@ -23,6 +26,114 @@ const DMG_RE = 'Acid|Bludgeoning|Cold|Fire|Force|Lightning|Necrotic|Piercing|'
   + 'Poison|Psychic|Radiant|Slashing|Thunder';
 
 const ab = (word) => ABIL[String(word || '').toLowerCase()] || null;
+
+/* ------------------------------------------------------------------ */
+/* reaction trigger + response classification, and action payloads     */
+/* ------------------------------------------------------------------ */
+//
+// Sentence WINDOWS, not whole-feature text: whole-text scanning matched a
+// "half damage" three sentences away from the trigger and called it a
+// damage-reduction reaction. The trigger is classified from the sentence
+// holding the action-economy phrase; the response from that sentence plus
+// the next one. Still regex over prose at 0.75 confidence - lossy by
+// nature, honest by construction.
+
+/** The sentence containing `index`, and it plus its successor. */
+function windowsAround(text, index) {
+  const t = String(text || '');
+  const bounds = [];
+  let start = 0;
+  for (const m of t.matchAll(/[.!?](?:\s+|$)/g)) {
+    bounds.push([start, m.index + 1]);
+    start = m.index + m[0].length;
+  }
+  if (start < t.length) bounds.push([start, t.length]);
+  let at = bounds.findIndex(([s, e]) => index >= s && index < e);
+  if (at < 0) at = 0;
+  const trigger = bounds[at] ? t.slice(bounds[at][0], bounds[at][1]) : t;
+  const next = bounds[at + 1] ? t.slice(bounds[at + 1][0], bounds[at + 1][1]) : '';
+  return { trigger, response: `${trigger} ${next}` };
+}
+
+// Ordered; first match wins. The negation guard comes first so "when you
+// take no damage after succeeding..." never reads as takes_damage.
+const TRIGGER_BUCKETS = [
+  ['other', /take[s]? no damage/i],
+  ['missed_by_attack', /misses you/i],
+  ['hit_by_attack',
+    /hits you\b|you are hit by|you're hit by|attack hits you|critical hit on you/i],
+  ['takes_damage',
+    /(?:when|whenever|after|if) you (?:take|would take|suffer)[^.]{0,60}damage|deals damage to you|you take damage/i],
+  ['roll_made', /makes? an? (?:attack roll|ability check|saving throw|damage roll)/i],
+  ['ally_damaged',
+    /(?:another creature|an ally|a friendly creature|a creature[^.]{0,60}(?:other than you|within \d+ feet))[^.]{0,90}(?:takes damage|is hit|is damaged|is attacked|is reduced to 0|dies)/i],
+  ['spell_targeted',
+    /targets you with a spell|casts? a spell|area of effect of a spell|target of a spell/i],
+  ['targeted_pre_roll',
+    /targets you with an? [^.]{0,20}attack|attack roll targeting you|attacks only you|is the target of an attack/i],
+];
+
+function classifyTrigger(win) {
+  for (const [bucket, re] of TRIGGER_BUCKETS) {
+    if (re.test(win)) return bucket;
+  }
+  return 'other';
+}
+
+/** A damage-type constraint on the trigger ("lightning or thunder damage"). */
+function triggerDamageTypes(win) {
+  if (/damage of the type associated|triggering damage type of your/i.test(win)) {
+    return ['chosen'];
+  }
+  const m = new RegExp(
+    `(?:take|suffer)[^.]{0,30}?(${DMG_RE})(?:\\s+or\\s+(${DMG_RE}))?\\s+damage`, 'i',
+  ).exec(win);
+  if (!m) return null;
+  return [m[1], m[2]].filter(Boolean).map((x) => x.toLowerCase());
+}
+
+function classifyResponse(win) {
+  if (/make (?:a|an|one) [^.]{0,40}attack against|attack that creature|strike back/i.test(win)) {
+    return { kind: 'counterattack' };
+  }
+  if (/halv\w+ the damage|take[s]? (?:only )?half (?:the|that|of the)?\s*damage/i.test(win)) {
+    return { kind: 'reduce_damage', halve: true };
+  }
+  const flat = /reduc\w+ the damage[^.]{0,30}?by (\d+d\d+|\d+)/i.exec(win);
+  if (flat) return { kind: 'reduce_damage', dice: flat[1] };
+  if (/(?:gain|have|gaining) resistance to [^.]{0,80}damage/i.test(win)) {
+    return { kind: 'reduce_damage', resist: true };
+  }
+  return { kind: 'other' };
+}
+
+/**
+ * Structured payload parsed from an action's full text: what the feature
+ * DOES, so the simulator can score "push 15 feet" differently from
+ * "frighten the target" - the exact blindness behind the corpus tie rate.
+ * expectedDamage is a deterministic dice AVERAGE; riders ("extra 2d8...")
+ * are excluded here because they already reach the attack path as
+ * damage_rider effects - counting them twice would flatter every rider.
+ */
+function actionPayload(text) {
+  const t = String(text || '');
+  const out = {};
+  const conditions = [];
+  for (const c of CONDITIONS) {
+    if (new RegExp(`\\b${c}\\b`, 'i').test(t)) conditions.push(c.toLowerCase());
+  }
+  if (conditions.length) out.conditions = conditions;
+  const moveM = /(?:push(?:ed)?|pull(?:ed)?|shove[ds]?|moved?)[^.]{0,40}?(\d+)\s*feet/i.exec(t);
+  if (moveM) out.forcedMove = Number(moveM[1]);
+  if (/each creature|all creatures|every creature/i.test(t)) out.aoe = true;
+  for (const m of t.matchAll(/(\d+d\d+)(?:\s*\+\s*(\d+))?\s+[^.]{0,25}damage/gi)) {
+    const before = t.slice(Math.max(0, m.index - 12), m.index);
+    if (/extra|additional/i.test(before)) continue;
+    out.expectedDamage = average(m[1]) + (Number(m[2]) || 0);
+    break;
+  }
+  return out;
+}
 
 /**
  * Parse a markdown pipe table of granted spells into {level: [names]}.
@@ -233,6 +344,22 @@ export function suggestForFeature(feature, brew = {}) {
     const type = kind.includes('reaction') ? 'reaction_option' : 'action_option';
     const saveM = new RegExp(`(${ABIL_RE})\\s+saving throw`, 'i').exec(text);
     const rangeM = /within\s+(\d+)\s*feet/i.exec(text);
+
+    // What the action DOES (conditions, forced movement, aoe, dice) - and,
+    // for reactions, WHEN it fires and HOW it answers. The schema reserved
+    // the trigger field from day one; this finally populates it.
+    const payload = actionPayload(text);
+    let reactionBits = {};
+    if (type === 'reaction_option') {
+      const win = windowsAround(text, actionM.index);
+      const damageTypes = triggerDamageTypes(win.trigger);
+      reactionBits = {
+        trigger: classifyTrigger(win.trigger),
+        response: classifyResponse(win.response),
+        ...(damageTypes ? { damageTypes } : {}),
+      };
+    }
+
     add({
       type,
       name: feature.name,
@@ -245,6 +372,8 @@ export function suggestForFeature(feature, brew = {}) {
         : null,
       range: rangeM ? `${rangeM[1]} feet` : null,
       save: saveM ? { ability: ab(saveM[1]), dc: 'spell' } : null,
+      ...payload,
+      ...reactionBits,
       text: feature.text?.slice(0, 400) || '',
     }, 0.75, actionM[0]);
   }

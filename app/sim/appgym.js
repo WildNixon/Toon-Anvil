@@ -689,6 +689,115 @@ export const SUITES = [
         },
       },
       {
+        id: 'reaction_classifier',
+        title: 'Reaction triggers and responses classify from their own sentences',
+        async run(c, { hb }) {
+          c.feature('homebrew', 'reactions');
+          // Verbatim corpus phrasings - the review artifact for the
+          // sentence-window classifier. One brew, one feature each.
+          const md = [
+            '## Gym Reaction Corpus',
+            '### Retaliation',
+            'At 3rd level, when you take damage from a creature that is within '
+            + '5 feet of you, you can use your reaction to make a melee weapon '
+            + 'attack against that creature.',
+            '### Jester Style',
+            'At 3rd level, when an attacker that you can see hits you with a '
+            + 'weapon attack, you can use your reaction to halve the damage '
+            + 'that you take.',
+            '### Fight for Every Step',
+            'At 6th level, when you take damage from a melee attack, you can '
+            + 'use your reaction to brace yourself, reducing the damage you '
+            + 'take from the attack by 1d6.',
+            '### Adaptive Shroud',
+            'At 6th level, when you take damage, you can use your reaction to '
+            + 'gain resistance to the triggering damage type until the start '
+            + 'of your next turn.',
+            '### Stormshield',
+            'At 6th level, when you take lightning or thunder damage, you can '
+            + 'use your reaction to gain resistance to lightning and thunder '
+            + 'damage until the end of your next turn.',
+            '### Feline Reflexes',
+            'At 3rd level, when a creature you can see misses you with an '
+            + 'attack, you can use your reaction to take the Dodge action.',
+            '### Cutting Words',
+            'At 3rd level, when a creature that you can see within 60 feet of '
+            + 'you makes an attack roll, an ability check, or a damage roll, '
+            + 'you can use your reaction to expend one use of your inspiration.',
+            '### Deflect Strike',
+            'At 7th level, when an ally you can see within 30 feet is hit by '
+            + 'a melee attack, you can use your reaction to reduce the damage '
+            + 'by 1d10.',
+            '### Improved Feline Reflexes',
+            'At 11th level, when you take no damage after succeeding on a '
+            + 'Dexterity saving throw against an effect, you can use your '
+            + 'reaction to move away.',
+          ].join('\n\n');
+          const brew = hb.accept(hb.suggest(hb.parse('markdown', md,
+            { filename: 'rx.md' })));
+          const rx = (name) => (brew.features.find((f) => f.name === name)
+            ?.effects || []).find((e) => e.type === 'reaction_option');
+
+          const pin = (name, trigger, respKind) => {
+            const e = rx(name);
+            c.ok(!!e, `${name} maps as a reaction`);
+            if (!e) return null;
+            c.eq(e.trigger, trigger, `${name} trigger is ${trigger}`);
+            if (respKind) {
+              c.eq(e.response?.kind, respKind, `${name} response is ${respKind}`);
+            }
+            return e;
+          };
+          pin('Retaliation', 'takes_damage', 'counterattack');
+          const jester = pin('Jester Style', 'hit_by_attack', 'reduce_damage');
+          c.ok(jester?.response?.halve === true, 'Jester Style halves');
+          const brace = pin('Fight for Every Step', 'takes_damage', 'reduce_damage');
+          c.eq(brace?.response?.dice, '1d6', 'Fight for Every Step reduces by 1d6');
+          const shroud = pin('Adaptive Shroud', 'takes_damage', 'reduce_damage');
+          c.ok(shroud?.response?.resist === true, 'Adaptive Shroud grants resistance');
+          const storm = pin('Stormshield', 'takes_damage', 'reduce_damage');
+          c.same(storm?.damageTypes, ['lightning', 'thunder'],
+            'Stormshield only fires on its own damage types');
+          pin('Feline Reflexes', 'missed_by_attack', null);
+          pin('Cutting Words', 'roll_made', null);
+          pin('Deflect Strike', 'ally_damaged', null);
+          const neg = rx('Improved Feline Reflexes');
+          c.eq(neg?.trigger, 'other',
+            '"take NO damage" is the negation guard, not takes_damage');
+        },
+      },
+      {
+        id: 'action_payloads',
+        title: 'Feature payloads parse: what an action does, not just that it exists',
+        async run(c, { hb }) {
+          c.feature('homebrew', 'reactions', 'payloads');
+          const brew = hb.accept(hb.suggest(hb.parse('markdown', [
+            '## Gym Payloads',
+            '### Hard Shove',
+            'At 3rd level, as a Bonus Action, you can force a creature within '
+            + '30 feet to make a Wisdom saving throw. On a failure it is '
+            + 'pushed 15 feet and has the Frightened condition.',
+            '### Nova Burst',
+            'At 5th level, as a Magic action, each creature within 10 feet of '
+            + 'you must make a Dexterity saving throw, taking 2d6 fire damage '
+            + 'on a failure.',
+          ].join('\n\n'), { filename: 'pl.md' })));
+          const eff = (name) => (brew.features.find((f) => f.name === name)
+            ?.effects || []).find((e) => e.type === 'action_option');
+
+          const shove = eff('Hard Shove');
+          c.ok(!!shove, 'Hard Shove maps as an action');
+          c.same(shove?.conditions, ['frightened'], 'the condition is named');
+          c.eq(shove?.forcedMove, 15, 'the push distance is parsed');
+          c.ok(!shove?.aoe, 'a single-target action is not an aoe');
+
+          const nova = eff('Nova Burst');
+          c.ok(!!nova, 'Nova Burst maps as an action');
+          c.ok(nova?.aoe === true, 'each-creature phrasing is an aoe');
+          c.eq(nova?.expectedDamage, 7, '2d6 averages to 7, deterministically');
+        },
+      },
+      {
         id: 'dangling_costs',
         title: 'An action costing a resource nobody grants is reported',
         async run(c, { exec, sources }) {
@@ -3229,7 +3338,8 @@ export const BARS = {
   // And again (43 -> 45) with HP overrides and the browsable bestiary.
   // And again (45 -> 46) with the spellbook.
   // And again (46 -> 47) with the corpus-vectors pipeline.
-  minFeaturesCovered: 47,
+  // And again (47 -> 48) with reaction classification and action payloads.
+  minFeaturesCovered: 48,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.
@@ -3460,6 +3570,44 @@ export const MUTATIONS = [
             label: 'HIDDEN leak', revealed: false }];
         }
         return r;
+      } } }),
+  },
+  {
+    id: 'trigger_classifier_blind',
+    what: 'reaction suggestions lose trigger and response - the pre-classifier world',
+    patch: (ctx) => ({ hb: { ...ctx.hb,
+      suggest: (brew) => {
+        const out = ctx.hb.suggest(brew);
+        for (const f of out.features || []) {
+          for (const s of f.suggestions || []) {
+            if (s.effect?.type === 'reaction_option') {
+              delete s.effect.trigger;
+              delete s.effect.response;
+              delete s.effect.damageTypes;
+            }
+          }
+        }
+        return out;
+      } } }),
+  },
+  {
+    id: 'payload_parser_blind',
+    what: 'action payloads vanish - push 15 feet and frighten are the same again',
+    patch: (ctx) => ({ hb: { ...ctx.hb,
+      suggest: (brew) => {
+        const out = ctx.hb.suggest(brew);
+        for (const f of out.features || []) {
+          for (const s of f.suggestions || []) {
+            if (s.effect?.type === 'action_option'
+              || s.effect?.type === 'reaction_option') {
+              delete s.effect.conditions;
+              delete s.effect.forcedMove;
+              delete s.effect.aoe;
+              delete s.effect.expectedDamage;
+            }
+          }
+        }
+        return out;
       } } }),
   },
   {

@@ -50,11 +50,16 @@ export const EFFECT_TYPES = {
   action_option: {
     label: 'Action / bonus action / reaction',
     hint: 'Something the character can DO on their turn, with a cost',
+    // conditions/forcedMove/aoe/expectedDamage are the parsed PAYLOAD -
+    // what the action does, so the simulator can score "push 15 feet"
+    // differently from "frighten the target". All optional; emitted only
+    // when the prose carries the signal.
     fields: { name: 'string', action: 'actionType', cost: 'cost', range: 'string',
-              save: 'save', text: 'text' },
+              save: 'save', conditions: 'stringList?', forcedMove: 'number?',
+              aoe: 'boolean?', expectedDamage: 'number?', text: 'text' },
     example: { name: 'Hard Pull', action: 'bonus',
                cost: { resource: 'Sorcery Points', amount: 1 }, range: '60 feet',
-               save: { ability: 'str', dc: 'spell' } },
+               save: { ability: 'str', dc: 'spell' }, forcedMove: 15 },
   },
   damage_rider: {
     label: 'Extra damage',
@@ -124,8 +129,19 @@ export const EFFECT_TYPES = {
   },
   reaction_option: {
     label: 'Reaction',
-    fields: { name: 'string', trigger: 'string', cost: 'cost', text: 'text' },
-    example: { name: 'Duck!', trigger: 'a melee attack misses you',
+    // trigger is now a classified BUCKET (hit_by_attack, takes_damage,
+    // missed_by_attack, ally_damaged, roll_made, spell_targeted,
+    // targeted_pre_roll, other) - the field the schema reserved from day
+    // one and nothing populated until the mapper learned to. response is
+    // {kind: reduce_damage|counterattack|other, halve?, dice?, resist?};
+    // damageTypes constrains the trigger ('chosen' = a player choice the
+    // simulator cannot resolve). Payload fields as on action_option.
+    fields: { name: 'string', trigger: 'string', response: 'object?',
+              damageTypes: 'damageTypes?', cost: 'cost',
+              conditions: 'stringList?', forcedMove: 'number?',
+              aoe: 'boolean?', expectedDamage: 'number?', text: 'text' },
+    example: { name: 'Duck!', trigger: 'missed_by_attack',
+               response: { kind: 'other' },
                cost: { resource: 'Focus Points', amount: 1 } },
   },
   narrative_only: {
