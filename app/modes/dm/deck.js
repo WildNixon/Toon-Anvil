@@ -21,7 +21,7 @@ import {
 import { query } from '../../core/events.js';
 import { lineChart } from '../../ui/chart.js';
 import { weatherFor } from '../../core/weather.js';
-import { statTile } from '../../ui/kit.js';
+import { statTile, dial } from '../../ui/kit.js';
 import { mapView, PIN_KINDS } from '../../ui/map.js';
 import { db } from '../../core/db.js';
 import { detect, parse } from '../../homebrew/adapters.js';
@@ -211,6 +211,29 @@ function dialsPanel() {
       draw();
     },
   }, 'Advance the day'));
+  // The manual hand on the calendar: type a day, go there. Deterministic
+  // weather makes any day recomputable, so jumping is honest time travel.
+  // (An input's value never appears in textContent - the flow that reads
+  // the number after 'Day' cannot see this control.)
+  const jump = el('input', {
+    type: 'number', min: '1', step: '1', placeholder: 'day...',
+    'aria-label': 'Jump to day', style: 'max-width:90px',
+  });
+  row.append(jump);
+  row.append(el('button', {
+    class: 'act ghost',
+    title: 'Set the calendar to that day outright',
+    onClick: async () => {
+      const d = Math.max(1, Math.floor(Number(jump.value)));
+      if (!Number.isFinite(d) || !jump.value || d === campaign.day) return;
+      campaign.day = d;
+      await saveCampaign(campaign);
+      await log('day_advanced', { day: d, jumped: true },
+        { campaignId: campaign.id });
+      toast(`Day ${d} dawns`, 'ok');
+      draw();
+    },
+  }, 'Go to that day'));
   panel.append(row);
   return panel;
 }
@@ -368,25 +391,20 @@ function factionsPanel() {
         + 'display:inline-block;flex:none',
     }));
     top.append(el('strong', { style: 'flex:1;min-width:100px' }, f.name));
-    top.append(el('span', {
-      class: 'mono', style: 'font-size:12px;width:34px;text-align:right',
-    }, String(f.standing)));
-
-    const slider = el('input', {
-      type: 'range', min: '-10', max: '10', step: '1',
-      value: String(f.standing),
-      'aria-label': `${f.name} standing`, style: 'width:130px',
-    });
-    // change, not input: one logged shift per settled drag, not forty.
-    slider.addEventListener('change', async () => {
-      f.standing = Number(slider.value);
-      await saveCampaign(campaign);
-      await log('faction_standing',
-        { factionId: f.id, name: f.name, value: f.standing, day: campaign.day },
-        { campaignId: campaign.id });
-      draw();
-    });
-    top.append(slider);
+    // One labelled control, slider for the hand and a number for precision;
+    // commits once per settled change, so one logged shift per drag.
+    top.append(dial({
+      label: 'Standing', value: f.standing, min: -10, max: 10, step: 1,
+      ariaLabel: `${f.name} standing`,
+      onCommit: async (v) => {
+        f.standing = v;
+        await saveCampaign(campaign);
+        await log('faction_standing',
+          { factionId: f.id, name: f.name, value: f.standing, day: campaign.day },
+          { campaignId: campaign.id });
+        draw();
+      },
+    }));
 
     top.append(el('button', {
       class: `act ${f.public ? '' : 'ghost'} small`,
@@ -495,23 +513,20 @@ function economyPanel() {
         + 'padding:7px 0;border-bottom:1px solid var(--etch)',
     });
     row.append(el('strong', { style: 'flex:1;min-width:100px' }, region.name));
-    const label = el('span', {
-      class: 'mono', style: 'font-size:12px;width:48px',
-    }, `x${Number(region.priceMod || 1).toFixed(2)}`);
-    const dial = el('input', {
-      type: 'range', min: '0.5', max: '2', step: '0.05',
-      value: String(region.priceMod || 1),
-      'aria-label': `${region.name} price dial`, style: 'width:130px',
-    });
-    dial.addEventListener('input', () => {
-      label.textContent = `x${Number(dial.value).toFixed(2)}`;
-    });
-    dial.addEventListener('change', async () => {
-      region.priceMod = Number(dial.value);
-      await saveCampaign(campaign);
-      draw();
-    });
-    row.append(dial, label);
+    // ASCII 'x' here on purpose; the Market's strip uses the real multiply
+    // sign and the gym asserts each separately.
+    row.append(dial({
+      label: 'Prices', value: region.priceMod || 1, min: 0.5, max: 2,
+      step: 0.05, prefix: 'x', ariaLabel: `${region.name} price dial`,
+      onCommit: async (v) => {
+        region.priceMod = v;
+        await saveCampaign(campaign);
+        await log('price_changed',
+          { regionId: region.id, name: region.name, value: v, day: campaign.day },
+          { campaignId: campaign.id });
+        draw();
+      },
+    }));
     if (campaign.currentRegionId === region.id) {
       row.append(el('span', { class: 'chip accent' }, 'the party pays this'));
     }

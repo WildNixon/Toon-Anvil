@@ -54,3 +54,54 @@ export function statTile(k, v, sub = '', onClick = null) {
   if (sub) tile.append(el('div', { class: 'sub' }, sub));
   return tile;
 }
+
+/**
+ * dial() - one labelled control row: a caption, a slider, and a number you
+ * can type. The slider is the fast hand, the number is the exact one; both
+ * drive the same commit.
+ *
+ * The RANGE input carries `ariaLabel` verbatim - gym selectors target it by
+ * that exact string - and the number input carries `${ariaLabel} value`.
+ * Sync rules: dragging mirrors into the number live and commits once on
+ * release (one saved change per settled drag, not forty); typing clamps to
+ * [min, max], writes back to both inputs, and commits on change. Number
+ * input VALUES never appear in textContent, so text-reading assertions
+ * stay blind to them by construction.
+ */
+export function dial({ label, value, min, max, step, ariaLabel,
+  prefix = '', onCommit }) {
+  const row = el('div', {
+    style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap',
+  });
+  const clamp = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return Number(value);
+    return Math.min(Number(max), Math.max(Number(min), n));
+  };
+  const range = el('input', {
+    type: 'range', min: String(min), max: String(max), step: String(step),
+    value: String(value), 'aria-label': ariaLabel, style: 'width:130px',
+  });
+  const num = el('input', {
+    type: 'number', min: String(min), max: String(max), step: String(step),
+    value: String(value), 'aria-label': `${ariaLabel} value`,
+    style: 'width:72px',
+  });
+  range.addEventListener('input', () => { num.value = range.value; });
+  range.addEventListener('change', () => onCommit(Number(range.value)));
+  num.addEventListener('change', () => {
+    const v = clamp(num.value);
+    num.value = String(v);
+    range.value = String(v);
+    onCommit(v);
+  });
+  row.append(el('label', {
+    class: 'field', style: 'margin:0;display:inline-block;flex:none',
+  }, label));
+  row.append(range);
+  if (prefix) {
+    row.append(el('span', { class: 'mono', style: 'font-size:12px' }, prefix));
+  }
+  row.append(num);
+  return row;
+}
