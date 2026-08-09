@@ -53,6 +53,26 @@ export const INVARIANTS = [
     },
   },
   {
+    id: 'prepared_within_budget',
+    desc: 'chosen spells never exceed the class tables\' allowance',
+    // Null-safe on purpose: the simulator's characters never choose spells
+    // (their loadouts are approximated policy-side), so this can only fire
+    // for a real character built in the app.
+    check: (s) => {
+      const sc = s.derived.spellcasting;
+      if (!sc || !sc.budget) return null;
+      const known = (s.character.spells?.known || []).length;
+      const prepared = (s.character.spells?.prepared || []).length;
+      if (known > sc.budget.cantrips) {
+        return `${known} cantrips of ${sc.budget.cantrips} allowed`;
+      }
+      if (prepared > sc.budget.prepared) {
+        return `${prepared} prepared of ${sc.budget.prepared} allowed`;
+      }
+      return null;
+    },
+  },
+  {
     id: 'gold_non_negative',
     desc: 'wealth never goes negative',
     check: (s) => (s.derived.copper < 0 ? `copper ${s.derived.copper}` : null),

@@ -6,12 +6,12 @@
  */
 
 import { getState, setState, esc, el, sign, toast } from '../../core/store.js';
-import { db } from '../../core/db.js';
+import { db, compendiumWithCustom } from '../../core/db.js';
 import { log } from '../../core/events.js';
 import {
   ABILITIES, ABILITY_NAMES, SKILLS, abilityMod, proficiencyBonus,
   parseStartingEquipment, pointBuySpend, arrayAssignment,
-  POINT_BUY_BUDGET, STANDARD_ARRAY,
+  POINT_BUY_BUDGET, STANDARD_ARRAY, spellbookProblems,
 } from '../../core/rules2024.js';
 import { rollAbilityScores } from '../../core/dice.js';
 import { saveCharacter, selectCharacter, recompute, go } from '../../app.js';
@@ -55,6 +55,8 @@ function draw() {
   container.append(abilitiesPanel(active));
   container.append(skillsPanel(active, compendium));
   container.append(equipmentPanel(active, compendium));
+  const spells = spellsPanel(active, compendium);
+  if (spells) container.append(spells);
   container.append(featuresPanel());
   if (gate.locked) lockInputs(container);
 }
@@ -256,6 +258,158 @@ async function takeOption(ch, opt, isBackground) {
   });
   toast(`Option ${opt.key.toUpperCase()} taken`, 'ok');
   draw();
+}
+
+/* ------------------------------------------------------------------ */
+/* the spellbook                                                       */
+/* ------------------------------------------------------------------ */
+
+// Homebrew spells ride along: compendiumWithCustom is async, so the pool
+// loads once and the panel redraws when it lands. Until then the SRD list
+// serves.
+let spellPool = null;
+let spellSearch = '';
+
+function spellsPanel(ch, compendium) {
+  const spells = spellPool || compendium.spells || [];
+  const problems = spellbookProblems(ch, compendium.classes || [], spells);
+  if (!problems.caster) return null;   // martials: zero DOM change
+  if (spellPool === null) {
+    spellPool = compendium.spells || [];
+    compendiumWithCustom('spells').then((p) => { spellPool = p; draw(); });
+  }
+
+  const known = ch.spells?.known || [];
+  const prepared = ch.spells?.prepared || [];
+  const { budget } = problems;
+  const byId = new Map(spells.map((s) => [s.id, s]));
+
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Spellbook'));
+  panel.append(el('h3', {},
+    `Cantrips ${known.length} of ${budget.cantrips} · `
+    + `Prepared ${prepared.length} of ${budget.prepared}`));
+
+  // Honesty about what is already wrong - flagged, never stripped.
+  const gripes = [];
+  if (problems.overCantrips) gripes.push('more cantrips than the class allows');
+  if (problems.overPrepared) gripes.push('more prepared than the class allows');
+  if (problems.wrongClass.length) {
+    gripes.push(`${problems.wrongClass.length} outside your class lists`);
+  }
+  if (gripes.length) {
+    panel.append(el('p', { class: 'mono', style: 'color:var(--warn);font-size:12px' },
+      `Over the book: ${gripes.join('; ')}.`));
+  }
+
+  const chosenRow = (id, isCantrip) => {
+    const s = byId.get(id);
+    const row = el('div', {
+      style: 'display:flex;gap:8px;align-items:center;padding:3px 0;'
+        + 'border-bottom:1px solid var(--etch)',
+    });
+    row.append(el('span', { style: 'flex:1' }, s ? s.name : id));
+    if (s && problems.wrongClass.includes(id)) {
+      row.append(el('span', { class: 'chip warn', title: 'Not on your class lists' },
+        'off-list'));
+    }
+    row.append(el('button', {
+      class: 'act ghost small',
+      onClick: () => update((c) => {
+        const key = isCantrip ? 'known' : 'prepared';
+        c.spells = c.spells || { prepared: [], known: [] };
+        c.spells[key] = (c.spells[key] || []).filter((x) => x !== id);
+        return c;
+      }),
+    }, 'Drop'));
+    return row;
+  };
+  if (known.length) {
+    panel.append(el('div', { class: 'eyebrow', style: 'margin:8px 0 2px' }, 'Cantrips'));
+    for (const id of known) panel.append(chosenRow(id, true));
+  }
+  if (prepared.length) {
+    panel.append(el('div', { class: 'eyebrow', style: 'margin:8px 0 2px' }, 'Prepared'));
+    for (const id of prepared) panel.append(chosenRow(id, false));
+  }
+
+  // The picker: class-filtered search over the compendium.
+  const classNames = new Set();
+  for (const entry of ch.classes || []) {
+    const def = (compendium.classes || []).find(
+      (x) => x.id === String(entry.class).toLowerCase());
+    if (def) classNames.add(def.name);
+  }
+  const box = el('input', {
+    type: 'text', value: spellSearch,
+    placeholder: 'Search your class lists... ("bolt", "L2", a school)',
+    'aria-label': 'Search spells', style: 'margin-top:10px',
+  });
+  const hits = el('div', { style: 'margin-top:8px' });
+  panel.append(box, hits);
+
+  function renderHits() {
+    hits.innerHTML = '';
+    const q = spellSearch.trim().toLowerCase();
+    if (q.length < 2) {
+      hits.append(el('p', { class: 'muted', style: 'font-size:12px' },
+        'Type at least two characters. Your class list only; budgets are '
+        + 'hard stops, and Manual-style escape does not exist here - the '
+        + 'book is the book.'));
+      return;
+    }
+    const lvlMatch = /^l(\d)$/.exec(q);
+    const mine = spells.filter((s) => (s.classes || [])
+      .some((n) => classNames.has(n)));
+    const list = mine.filter((s) => {
+      if (lvlMatch) return s.level === Number(lvlMatch[1]);
+      return s.name.toLowerCase().includes(q)
+        || s.school.toLowerCase() === q;
+    }).slice(0, 25);
+    if (!list.length) {
+      hits.append(el('p', { class: 'muted' }, 'No match on your lists.'));
+      return;
+    }
+    for (const s of list) {
+      const isCantrip = s.level === 0;
+      const have = isCantrip ? known.includes(s.id) : prepared.includes(s.id);
+      const full = isCantrip ? known.length >= budget.cantrips
+        : prepared.length >= budget.prepared;
+      const row = el('div', {
+        style: 'display:flex;gap:8px;align-items:center;padding:3px 0;'
+          + 'border-bottom:1px solid var(--etch)',
+      });
+      row.append(el('span', { style: 'flex:1' }, s.name));
+      row.append(el('span', { class: 'mono muted', style: 'font-size:11px' },
+        `${isCantrip ? 'cantrip' : `L${s.level}`} · ${s.school}`
+        + `${s.custom ? ' · custom' : ''}`));
+      if (have) {
+        row.append(el('span', { class: 'chip ok' }, 'in the book'));
+      } else {
+        const btn = el('button', {
+          class: 'act ghost small',
+          onClick: () => {
+            if (full) return;
+            update((c) => {
+              const key = isCantrip ? 'known' : 'prepared';
+              c.spells = c.spells || { prepared: [], known: [] };
+              if (!c.spells[key].includes(s.id)) c.spells[key].push(s.id);
+              return c;
+            });
+          },
+        }, isCantrip ? 'Learn' : 'Prepare');
+        if (full) {
+          btn.disabled = true;
+          btn.title = 'The budget is spent - Drop something first';
+        }
+        row.append(btn);
+      }
+      hits.append(row);
+    }
+  }
+  box.addEventListener('input', () => { spellSearch = box.value; renderHits(); });
+  renderHits();
+  return panel;
 }
 
 /** An option item as the same record shape the Market writes. */

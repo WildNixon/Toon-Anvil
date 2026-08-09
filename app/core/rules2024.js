@@ -392,3 +392,90 @@ export function arrayAssignment(abilities = {}, array = STANDARD_ARRAY) {
     valid: !duplicates.length,
   };
 }
+
+/* ------------------------------------------------------------------ */
+/* the spellbook                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * How many cantrips and prepared spells a class allows at a level, read
+ * from the class's own progression table. Header-indexed on purpose: the
+ * column POSITIONS differ per class (cleric has Channel Divinity before
+ * Cantrips, paladin has no Cantrips column at all), and caster tables
+ * carry a second sub-header row under the slots banner - so data rows are
+ * found by their level cell, never by offset.
+ *
+ * Returns null for classes whose table has no Prepared Spells column -
+ * the martial classes - which is also the "is this a caster" test.
+ */
+export function spellBudget(clsDef, classLevel = 1) {
+  const prog = clsDef?.progression;
+  if (!Array.isArray(prog) || !prog.length) return null;
+  const hdr = prog[0] || [];
+  const pi = hdr.indexOf('Prepared Spells');
+  if (pi < 0) return null;
+  const ci = hdr.indexOf('Cantrips');
+  const lvl = Math.max(1, Math.min(20, Number(classLevel) || 1));
+  const row = prog.find((r) => Array.isArray(r) && String(r[0]) === String(lvl));
+  if (!row) return null;
+  const num = (i) => {
+    if (i < 0 || i >= row.length) return 0;
+    const n = Number(row[i]);
+    return Number.isFinite(n) ? n : 0;
+  };
+  return { cantrips: num(ci), prepared: num(pi) };
+}
+
+/**
+ * What is wrong with a character's chosen spells, if anything: picks a
+ * class list never offered, cantrips filed as spells (or the reverse),
+ * counts over budget. Pure; ids resolve against the spells compendium.
+ * Used for badges and honest counts - imports over budget are FLAGGED by
+ * this, never stripped.
+ */
+export function spellbookProblems(ch, classesDef = [], spells = []) {
+  const byId = new Map(spells.map((s) => [s.id, s]));
+  const classNames = new Set();
+  let cantripBudget = 0;
+  let preparedBudget = 0;
+  let caster = false;
+  for (const entry of ch.classes || []) {
+    const def = classesDef.find((c) => c.id === String(entry.class).toLowerCase());
+    if (!def) continue;
+    const b = spellBudget(def, entry.level);
+    if (!b) continue;
+    caster = true;
+    cantripBudget += b.cantrips;
+    preparedBudget += b.prepared;
+    classNames.add(def.name);
+  }
+
+  const known = ch.spells?.known || [];
+  const prepared = ch.spells?.prepared || [];
+  const wrongClass = [];
+  const wrongLevel = [];
+  const unknownIds = [];
+  const checkList = (ids, wantCantrip) => {
+    for (const id of ids) {
+      const s = byId.get(id);
+      if (!s) { unknownIds.push(id); continue; }
+      if ((s.level === 0) !== wantCantrip) wrongLevel.push(id);
+      if (!(s.classes || []).some((n) => classNames.has(n))) wrongClass.push(id);
+    }
+  };
+  checkList(known, true);
+  checkList(prepared, false);
+
+  return {
+    caster,
+    budget: caster ? { cantrips: cantripBudget, prepared: preparedBudget } : null,
+    overCantrips: caster && known.length > cantripBudget,
+    overPrepared: caster && prepared.length > preparedBudget,
+    wrongClass,
+    wrongLevel,
+    unknownIds,
+    clean: caster && !wrongClass.length && !wrongLevel.length
+      && !unknownIds.length && known.length <= cantripBudget
+      && prepared.length <= preparedBudget,
+  };
+}

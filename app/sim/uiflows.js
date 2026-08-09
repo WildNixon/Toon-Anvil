@@ -604,6 +604,92 @@ export const FLOWS = [
   },
 
   {
+    id: 'spellbook_pick_and_cast',
+    title: 'A caster picks spells in Build and casts them by name in Play',
+    async run(c, { doc }) {
+      c.feature('ui', 'build', 'play', 'spellbook');
+      c.ok(await goToMode(doc, 'Build', 'Roster'), 'Build mode opens');
+      // A fresh wizard - deliberately ACTIVE from here on: the shop flow
+      // that follows needs a character still carrying the 15 GP stake.
+      button(doc, 'New character')?.click();
+      await waitUntilSettled(doc);
+      setField(doc.querySelector('main input[type=text]'), 'Gym Mage');
+      const classSel = [...doc.querySelectorAll('main select')]
+        .find((s) => [...s.options].some((o) => o.value === 'wizard'));
+      c.ok(!!classSel, 'the class can be chosen');
+      setField(classSel, 'wizard');
+
+      const book = await waitFor(() => (/Spellbook/.test(mainText(doc))
+        ? true : null), { timeout: 6000 });
+      c.ok(!!book, 'a caster grows a Spellbook panel');
+      c.ok(/Cantrips 0 of 3/.test(mainText(doc).replace(/\s+/g, ' ')),
+        'that states the honest budget');
+
+      const search = doc.querySelector('main input[aria-label="Search spells"]');
+      c.ok(!!search, 'the book searches the class list');
+      if (!search) return;
+      setField(search, 'fire bolt');
+      const learn = await waitFor(() => button(doc, 'Learn'), { timeout: 6000 });
+      c.ok(!!learn, 'a cantrip offers Learn');
+      learn?.click();
+      const learned = await waitFor(() => (/Cantrips 1 of 3/
+        .test(mainText(doc).replace(/\s+/g, ' ')) ? true : null),
+      { timeout: 6000 });
+      c.ok(!!learned, 'Fire Bolt is learned and counted');
+
+      setField(doc.querySelector('main input[aria-label="Search spells"]'),
+        'magic missile');
+      const prep = await waitFor(() => button(doc, 'Prepare'), { timeout: 6000 });
+      c.ok(!!prep, 'a levelled spell offers Prepare');
+      prep?.click();
+      const prepped = await waitFor(() => (/Prepared 1 of 4/
+        .test(mainText(doc).replace(/\s+/g, ' ')) ? true : null),
+      { timeout: 6000 });
+      c.ok(!!prepped, 'Magic Missile is prepared and counted');
+
+      // Play: the chosen spells are castable, and casting spends the slot.
+      c.ok(await goToMode(doc, 'Play', 'Adjust HP'), 'Play opens');
+      button(doc, 'Spells')?.click();
+      await waitUntilSettled(doc);
+      const flat = () => mainText(doc).replace(/\s+/g, ' ');
+      c.ok(/Fire Bolt/.test(flat()) && /Magic Missile/.test(flat()),
+        'both spells are on the Spells page');
+      // Read the tile's own nodes: adjacent divs concatenate in textContent
+      // ('Level 12of 2'), so a page regex cannot split label from value.
+      const slotLeft = () => {
+        const tile = [...doc.querySelectorAll('main .stat')]
+          .find((s) => s.querySelector('.k')?.textContent === 'Level 1');
+        return tile?.querySelector('.v')?.textContent ?? null;
+      };
+      c.eq(slotLeft(), '2', 'a level-1 wizard holds two slots');
+
+      // The Cast button's OWN row must name the spell - an ancestor-div
+      // match once fired the cantrip's button instead.
+      const cast = [...doc.querySelectorAll('main button')]
+        .filter((b) => b.textContent.trim() === 'Cast')
+        .find((b) => b.parentElement?.textContent.includes('Magic Missile'));
+      c.ok(!!cast, 'a prepared spell offers Cast');
+      cast?.click();
+      const spent = await waitFor(() => (slotLeft() === '1' ? true : null),
+        { timeout: 6000 });
+      c.ok(!!spent, 'casting spends the slot on the tile');
+
+      // The Chronicle names the spell - it used to read "Cast undefined".
+      c.ok(await goToMode(doc, 'Chronicle'), 'Chronicle opens');
+      const named = await waitFor(() => (/Cast Magic Missile at level 1/
+        .test(mainText(doc)) ? true : null), { timeout: 6000 });
+      c.ok(!!named, 'the cast is on the record, by name');
+
+      // Leave Play on Overview for every flow after us.
+      c.ok(await goToMode(doc, 'Play', (d = doc) => /Fire Bolt|Spells/
+        .test(mainText(d))), 'back to Play');
+      button(doc, 'Overview')?.click();
+      await waitUntilSettled(doc);
+      c.ok(/Adjust HP/.test(mainText(doc)), 'resting on Overview');
+    },
+  },
+
+  {
     id: 'shop_generate_and_buy',
     title: 'Generate a shop and buy something',
     async run(c, { doc }) {

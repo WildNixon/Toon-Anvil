@@ -11,10 +11,12 @@ import { d20, fmt } from '../../core/dice.js';
 import {
   resolveAttack, fireTriggers, applyDamage as engineApplyDamage,
   shortRest as engineShortRest, longRest as engineLongRest,
+  useSlot as engineUseSlot,
 } from '../../core/engine.js';
 import {
   ABILITIES, ABILITY_NAMES, SKILLS, fromCopper, CONDITIONS,
 } from '../../core/rules2024.js';
+import { dataFile } from '../../core/db.js';
 import { saveCharacter, adjustHp as shellAdjustHp, go } from '../../app.js';
 import * as session from '../../core/session.js';
 import { tabs } from '../../ui/kit.js';
@@ -424,8 +426,23 @@ async function setToggle(key, value) {
 
 /* ------------------------------------------------------------------ */
 
+// spell-mechanics.json, fetched once for the "resolves in the simulator"
+// badge. Display only - nothing here feeds a simulated number.
+let mechanics = null;
+function ensureMechanics() {
+  if (mechanics !== null) return;
+  mechanics = {};
+  dataFile('spell-mechanics.json', { mechanics: {} })
+    .then((f) => { mechanics = f.mechanics || {}; draw(); })
+    .catch(() => {});
+}
+
 function spellPanel(d) {
   const sc = d.spellcasting;
+  const { compendium } = getState();
+  const byId = new Map((compendium?.spells || []).map((s) => [s.id, s]));
+  ensureMechanics();
+
   const panel = el('div', { class: 'panel rivets' });
   panel.append(el('span', { class: 'lvl' }, 'Spellcasting'));
   panel.append(el('h3', {}, `${sc.ability.toUpperCase()} · DC ${sc.saveDc} · ${sign(sc.attackBonus)} to hit`));
@@ -436,13 +453,58 @@ function spellPanel(d) {
       const lvl = i + 1;
       const used = sc.slotState[lvl] || 0;
       const cell = el('div', { class: 'stat clickable' });
-      cell.addEventListener('click', () => useSlot(lvl, max));
+      cell.addEventListener('click', () => spendSlot(lvl));
       cell.append(el('div', { class: 'k' }, `Level ${lvl}`));
       cell.append(el('div', { class: 'v' }, `${max - used}`));
       cell.append(el('div', { class: 'sub' }, `of ${max}`));
       slots.append(cell);
     });
     panel.append(slots);
+  }
+  if (sc.pact && !sc.slots.length) {
+    panel.append(el('p', { class: 'mono muted', style: 'font-size:12px' },
+      `Pact Magic (${sc.pact.n} × level ${sc.pact.lvl}) is not modelled `
+      + 'yet - casting below will say so rather than fake it.'));
+  }
+
+  const spellChips = (s) => {
+    const bits = [];
+    if (s.concentration) bits.push(el('span', { class: 'chip warn', title: 'Concentration' }, 'C'));
+    if (s.ritual) bits.push(el('span', { class: 'chip', title: 'Ritual' }, 'R'));
+    if (mechanics?.[s.id]?.executable) {
+      bits.push(el('span', { class: 'chip accent',
+        title: 'This spell resolves in the campaign simulator' }, 'sim'));
+    }
+    return bits;
+  };
+
+  const section = (label, ids, castable) => {
+    const list = ids.map((id) => byId.get(id)).filter(Boolean);
+    if (!list.length) return;
+    panel.append(el('div', { class: 'rule' }));
+    panel.append(el('div', { class: 'eyebrow', style: 'margin-bottom:6px' }, label));
+    for (const s of list) {
+      const row = el('div', {
+        style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;'
+          + 'padding:4px 0;border-bottom:1px solid var(--etch)',
+      });
+      row.append(el('span', { style: 'flex:1;min-width:140px' }, s.name));
+      row.append(el('span', { class: 'mono muted', style: 'font-size:11px' },
+        s.level === 0 ? 'cantrip' : `L${s.level} · ${s.school}`));
+      for (const chip of spellChips(s)) row.append(chip);
+      if (castable) {
+        row.append(el('button', {
+          class: 'act ghost small', onClick: () => castSpell(s),
+        }, 'Cast'));
+      }
+      panel.append(row);
+    }
+  };
+  section('Cantrips', sc.known, true);
+  section('Prepared', sc.prepared, true);
+  if (!sc.known.length && !sc.prepared.length) {
+    panel.append(el('p', { class: 'muted', style: 'font-size:13px;margin-top:8px' },
+      'No spells chosen yet - pick them in Build, under Spellbook.'));
   }
 
   if (sc.alwaysPrepared.length) {
@@ -458,16 +520,50 @@ function spellPanel(d) {
   return panel;
 }
 
-async function useSlot(level, max) {
-  const { derived } = getState();
-  const used = derived.spellcasting.slotState[level] || 0;
-  if (used >= max) return toast('No slots left at that level', 'bad');
-  await saveCharacter((c) => {
-    c.slotState = { ...(c.slotState || {}), [level]: used + 1 };
-    return c;
-  });
+/** A bare slot tile click: the slot is spent on something unnamed. */
+async function spendSlot(level) {
+  const { character, derived } = getState();
+  const res = engineUseSlot(character, derived, level);
+  if (res.error) return toast(res.error, 'bad');
+  await saveCharacter((c) => { c.slotState = res.slotState; return c; });
   await log('spell_cast', { level, slotUsed: true });
   draw();
+  return null;
+}
+
+/** Cast a CHOSEN spell: consumes the lowest slot that fits, names the
+ *  spell in the chronicle (which used to read "Cast undefined"), and
+ *  takes up concentration when the spell asks for it. */
+async function castSpell(spell) {
+  const { character, derived } = getState();
+  const sc = derived.spellcasting;
+  if (spell.level === 0) {
+    await log('spell_cast', { spell: spell.name, level: 0 });
+    toast(`${spell.name} cast`, 'ok');
+    draw();
+    return;
+  }
+  let lvl = null;
+  for (let i = spell.level; i <= sc.slots.length; i += 1) {
+    if ((sc.slots[i - 1] || 0) - (sc.slotState[i] || 0) > 0) { lvl = i; break; }
+  }
+  if (lvl === null) {
+    toast(sc.pact
+      ? 'Pact Magic is not modelled yet - spend it narratively'
+      : 'No slot high enough is left', 'warn');
+    return;
+  }
+  const res = engineUseSlot(character, derived, lvl);
+  if (res.error) return toast(res.error, 'bad');
+  await saveCharacter((c) => {
+    c.slotState = res.slotState;
+    if (spell.concentration) c.concentration = spell.name;
+    return c;
+  });
+  await log('spell_cast', { spell: spell.name, level: lvl });
+  toast(`${spell.name} cast at level ${lvl}`, 'ok');
+  draw();
+  return null;
 }
 
 /* ------------------------------------------------------------------ */

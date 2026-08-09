@@ -93,6 +93,7 @@ import { newCampaign, newRegion, stampDay } from '../core/campaign.js';
 import { unitPrice, sellBack } from '../modes/shop/pricing.js';
 import {
   parseStartingEquipment, pointBuySpend, arrayAssignment,
+  spellBudget, spellbookProblems,
 } from '../core/rules2024.js';
 import { FIXTURE_NAME, fixturePdfBytes } from './fixtures.js';
 
@@ -128,7 +129,8 @@ async function buildCtx() {
     theme,
     campaign: { weatherFor, forecastFor, newCampaign, newRegion, stampDay,
       unitPrice, sellBack },
-    rules: { parseStartingEquipment, pointBuySpend, arrayAssignment },
+    rules: { parseStartingEquipment, pointBuySpend, arrayAssignment,
+      spellBudget, spellbookProblems },
     dbTokenKey: 'toonanvil.token',
     // Raw HTTP on purpose. Going through ServerAdapter would test the client;
     // the whole question here is what the SERVER refuses.

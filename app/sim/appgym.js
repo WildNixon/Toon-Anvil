@@ -2425,6 +2425,96 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- the spellbook ------------------------------------ */
+  {
+    id: 'spellbook',
+    title: 'Spell selection',
+    why: 'The README\'s biggest listed gap: the data model supported chosen '
+       + 'spells and nothing wrote them. The budgets come from the class '
+       + 'tables\' own columns, header-indexed because every class lays its '
+       + 'table out differently.',
+    scenarios: [
+      {
+        id: 'budget_pins',
+        title: 'The class tables price cantrips and prepared spells exactly',
+        run(c, { sources, rules }) {
+          c.feature('spellbook', 'chargen');
+          const b = (id, lvl) => rules.spellBudget(
+            sources.classes.find((x) => x.id === id), lvl);
+          c.same(b('wizard', 1), { cantrips: 3, prepared: 4 }, 'wizard L1');
+          c.same(b('cleric', 4), { cantrips: 4, prepared: 7 },
+            'cleric L4 - its Cantrips column sits AFTER Channel Divinity');
+          c.same(b('bard', 4), { cantrips: 3, prepared: 7 }, 'bard L4');
+          c.same(b('sorcerer', 4), { cantrips: 5, prepared: 7 }, 'sorcerer L4');
+          c.same(b('paladin', 4), { cantrips: 0, prepared: 5 },
+            'paladin L4 - no Cantrips column at all');
+          c.same(b('warlock', 5), { cantrips: 3, prepared: 6 },
+            'warlock L5 - its own slots layout, same Prepared column');
+          c.eq(b('fighter', 5), null, 'a martial class has no budget');
+        },
+      },
+      {
+        id: 'budget_reaches_derive',
+        title: 'The budget rides the derived sheet',
+        run(c, { sources }) {
+          c.feature('spellbook', 'derive');
+          const d = derive(makeChar({
+            classes: [{ class: 'wizard', level: 1, subclass: null }],
+          }), sources);
+          c.same(d.spellcasting?.budget, { cantrips: 3, prepared: 4 },
+            'a wizard sheet knows its allowance');
+          const m = derive(makeChar(), sources);
+          c.eq(m.spellcasting, null, 'a fighter sheet has no spellcasting at all');
+        },
+      },
+      {
+        id: 'membership',
+        title: 'Wrong-class and wrong-level picks are named, never stripped',
+        run(c, { sources, rules, spells }) {
+          c.feature('spellbook');
+          const wizardOnly = (spells || []).find((s) => s.id === 'acid-arrow');
+          c.ok(!!wizardOnly, 'the probe spell exists');
+          const ch = makeChar({
+            classes: [{ class: 'cleric', level: 4, subclass: null }],
+            spells: { known: [], prepared: ['acid-arrow'] },
+          });
+          const p = rules.spellbookProblems(ch, sources.classes, spells);
+          c.ok(p.caster, 'a cleric is a caster');
+          c.same(p.wrongClass, ['acid-arrow'],
+            'a wizard spell on a cleric is named');
+          c.ok(!p.clean, 'and the book is not clean');
+          const ok = rules.spellbookProblems(makeChar({
+            classes: [{ class: 'wizard', level: 4, subclass: null }],
+            spells: { known: [], prepared: ['acid-arrow'] },
+          }), sources.classes, spells);
+          c.ok(!ok.wrongClass.length, 'the same spell on a wizard is fine');
+        },
+      },
+      {
+        id: 'budget_invariant',
+        title: 'The sweep would catch a book over its budget',
+        run(c, { sources }) {
+          c.feature('spellbook', 'invariants');
+          const over = makeChar({
+            classes: [{ class: 'wizard', level: 1, subclass: null }],
+            // wizard L1 allows 4 prepared; five ids breach it.
+            spells: { known: [], prepared: ['a', 'b', 'c', 'd', 'e'] },
+          });
+          const v = checkAll({ character: over, derived: derive(over, sources) });
+          c.ok(v.some((x) => x.id === 'prepared_within_budget'),
+            'prepared_within_budget fires on the fifth spell');
+          const fine = makeChar({
+            classes: [{ class: 'wizard', level: 1, subclass: null }],
+            spells: { known: [], prepared: ['a', 'b'] },
+          });
+          const v2 = checkAll({ character: fine, derived: derive(fine, sources) });
+          c.ok(!v2.some((x) => x.id === 'prepared_within_budget'),
+            'and stays quiet within it');
+        },
+      },
+    ],
+  },
+
   /* ---------------- chrome: seat + theme ----------------------------- */
   {
     id: 'chrome',
@@ -3097,7 +3187,8 @@ export const BARS = {
   // And again (40 -> 42) with setup-from-the-shelf and the forecast.
   // And again (42 -> 43) with starting equipment.
   // And again (43 -> 45) with HP overrides and the browsable bestiary.
-  minFeaturesCovered: 45,
+  // And again (45 -> 46) with the spellbook.
+  minFeaturesCovered: 46,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.
@@ -3329,6 +3420,12 @@ export const MUTATIONS = [
         }
         return r;
       } } }),
+  },
+  {
+    id: 'spell_budget_ignores_class',
+    what: 'every class gets the wizard L1 allowance - the table columns are ignored',
+    patch: (ctx) => ({ rules: { ...ctx.rules,
+      spellBudget: () => ({ cantrips: 3, prepared: 4 }) } }),
   },
   {
     id: 'pointbuy_free_above_15',

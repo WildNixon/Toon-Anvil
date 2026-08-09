@@ -17,7 +17,7 @@
 import {
   ABILITIES, SKILLS, abilityMod, proficiencyBonus, spellSlotsFor,
   PACT_SLOTS, toCopper, carryCapacity, encumbrance, exhaustionPenalty,
-  ATTUNEMENT_LIMIT, classFormula,
+  ATTUNEMENT_LIMIT, classFormula, spellBudget,
 } from './rules2024.js';
 import { isActive, resolveFormula } from '../homebrew/effects.js';
 
@@ -311,6 +311,7 @@ export function derive(character, sources = {}) {
       alwaysPrepared,
       prepared: ch.spells?.prepared || [],
       known: ch.spells?.known || [],
+      budget: spellBudgetFor(ch, sources),
     } : null,
 
     resources,
@@ -495,6 +496,21 @@ function classCastingAbility(ch) {
     if (ab) return ab;
   }
   return null;
+}
+
+/** Cantrip/prepared allowances summed across casting classes, or null. */
+function spellBudgetFor(ch, sources) {
+  let budget = null;
+  for (const entry of ch.classes || []) {
+    const def = (sources.classes || []).find(
+      (x) => x.id === String(entry.class).toLowerCase());
+    const b = def ? spellBudget(def, entry.level) : null;
+    if (!b) continue;
+    budget = budget || { cantrips: 0, prepared: 0 };
+    budget.cantrips += b.cantrips;
+    budget.prepared += b.prepared;
+  }
+  return budget;
 }
 
 function armorAc(item, dexMod) {

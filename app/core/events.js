@@ -183,7 +183,9 @@ export function describe(type, p = {}) {
     case 'damage_dealt':return `Dealt ${p.amount} ${p.damageType || ''} damage to ${p.target || 'a foe'}`.replace(/\s+/g, ' ');
     case 'damage_taken':return `Took ${p.amount} ${p.damageType || ''} damage${p.from ? ` from ${p.from}` : ''}`.replace(/\s+/g, ' ');
     case 'healed':      return `Healed ${p.amount}`;
-    case 'spell_cast':  return `Cast ${p.spell}${p.level ? ` at level ${p.level}` : ''}`;
+    // p.spell missing = a bare slot tile spend; "Cast undefined" once
+    // reached the Chronicle verbatim.
+    case 'spell_cast':  return `Cast ${p.spell || 'a spell'}${p.level ? ` at level ${p.level}` : ''}`;
     case 'resource_spent': return `Spent ${p.amount} ${p.resource}`;
     case 'death_save':  return `Death save: ${p.result}`;
     case 'downed':      return 'Dropped to 0 hit points';

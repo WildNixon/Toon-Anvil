@@ -83,10 +83,16 @@ Everything below was exercised by hand before release — not "it renders", but
 These are limitations, not bugs. Nothing here is hidden at runtime; the app
 reports each one where it matters.
 
-1. **No spell selection.** Slots, save DC, attack bonus and always-prepared
-   spells all derive correctly, but there is no screen for choosing your
-   prepared or known spells. The data model supports it; the UI doesn't yet.
-   This is the biggest gap for playing a caster.
+1. **Spell selection lives in Build.** Slots, save DC, attack bonus and
+   always-prepared spells all derive, and Build carries a **Spellbook**: your
+   class list, searchable, with Learn/Prepare against the class table's own
+   cantrip and prepared-spell columns as hard budgets (over-budget imports
+   are flagged, never stripped). Play's Spells page casts by name — the
+   lowest fitting slot is spent, concentration is taken up, and the
+   Chronicle records the spell. Still honest gaps: species cantrips and SRD
+   domain/oath lists exist only as prose, so they aren't auto-granted, and
+   Warlock Pact Magic is not modelled — casting says so rather than faking
+   it.
 2. **Starting equipment is chosen in Build.** Every class (and background)
    offers its book packages — "Take option A" grants the items, equips the
    armour, and sets the purse to the option's own gold. What the price list
