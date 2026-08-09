@@ -138,13 +138,14 @@ and gold, for the evening session). Settings → Appearance switches them; the
 default follows your device. Type is Cinzel and Alegreya with IBM Plex Mono
 for numbers — all SIL OFL, bundled as woff2, no CDN.
 
-Navigation is grouped by what you are doing: **Your Hero** (Play, Build) ·
-**Adventure** (Combat, Roleplay, Market, Chronicle) · **Table** (when one is
-open) · **Dungeon Master** (DM, Homebrew — only in the DM's seat), with
-Settings behind the gear. A **hero ribbon** under the top bar follows you
-across every player screen: name, an HP bar with quick damage/heal, AC,
-conditions, and a character switcher. Its damage button calls the same engine
-rule as the sheet's, so the two can never disagree.
+Navigation is grouped by what you are doing, and **who you are decides what
+exists**. Solo, everything is yours. At a table, a player's menu is Play,
+Party, Roleplay, Market and Chronicle — plus Build when the forge is open or
+a level-up waits — and the DM's menu is the DM screen and the gear, nothing
+else. A **hero ribbon** under the top bar follows players across every
+screen: name, an HP bar with quick damage/heal, AC, conditions, and a
+character switcher. Its damage button calls the same engine rule as the
+sheet's, so the two can never disagree.
 
 **Seats.** First run asks whether this device belongs to a player or the
 Dungeon Master, and remembers. A player's menu is about playing — no DM
@@ -173,15 +174,19 @@ nothing to break when an upstream URL moves. If a dependency is missing,
 
 ## Running a session
 
-The **DM** screen is built to stay open at the table, and works with no network
-at all.
+The **DM** screen is the campaign through four lenses, built to stay open at
+the table, all of it working with no network.
 
-| Tool | What it does |
+| Lens | What it shows |
 |---|---|
-| **Run a fight** | One initiative list with the party and the monsters together. HP, conditions, rounds and turns. Damage goes through the same engine as everything else, so **resistances are applied for you** — the thing a hand-run fight most often forgets. |
-| **Party** | Every character's AC, passive Perception / Investigation / Insight, saves and senses on one screen. Derived, so it can never disagree with a player's own sheet. |
-| **Treasure** | Hoards by CR band with coins, gems, art and magic items drawn from the 258 bundled. Seeded — write the seed down and you get the same hoard back. One click hands it to a character. |
-| **Improvise** | An NPC with a want and a secret, a tavern, a rumour, a trap scaled to tier, and a random encounter by terrain. Also seeded, and the encounter can be sent straight into the fight. |
+| **Stage** | The live now: the fight (one initiative list, party and monsters together, resistances applied by the engine), who is at the table with their claims, party vitals — and the DM's levers: the forge, per-character and party-wide level-up grants, assigning characters. |
+| **World** | The prep: bestiary, encounter builder, treasure hoards, improv generators, rules reference — behind sub-tabs, each with its own search. Nothing here redraws off the live feed, so a half-typed search survives a player's die roll. |
+| **Story** | The whole party's event log as it happens — every roll, purchase and promise with the character's name on it — plus the open threads: promises unkept, secrets unused, NPCs met once. Read-only: the story is what the table did. |
+| **Setup** | Before the campaign: open the table (the code shows big, and only on the server's own machine), the forge toggle, and the homebrew workshop — homebrew is added and accepted by the DM here, before the start, and stays a DM-only tool after. |
+
+**Treasure and improv results still say where they came from** — SRD content
+is marked `SRD`, authored tables are marked `authored`, and a DM reading one
+aloud deserves to know which they are quoting.
 
 **Every generated result says where it came from.** Monsters, coin bands, gems
 and magic items are SRD and marked `SRD`. Names, traits, rumours, art objects
@@ -231,22 +236,35 @@ That is the only command that makes Toon Anvil reachable by other machines —
 without it nothing changes. It prints the address players type and the warning
 below.
 
-Open the DM screen, start a table, and read out the code (`ANVIL-K7WU`).
-Players open the address, enter the code, and pick a name. Their browser keeps
-a token; a reload does not ask again. Ending the table revokes every token at
-once.
+Open the table from the DM screen's **Setup** lens and read out the code
+(`ANVIL-K7WU`). A player opening the address is met by the **join gate**:
+type the code, pick a name, then claim a waiting character or make a new one.
+Their browser keeps a token; a reload does not ask again. Ending the table
+revokes every token at once.
 
 | | DM | Player |
 |---|---|---|
-| Their own character | edit | edit |
+| Their own character (play state) | edit | edit |
+| Their own character (identity & level) | edit | **forge / grant only** |
 | Another player's character | edit | read |
 | Homebrew, custom content, campaign | edit | read |
-| The encounter | edit | read |
+| The encounter, the forge, the grants | edit | read |
+
+**Character building is a DM act.** A fresh table opens with the **forge**
+open — session zero, everyone builds freely. When the campaign starts the DM
+closes it: sheets seal, and a player's name, species, abilities, classes,
+skills and feats are refused by the **server** — not hidden by the menu,
+refused on the wire. Levelling goes through **grants**: the DM grants a
+character (or the whole party) a level from the Stage, the player's Play
+screen shows the banner and Build walks back into their menu, they take the
+level, and the grant is consumed by arriving — Build leaves again. Play
+state — hit points, inventory, coin, prepared spells, conditions — never
+needs anybody's permission. That is playing, not building.
 
 **The fight is shared.** When a table is open, the DM's encounter runner
-publishes to the server after every change, and each player gets a **Table**
-screen: the initiative order, the round, whose turn it is, and their own line
-marked. It is the same renderer the DM uses, in read-only mode — two renderers
+publishes to the server after every change, and each player gets a **Party**
+screen: the initiative order, the round, whose turn it is, their own line
+marked — and the whole party's vitals beside it. It is the same renderer the DM uses, in read-only mode — two renderers
 for one initiative order is how the two views end up disagreeing about whose
 turn it is.
 
@@ -257,10 +275,12 @@ merely not drawn. Hiding it in the UI would leave it in the payload for anyone
 who opens the network tab. Player characters keep their numbers, because
 everyone at a real table can see their own sheet.
 
-Players get a nav without the DM screen or the homebrew analyser, and keep
-Build and Play — a player owns their character fully. That is navigation, not
-security: what stops a player changing the fight is the server refusing the
-write.
+A player's menu is about playing: Play, Party, Roleplay, Market, Chronicle —
+no DM screen, no homebrew analyser, no solo Combat tracker (the DM's runner
+IS the fight), and Build only when the forge or a grant opens it. The DM at a
+table sees the four lenses and the gear, nothing else. That is navigation,
+not security: what stops a player changing the fight is the server refusing
+the write.
 
 **Everyone's screen keeps up.** When the DM applies damage, the player looking
 at that sheet sees the number change — no reload, no refresh button. The server

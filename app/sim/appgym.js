@@ -2586,9 +2586,10 @@ export const BARS = {
   // landed. A coverage bar that never moves as the suite grows stops being a
   // bar and becomes decoration - it would read green forever while the ratio
   // of things tested to things shipped quietly fell.
-  // Raised 30 -> 32 with the seat and theme work. The ratchet only means
-  // something if it moves when the app grows.
-  minFeaturesCovered: 32,
+  // Raised again (32 -> 34) with the forge, the grants, the join gate and
+  // the story feed. The ratchet only means something if it moves when the
+  // app grows.
+  minFeaturesCovered: 34,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.
@@ -2765,6 +2766,27 @@ export const MUTATIONS = [
     // hit points indefinitely while looking perfectly healthy.
     patch: (ctx) => ({ table: { ...ctx.table,
       changes: async (since) => ({ ...(await ctx.table.changes(since)), gap: false }) } }),
+  },
+  {
+    id: 'nav_ignores_the_gate',
+    what: 'navFor() shows every mode to everybody, gate or no gate',
+    // The menu-only failure this whole design refuses to be: Build and the
+    // solo Combat tracker offered to a gated player. The server would still
+    // refuse the writes - but the app would be lying about what is possible.
+    patch: (ctx) => ({ session: { ...ctx.session,
+      navFor: (args, modes) => modes } }),
+  },
+  {
+    id: 'events_changes_hidden',
+    what: 'the change feed drops every "events" entry',
+    // The stale-story-feed failure: the DM\'s Story lens looks connected and
+    // simply never updates. Same family as stream_goes_silent.
+    patch: (ctx) => ({ table: { ...ctx.table,
+      changes: async (since) => {
+        const out = await ctx.table.changes(since);
+        return { ...out, changes: (out.changes || [])
+          .filter((x) => x.kind !== 'events') };
+      } } }),
   },
   {
     id: 'seat_rule_inverted',
