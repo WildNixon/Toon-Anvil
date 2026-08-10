@@ -21,6 +21,7 @@ import json
 import mimetypes
 import re
 import shutil
+import socket
 import sys
 import threading
 import time
@@ -1499,7 +1500,23 @@ def main() -> int:
         print("compendium: MISSING - run python tools/srd_convert.py")
 
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"\n  Toon Anvil  ->  http://{args.host}:{args.port}")
+    if args.host in ("0.0.0.0", ""):
+        # 0.0.0.0 is a bind address, not a place a browser can go - print
+        # the two URLs people actually type. The UDP connect sends nothing;
+        # it asks the routing table which interface faces the network.
+        # (Deliberately duplicated from run.py rather than imported: serve
+        # must stay runnable on its own.)
+        try:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            probe.connect(("10.255.255.255", 1))
+            lan_ip = probe.getsockname()[0]
+            probe.close()
+        except OSError:
+            lan_ip = "your-ip-address"
+        print(f"\n  Toon Anvil (you)      ->  http://127.0.0.1:{args.port}")
+        print(f"  Toon Anvil (players)  ->  http://{lan_ip}:{args.port}")
+    else:
+        print(f"\n  Toon Anvil  ->  http://{args.host}:{args.port}")
     print(f"  data      ->  {DATA}")
     print("  ctrl-c to stop\n")
     try:

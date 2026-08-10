@@ -246,8 +246,11 @@ python run.py --lan
 ```
 
 That is the only command that makes Toon Anvil reachable by other machines —
-without it nothing changes. It prints the address players type and the warning
-below.
+without it nothing changes. It binds every interface, opens *your* browser on
+`127.0.0.1` (the server treats loopback as the DM's trusted seat), and prints
+two addresses: the one you open and the one players type. The first `--lan`
+run may raise the Windows firewall prompt — allow Python on **Private**
+networks or phones will time out silently.
 
 Open the table from the DM screen's **Setup** lens and read out the code
 (`ANVIL-K7WU`). A player opening the address is met by the **join gate**:

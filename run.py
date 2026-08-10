@@ -147,9 +147,21 @@ def run_checks() -> Check:
     return c
 
 
-def free_port(port: int) -> bool:
+def free_port(port: int, host: str = "127.0.0.1") -> bool:
+    """Can this port actually be BOUND on the interface we will serve on?
+
+    The old probe connect_ex'd loopback, which answers "is something
+    listening there" - not "can we bind 0.0.0.0", which is what --lan
+    needs. Binding is the question, so binding is the test. A socket that
+    was only bound (never listened) does not enter TIME_WAIT, so the
+    immediate rebind by the real server is safe.
+    """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(("127.0.0.1", port)) != 0
+        try:
+            s.bind((host, port))
+            return True
+        except OSError:
+            return False
 
 
 def _lan_ip() -> str:
@@ -199,10 +211,16 @@ def main() -> int:
     if args.check:
         return 0
 
+    # --lan is the one switch that makes the table reachable by phones:
+    # bind every interface instead of loopback. Everything the DM opens
+    # locally still goes through 127.0.0.1 - the server treats loopback
+    # as the trusted seat.
+    host = "0.0.0.0" if args.lan else args.host
+
     port = args.port
-    if not free_port(port):
+    if not free_port(port, host):
         for candidate in range(port + 1, port + 12):
-            if free_port(candidate):
+            if free_port(candidate, host):
                 print(f"{YELLOW}Port {port} is busy, using {candidate}.{OFF}")
                 port = candidate
                 break
@@ -210,15 +228,28 @@ def main() -> int:
             print(f"{RED}No free port near {args.port}.{OFF}")
             return 1
 
-    url = f"http://{args.host}:{port}"
-    print(f"\n  Open:   {url}")
+    # The DM's own browser always opens on loopback; 0.0.0.0 is a bind
+    # address, not a place a browser can go.
+    local_url = (f"http://127.0.0.1:{port}" if host in ("0.0.0.0", "")
+                 else f"http://{host}:{port}")
+    print(f"\n  Open (you):    {local_url}")
+    if args.lan:
+        print(f"  Players type:  http://{_lan_ip()}:{port}")
+        print(f"{DIM}  Anyone on this network can reach the app now - the "
+              f"join code gates seats,{OFF}")
+        print(f"{DIM}  not the pages. Use --lan only on a network you "
+              f"trust.{OFF}")
+        print(f"{DIM}  If phones cannot connect, allow Python through the "
+              f"Windows firewall{OFF}")
+        print(f"{DIM}  (Private networks) - the prompt appears on first "
+              f"--lan run.{OFF}")
     print(f"  Inbox:  {ROOT / 'inbox'}")
     print(f"{DIM}  Put homebrew files in the inbox folder; PDFs are split "
           f"automatically.{OFF}")
     print(f"{DIM}  Ctrl-C to stop.{OFF}\n")
 
     if not args.no_browser:
-        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+        threading.Timer(1.2, lambda: webbrowser.open(local_url)).start()
 
     sys.argv = [sys.argv[0], "--port", str(port), "--host", host]
     import serve                                               # noqa: PLC0415
