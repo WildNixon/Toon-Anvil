@@ -691,6 +691,15 @@ th {
 }
 .action-sheet .btnrow .sheet-act { display: inline-block; width: auto; }
 
+/* ---------- seat colour swatches --------------------------------------- */
+
+.swatch-row { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+.swatch {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 2px solid var(--etch); cursor: pointer; padding: 0;
+}
+.swatch.picked { outline: 3px solid var(--focus); outline-offset: 2px; }
+
 /* ---------- dice rail + your-turn banner ------------------------------- */
 
 .dice-rail { display: flex; flex-direction: column; gap: 2px; }

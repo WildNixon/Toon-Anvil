@@ -59,7 +59,13 @@ function takeRollMode() {
  * because the event stream reaches every seat at the table.
  */
 function tellTable(kind, label, r, extra = null) {
-  pushRollCard(cardModel({ label, roll: r, extra }));
+  const card = pushRollCard(cardModel({ label, roll: r, extra }));
+  const seat = session.colourOf(getState().characterId);
+  if (seat) {
+    card.dataset.colour = seat;
+    // A crit's gold border outranks identity - the moment beats the seat.
+    if (!r.isCrit && !r.isFumble) card.style.borderLeftColor = seat;
+  }
   log('roll', safeRollPayload({
     kind,
     label,
@@ -182,11 +188,17 @@ function vitalsPanel(d) {
   const panel = el('div', { class: 'panel rivets' });
   panel.append(el('span', { class: 'lvl' }, `Level ${d.level}`));
   panel.append(el('h3', {}, d.name || 'Unnamed'));
-  const line = classLine(d);
+  const ch = getState().character || {};
+  const line = [classLine(d), ch.pronouns].filter(Boolean).join(' · ');
   if (line) {
     panel.append(el('p', {
       class: 'muted', style: 'margin:-6px 0 10px;font-size:13px',
     }, line));
+  }
+  if (ch.blurb) {
+    panel.append(el('p', {
+      class: 'muted', style: 'margin:-4px 0 10px;font-size:13px;font-style:italic',
+    }, ch.blurb));
   }
 
   // At 0 HP the sheet's job changes: the death-save pips ARE the moment.
@@ -287,6 +299,36 @@ function vitalsPanel(d) {
     }, 'Back to the rules'));
   }
   panel.append(maxRow);
+
+  // Cosmetic identity is play, not build: pronouns and a line about them
+  // live HERE, deliberately outside the frozen-field list, editable at any
+  // table. TEXT inputs on purpose - the number-input order above is what
+  // the tests (and muscle memory) reach for.
+  const idRow = el('div', {
+    class: 'btnrow', style: 'margin-top:8px;align-items:center',
+  });
+  idRow.append(el('span', { class: 'eyebrow' }, 'Identity'));
+  const pron = el('input', {
+    type: 'text', value: getState().character?.pronouns || '',
+    placeholder: 'pronouns', 'aria-label': 'Pronouns', style: 'width:120px',
+  });
+  const blurb = el('input', {
+    type: 'text', value: getState().character?.blurb || '',
+    placeholder: 'a line about them', 'aria-label': 'A line about them',
+    style: 'flex:1;min-width:150px',
+  });
+  const saveIdentity = async () => {
+    await saveCharacter((c) => {
+      c.pronouns = pron.value.trim() || null;
+      c.blurb = blurb.value.trim() || null;
+      return c;
+    });
+    draw();
+  };
+  pron.addEventListener('change', saveIdentity);
+  blurb.addEventListener('change', saveIdentity);
+  idRow.append(pron, blurb);
+  panel.append(idRow);
 
   // Conditions
   const condRow = el('div', { style: 'margin-top:14px' });

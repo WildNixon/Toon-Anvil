@@ -549,10 +549,15 @@ function combatantRow(c, index, redraw, { readOnly = false, mine = null } = {}) 
   // there would compare undefined and quietly call everything down.
   const down = c.hpHidden ? band(c) === 'down' : c.hp <= 0;
   const yours = readOnly && mine && c.characterId && mine.has(c.characterId);
+  // The seat's colour, when the table gave this character's owner one.
+  // "Yours" keeps the accent - knowing which line is YOU outranks decor.
+  const seat = c.kind === 'pc' ? session.colourOf(c.characterId) : null;
   const row = el('div', {
+    dataset: seat ? { colour: seat } : {},
     style: 'border-bottom:1px solid var(--etch);padding:8px 0;'
       + (active ? 'background:rgba(184,74,22,.12);' : '')
-      + (yours ? 'border-left:3px solid var(--accent);padding-left:8px;' : '')
+      + (yours ? 'border-left:3px solid var(--accent);padding-left:8px;'
+        : seat ? `border-left:3px solid ${seat};padding-left:8px;` : '')
       + (down ? 'opacity:.55;' : ''),
   });
 

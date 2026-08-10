@@ -470,6 +470,14 @@ class Handler(SimpleHTTPRequestHandler):
                 # changes carrying their own id as echoes of their own writes.
                 # The grant clearing is the server's act, not the client's.
                 bump("table", rid, None)
+        if parts[1] == "profiles":
+            # The table record is what status() hands every seat; the kind
+            # file is the shelf copy. A recolour or rename must reach both -
+            # and only the cosmetic fields cross. Authorless for the same
+            # reason as grants: every seat repaints, including the writer's.
+            mod = self._table()
+            if mod and mod.restyle_profile(rid, payload).get("ok"):
+                bump("table", rid, None)
         return self._send_json({"ok": True, "id": rid, "rev": rev,
                                 "updatedAt": payload["updatedAt"]})
 

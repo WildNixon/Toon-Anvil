@@ -17,6 +17,7 @@
 import { el, esc } from '../../core/store.js';
 import { derive } from '../../core/derive.js';
 import { ABILITIES, ABILITY_NAMES } from '../../core/rules2024.js';
+import { colourOf } from '../../core/session.js';
 
 /**
  * Passive score for a skill: 10 + modifier.
@@ -97,7 +98,11 @@ export function partyPanel(characters, sources) {
 
   for (const r of rows) {
     const tr = el('tr', {});
-    const nameCell = el('td', {});
+    const seat = colourOf(r.id);
+    const nameCell = el('td', {
+      dataset: seat ? { colour: seat } : {},
+      style: seat ? `border-left:3px solid ${seat};padding-left:7px` : '',
+    });
     nameCell.append(el('strong', {}, r.name));
     nameCell.append(el('div', { class: 'muted', style: 'font-size:11px' }, r.classes));
     if (r.conditions.length || r.exhaustion) {

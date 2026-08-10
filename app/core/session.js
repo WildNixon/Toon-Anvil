@@ -212,6 +212,19 @@ export function mayEdit(character) {
   return owned.has(character?.id) || character?.ownerId === cached?.me?.id;
 }
 
+/**
+ * The seat colour behind a character, or null. One lookup for every
+ * surface that tints by owner - rail rows, runner rows, party vitals,
+ * roll cards - so they cannot drift apart on what "whose" means.
+ */
+export function colourOf(characterId) {
+  if (!characterId) return null;
+  for (const p of cached?.profiles || []) {
+    if ((p.characterIds || []).includes(characterId)) return p.colour || null;
+  }
+  return null;
+}
+
 /* ------------------------------------------------------------------ */
 
 export async function openTable(name = 'DM') {

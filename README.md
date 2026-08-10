@@ -275,6 +275,17 @@ thirty seconds after scanning the code. Nobody builds unless they want to.
 A player who joins keeps a token in their browser; a reload does not ask
 again. Ending the table revokes every token at once.
 
+**It plays like a game, not a form.** Rolls land as cards — die faces shown,
+both of them under advantage with the used one marked, crits in gold — with a
+three-state Advantage/Disadvantage arm that spends itself after one roll, and
+saving throws get taps of their own. A shared **dice rail** on the players'
+Table and the DM's Stage shows everyone's rolls as they land, tinted by each
+player's **seat colour** (picked at the join gate, riding every list their
+name appears in). Your claimed character's turn puts a banner on your screen
+and buzzes your phone. At 0 HP the sheet becomes death-save pips; a level-up
+gets its moment; and the DM's Stage carries six one-tap ambience beds that
+play on the DM's speakers only.
+
 | | DM | Player |
 |---|---|---|
 | Their own character (play state) | edit | edit |

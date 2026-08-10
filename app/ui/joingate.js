@@ -13,7 +13,15 @@
  */
 
 import { getState, el } from '../core/store.js';
+import { db } from '../core/db.js';
 import * as session from '../core/session.js';
+
+// Six seat colours, distinct at a glance across both themes. Cosmetic
+// identity is play: the colour follows this seat onto rail rows, runner
+// rows and party vitals on every screen at the table.
+export const SEAT_COLOURS = [
+  '#b84a16', '#2f5d50', '#5b3a8e', '#1f6f8b', '#8a6a24', '#a03a5e',
+];
 
 let overlay = null;
 
@@ -65,6 +73,29 @@ function drawJoin(onDone, prefillCode = null) {
   });
   c.append(code, name, err);
 
+  // Pick a colour for the seat - it rides every list your name appears in.
+  let chosenColour = null;
+  const swatches = el('div', {
+    class: 'swatch-row', role: 'group', 'aria-label': 'Seat colour',
+  });
+  for (const colour of SEAT_COLOURS) {
+    const b = el('button', {
+      class: 'swatch', style: `background:${colour}`,
+      'aria-label': `Seat colour ${colour}`,
+      'aria-pressed': 'false',
+      onClick: () => {
+        chosenColour = chosenColour === colour ? null : colour;
+        for (const s of swatches.children) {
+          const on = s.getAttribute('aria-label') === `Seat colour ${chosenColour}`;
+          s.classList.toggle('picked', on);
+          s.setAttribute('aria-pressed', String(on));
+        }
+      },
+    });
+    swatches.append(b);
+  }
+  c.append(swatches);
+
   const row = el('div', { class: 'welcome-choices' });
   row.append(el('button', {
     onClick: async () => {
@@ -75,6 +106,13 @@ function drawJoin(onDone, prefillCode = null) {
       if (!out.ok) {
         err.textContent = out.error || 'That did not work.';
         return;
+      }
+      if (chosenColour && out.profile?.id) {
+        // Cosmetic, so best-effort: a failed recolour must not stop a join.
+        try {
+          await db.put('profiles', { ...out.profile, colour: chosenColour });
+          await session.refresh();
+        } catch { /* the seat still works uncoloured */ }
       }
       drawClaim(onDone);
     },

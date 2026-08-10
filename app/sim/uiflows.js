@@ -2123,6 +2123,14 @@ export async function runJoinGate(CheckClass) {
     const nameInput = gate.querySelector('input[aria-label="Your name"]');
     check.ok(!!codeInput && !!nameInput, 'code and name fields are offered');
 
+    // Pick a seat colour before joining - it should follow this seat onto
+    // every list the name appears in.
+    const swatch = gate.querySelector('.swatch[aria-label="Seat colour #2f5d50"]');
+    check.ok(!!swatch, 'seat colour swatches are offered');
+    swatch?.click();
+    check.eq(swatch?.getAttribute('aria-pressed'), 'true',
+      'and picking one marks it');
+
     setField(codeInput, 'ANVIL-ZZZZ');
     setField(nameInput, 'Gym Player');
     button(doc, 'Join', { within: gate })?.click();
@@ -2136,6 +2144,13 @@ export async function runJoinGate(CheckClass) {
       { timeout: 8000 });
     check.ok(!!claim, 'the right code admits, and the waiting character is offered');
 
+    const coloured = await waitFor(async () => {
+      const st = await fetch('/api/table').then((r) => r.json()).catch(() => ({}));
+      return (st.profiles || []).find((p) => p.name === 'Gym Player'
+        && p.colour === '#2f5d50') || null;
+    }, { timeout: 8000 });
+    check.ok(!!coloured, 'the chosen colour persisted onto the seat');
+
     claim?.click();
     const seated = await waitFor(() => (!doc.querySelector('.welcome')
       && (doc.querySelector('#who')?.textContent || '').includes('Gate Probe')
@@ -2147,6 +2162,16 @@ export async function runJoinGate(CheckClass) {
       .map((b) => b.textContent.trim());
     check.ok(labels.includes('Party') && !labels.includes('DM'),
       "and the menu is a player's menu", labels.join(', '));
+
+    // The seat's colour rides their rolls: tap an ability, the card wears it.
+    check.ok(await goToMode(doc, 'Play', 'Abilities'), 'their sheet opens');
+    doc.querySelector('#rollcards')?.replaceChildren();
+    [...doc.querySelectorAll('.stat.clickable')]
+      .find((s) => s.textContent.trim().startsWith('STR'))?.click();
+    const tinted = await waitFor(() => doc.querySelector(
+      '#rollcards .rollcard[data-colour="#2f5d50"]') || null, { timeout: 6000 });
+    check.ok(!!tinted, "their roll card wears the seat's colour",
+      doc.querySelector('#rollcards .rollcard')?.dataset?.colour || '(none)');
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {

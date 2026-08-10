@@ -199,6 +199,28 @@ def set_owner(profile_id: str, character_id: str) -> dict:
         return {"ok": True, "profile": prof}
 
 
+def restyle_profile(profile_id: str, patch: dict) -> dict:
+    """Carry a profile's COSMETIC fields into the table record.
+
+    The kind file under data/profiles/ is the shelf copy; this record is
+    what status() hands every seat. Only name and colour cross - role and
+    character bindings are the server's own, whatever a payload claims.
+    """
+    with _lock:
+        data = read()
+        prof = data.get("profiles", {}).get(profile_id)
+        if not prof:
+            return {"ok": False, "error": "no such profile"}
+        if isinstance(patch.get("name"), str) and patch["name"].strip():
+            prof["name"] = patch["name"].strip()[:40]
+        colour = patch.get("colour")
+        if colour is None or (isinstance(colour, str)
+                              and re.fullmatch(r"#[0-9a-fA-F]{6}", colour)):
+            prof["colour"] = colour
+        _write(data)
+        return {"ok": True, "profile": prof}
+
+
 # --------------------------------------------------------------------------
 # the forge and the grants
 # --------------------------------------------------------------------------

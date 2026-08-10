@@ -2195,6 +2195,42 @@ export const SUITES = [
         },
       },
       {
+        id: 'colour_is_a_seat_choice',
+        title: 'A seat recolours itself - and only itself',
+        async run(c, { table }) {
+          c.feature('table', 'colour');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          c.ok(kim.ok, 'a player joined');
+          if (!kim.ok) { await table.close(); return; }
+
+          const mine = await table.put('profiles', kim.profile.id,
+            { ...kim.profile, colour: '#2f5d50' }, kim.token);
+          c.eq(mine.status, 200, 'recolouring your own seat is allowed');
+          let st = await table.status(kim.token);
+          c.eq((st.body.profiles || []).find((p) => p.id === kim.profile.id)
+            ?.colour, '#2f5d50',
+          'and the colour reaches what every seat is told');
+
+          const dmProfile = (st.body.profiles || [])
+            .find((p) => p.role === 'dm');
+          const theirs = await table.put('profiles', dmProfile.id,
+            { ...dmProfile, colour: '#000000' }, kim.token);
+          c.eq(theirs.status, 403, 'recolouring somebody else is refused');
+
+          // A payload is not a stylesheet: a non-colour string is dropped
+          // by the write-through, whatever the kind file accepted.
+          await table.put('profiles', kim.profile.id,
+            { ...kim.profile, colour: 'javascript:alert(1)' }, kim.token);
+          st = await table.status(kim.token);
+          c.eq((st.body.profiles || []).find((p) => p.id === kim.profile.id)
+            ?.colour, '#2f5d50',
+          'a non-colour string never reaches the table record');
+          await table.close();
+        },
+      },
+      {
         id: 'code_rides_one_trusted_field',
         title: 'The join code lives in exactly one serve-layer field',
         async run(c, { table }) {
@@ -3817,7 +3853,9 @@ export const BARS = {
   // And again (47 -> 48) with reaction classification and action payloads.
   // And again (48 -> 50) with the couch epic: the QR join path and the
   // pregen forge.
-  minFeaturesCovered: 50,
+  // And again (50 -> 52) with the RPG-feel epic: roll cards, the phone
+  // pass, the dice feed, death saves, seat colours.
+  minFeaturesCovered: 52,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.

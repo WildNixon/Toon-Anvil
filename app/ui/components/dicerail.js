@@ -10,6 +10,7 @@
 
 import { el } from '../../core/store.js';
 import { db } from '../../core/db.js';
+import { colourOf } from '../../core/session.js';
 
 /** The only keys a roll event may carry. Everything else is dropped. */
 export const SAFE_ROLL_KEYS = [
@@ -32,6 +33,7 @@ export function rollRows(events, characters = [], limit = 20) {
     .reverse()
     .map((e) => ({
       id: e.id,
+      characterId: e.characterId || null,
       who: names.get(e.characterId) || 'Someone',
       label: e.payload?.label || 'Roll',
       total: e.payload?.total,
@@ -60,8 +62,11 @@ export function diceRail(characters = []) {
       return;
     }
     for (const r of rows) {
+      const seat = colourOf(r.characterId);
       const row = el('div', {
         class: `dice-row${r.crit ? ' crit' : ''}${r.fumble ? ' fumble' : ''}`,
+        dataset: seat ? { colour: seat } : {},
+        style: seat ? `border-left:3px solid ${seat};padding-left:7px` : '',
       });
       row.append(el('span', { class: 'dice-who' }, r.who));
       row.append(el('span', { class: 'dice-label' }, r.label));
