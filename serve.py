@@ -60,6 +60,27 @@ EXAMPLES = ROOT / "examples"
 
 DROP_SUFFIXES = {".html", ".htm", ".json", ".md", ".markdown", ".pdf", ".txt"}
 
+# tools/ is not a package, so the dozen routes that reach into it import
+# lazily and each one used to push the path itself. Unguarded, that grew
+# without bound: _table() runs on nearly every API call, so an evening of
+# play left thousands of identical entries for every subsequent import to
+# walk. Once is enough, and once is what this does.
+TOOLS = ROOT / "tools"
+
+# run.py is the documented front door. It runs its checks, then hands these
+# lines down so the addresses print ONCE, last, after the socket is actually
+# bound - what a DM reads off the screen is then a URL that already works.
+# Two address blocks under two different labels is two answers to the only
+# question anyone asks at setup: what do the players type?
+BANNER_NOTES: list[str] = []
+
+
+def tools_on_path() -> None:
+    """Make `import table` and friends work, exactly once per process."""
+    p = str(TOOLS)
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
 
 def read_manifest() -> dict:
     if MANIFEST.exists():
@@ -107,7 +128,7 @@ def autosplit_inbox() -> list[dict]:
         if digest in done or digest in fresh:
             continue
         try:
-            sys.path.insert(0, str(ROOT / "tools"))
+            tools_on_path()
             from split_pdf import split as split_pdf_file      # noqa: PLC0415
             report = split_pdf_file(path)
             fresh[digest] = {
@@ -127,7 +148,7 @@ def autosplit_inbox() -> list[dict]:
     # organise wrote in between our read and our write. And take the shelf's
     # lock: every manifest writer shares the one lock or none of them count.
     if fresh:
-        sys.path.insert(0, str(ROOT / "tools"))
+        tools_on_path()
         from shelf import MANIFEST_LOCK                        # noqa: PLC0415
         with MANIFEST_LOCK:
             man = read_manifest()
@@ -299,7 +320,7 @@ class Handler(SimpleHTTPRequestHandler):
     # the UI proves nothing.
     def _table(self):
         try:
-            sys.path.insert(0, str(ROOT / "tools"))
+            tools_on_path()
             import table as table_mod                      # noqa: PLC0415
             return table_mod
         except Exception:                                  # noqa: BLE001
@@ -529,7 +550,7 @@ class Handler(SimpleHTTPRequestHandler):
             if not raw.startswith(b"%PDF-"):
                 return self._send_json({"error": "that is not a PDF"}, 400)
 
-            sys.path.insert(0, str(ROOT / "tools"))
+            tools_on_path()
             import shelf as shelf_mod                          # noqa: PLC0415
             q = parse_qs(parsed.query)
             category = (q.get("category") or [None])[0]
@@ -580,7 +601,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._send_json(*err)
             if payload is None:
                 return self._send_json({"error": "bad json body"}, 400)
-            sys.path.insert(0, str(ROOT / "tools"))
+            tools_on_path()
             import shelf as shelf_mod                          # noqa: PLC0415
             digest = str(payload.get("hash") or "")
             category = str(payload.get("category") or "")
@@ -622,7 +643,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._send_json(*err)
             if payload is None:
                 return self._send_json({"error": "bad json body"}, 400)
-            sys.path.insert(0, str(ROOT / "tools"))
+            tools_on_path()
             import shelf as shelf_mod                          # noqa: PLC0415
             digest = str(payload.get("hash") or "")
             with shelf_mod.MANIFEST_LOCK:
@@ -688,7 +709,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._send_json({"error": "bad json body"}, 400)
             sheet = payload.get("sheet") or payload
             try:
-                sys.path.insert(0, str(ROOT / "tools"))
+                tools_on_path()
                 from make_pdf import build as build_pdf   # noqa: PLC0415
             except Exception as exc:                       # noqa: BLE001
                 return self._send_json(
@@ -869,7 +890,7 @@ class Handler(SimpleHTTPRequestHandler):
             if payload is None:
                 return self._send_json({"error": "bad json body"}, 400)
             try:
-                sys.path.insert(0, str(ROOT / "tools"))
+                tools_on_path()
                 import connectors                          # noqa: PLC0415
             except Exception as exc:                       # noqa: BLE001
                 return self._send_json(
@@ -1073,7 +1094,7 @@ class Handler(SimpleHTTPRequestHandler):
             # The whole collection grouped by what each book IS. Deliberately
             # its own route: /api/library triggers the inbox autosplit on
             # every call, and the Deck needs a cheap, side-effect-free poll.
-            sys.path.insert(0, str(ROOT / "tools"))
+            tools_on_path()
             import shelf as shelf_mod                          # noqa: PLC0415
             cats: dict[str, list] = {c: [] for c in shelf_mod.CATEGORIES}
             for digest, e in read_manifest().get("processed", {}).items():
@@ -1119,7 +1140,7 @@ class Handler(SimpleHTTPRequestHandler):
             slug = unquote(parts[3])
             if not safe_name(slug):
                 return self._send_json({"error": "bad document name"}, 400)
-            sys.path.insert(0, str(ROOT / "tools"))
+            tools_on_path()
             import shelf as shelf_mod                          # noqa: PLC0415
             include_all = (parse_qs(parsed.query).get("all") or ["0"])[0] == "1"
             rows = shelf_mod.sections_for(slug, include_all=include_all)
@@ -1130,7 +1151,7 @@ class Handler(SimpleHTTPRequestHandler):
             # The PDF splitter's quality gate, run in-process on SRD-rendered
             # fixtures (never book text). The gym calls this so the Python
             # pipeline sits behind the same green-or-red door as the app.
-            sys.path.insert(0, str(ROOT / "tools"))
+            tools_on_path()
             import split_pdf as split_mod                      # noqa: PLC0415
             try:
                 return self._send_json(split_mod.selftest())
@@ -1294,7 +1315,7 @@ class Handler(SimpleHTTPRequestHandler):
             # Reports only WHETHER each connector is configured - never a key's
             # value, so this is safe for the browser to hold and display.
             try:
-                sys.path.insert(0, str(ROOT / "tools"))
+                tools_on_path()
                 import connectors                          # noqa: PLC0415
                 return self._send_json(connectors.describe())
             except Exception as exc:                       # noqa: BLE001
@@ -1572,6 +1593,8 @@ def main() -> int:
         print(f"  Toon Anvil (players)  ->  http://{lan_ip}:{args.port}")
     else:
         print(f"\n  Toon Anvil  ->  http://{args.host}:{args.port}")
+    for line in BANNER_NOTES:
+        print(line)
     print(f"  data      ->  {DATA}")
     print("  ctrl-c to stop\n")
     try:

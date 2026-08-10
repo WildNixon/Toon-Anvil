@@ -232,27 +232,34 @@ def main() -> int:
     # address, not a place a browser can go.
     local_url = (f"http://127.0.0.1:{port}" if host in ("0.0.0.0", "")
                  else f"http://{host}:{port}")
-    print(f"\n  Open (you):    {local_url}")
-    if args.lan:
-        print(f"  Players type:  http://{_lan_ip()}:{port}")
-        print(f"{DIM}  Anyone on this network can reach the app now - the "
-              f"join code gates seats,{OFF}")
-        print(f"{DIM}  not the pages. Use --lan only on a network you "
-              f"trust.{OFF}")
-        print(f"{DIM}  If phones cannot connect, allow Python through the "
-              f"Windows firewall{OFF}")
-        print(f"{DIM}  (Private networks) - the prompt appears on first "
-              f"--lan run.{OFF}")
-    print(f"  Inbox:  {ROOT / 'inbox'}")
+    print(f"\n  Inbox:  {ROOT / 'inbox'}")
     print(f"{DIM}  Put homebrew files in the inbox folder; PDFs are split "
           f"automatically.{OFF}")
-    print(f"{DIM}  Ctrl-C to stop.{OFF}\n")
+
+    # The addresses themselves are printed by serve.main(), once, after the
+    # socket is bound - so the URL a DM reads off the bottom of the screen
+    # is one that already works. Printing them here too meant the same two
+    # addresses appeared twice under two different labels, which at setup
+    # time reads as two different answers. These notes ride along instead.
+    notes = []
+    if args.lan:
+        notes = [
+            f"{DIM}  Anyone on this network can reach the app now - the "
+            f"join code gates seats,{OFF}",
+            f"{DIM}  not the pages. Use --lan only on a network you "
+            f"trust.{OFF}",
+            f"{DIM}  If phones cannot connect, allow Python through the "
+            f"Windows firewall{OFF}",
+            f"{DIM}  (Private networks) - the prompt appears on first "
+            f"--lan run.{OFF}",
+        ]
 
     if not args.no_browser:
         threading.Timer(1.2, lambda: webbrowser.open(local_url)).start()
 
     sys.argv = [sys.argv[0], "--port", str(port), "--host", host]
     import serve                                               # noqa: PLC0415
+    serve.BANNER_NOTES = notes
     return serve.main()
 
 
