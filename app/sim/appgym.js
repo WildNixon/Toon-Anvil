@@ -3628,6 +3628,42 @@ export const SUITES = [
         },
       },
       {
+        id: 'prepared_deploys_fresh',
+        title: 'A prepared encounter deploys with freshly rolled hit points',
+        run(c, { dm, monsters }) {
+          c.feature('shared', 'encounter', 'prepared');
+          const runner = dm.runner;
+          runner.reset();
+          const goblin = monsters.find((m) => /goblin/i.test(m.name))
+            || monsters[0];
+          runner.addMonsters(goblin, 3);
+          // Save = group the roster by monster, exactly what the Stage does.
+          const groups = {};
+          for (const x of runner.state.combatants) {
+            groups[x.monsterId] = (groups[x.monsterId] || 0) + 1;
+          }
+          const tpl = { id: 'tpl-t', name: 'Door Trap',
+            monsters: Object.entries(groups)
+              .map(([monsterId, count]) => ({ monsterId, count })) };
+          c.eq(tpl.monsters.length, 1, 'the roster groups by monster');
+          c.eq(tpl.monsters[0].count, 3, 'with the count carried');
+
+          runner.reset();
+          for (const m of tpl.monsters) {
+            const mon = monsters.find((x) => x.id === m.monsterId);
+            runner.addMonsters(mon, m.count);
+          }
+          c.eq(runner.state.combatants.length, 3, 'the whole template lands');
+          c.ok(runner.state.combatants
+            .every((x) => x.hp >= 1 && x.hp <= x.hpMax),
+          'every deployed monster has hit points inside its own bounds',
+          runner.state.combatants.map((x) => `${x.hp}/${x.hpMax}`).join(', '));
+          c.ok(runner.state.combatants.every((x) => x.side === 'enemy'),
+            'and arrives as an enemy');
+          runner.reset();
+        },
+      },
+      {
         id: 'adopt_keeps_ids_unique',
         title: 'Adding to an adopted fight does not collide with what arrived',
         run(c, { dm, monsters }) {

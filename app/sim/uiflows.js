@@ -1608,6 +1608,55 @@ export const FLOWS = [
   },
 
   {
+    id: 'prepared_encounters',
+    title: 'Save the fight for the wrong door, deploy it fresh',
+    async run(c, { doc }) {
+      c.feature('ui', 'dm', 'prepared', 'encounters');
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'Stage', 'Prepared'),
+        'the Stage carries the Prepared drawer once a campaign exists');
+
+      // Something to save - add goblins the way a DM would. Earlier flows
+      // may have left combatants in the fight; the drawer groups whatever
+      // is there, so the assertions below count rather than assume.
+      const count = [...doc.querySelectorAll('main input[type=number]')]
+        .find((i) => i.value === '1');
+      if (count) setField(count, '2');
+      const search = [...doc.querySelectorAll('main input[type=text]')]
+        .find((i) => /monster/i.test(i.placeholder || ''));
+      c.ok(!!search, 'monsters can be searched');
+      if (!search) return;
+      setField(search, 'goblin warrior');
+      const hit = await waitFor(() => allButtons(doc)
+        .find((b) => /^Goblin Warrior \(/.test(b.textContent.trim())),
+      { timeout: 6000 });
+      hit?.click();
+      await waitUntilSettled(doc);
+
+      button(doc, 'Save as prepared')?.click();
+      const nameInput = await waitFor(() => doc.querySelector(
+        '.action-sheet input') || null, { timeout: 5000 });
+      c.ok(!!nameInput, 'saving asks for a name');
+      if (!nameInput) return;
+      setField(nameInput, 'Gym Ambush');
+      button(doc, 'OK', { within: doc.querySelector('.action-sheet') })?.click();
+      const saved = await waitFor(() => (/Gym Ambush/.test(mainText(doc))
+        ? true : null), { timeout: 6000 });
+      c.ok(!!saved, 'the ambush lands in the drawer');
+      c.ok(/\d+× Goblin Warrior/.test(mainText(doc)),
+        'with its roster summarised', mainText(doc).slice(0, 100));
+
+      const before = (mainText(doc).match(/Goblin Warrior/g) || []).length;
+      button(doc, 'Deploy')?.click();
+      const grew = await waitFor(() => ((mainText(doc)
+        .match(/Goblin Warrior/g) || []).length > before ? true : null),
+      { timeout: 6000 });
+      c.ok(!!grew, 'deploying adds the monsters to the live fight',
+        `mentions before ${before}`);
+    },
+  },
+
+  {
     id: 'homebrew_pdf_drop',
     title: 'A PDF dropped on the workshop files itself and says where it went',
     async run(c, { doc, win }) {
@@ -2542,6 +2591,8 @@ export async function runPlayerView(CheckClass) {
           priceMod: 1, note: '' }],
         factions: [{ id: 'f-pv', name: 'The Ledger', standing: 1,
           agenda: 'SECRETAGENDA', public: true }],
+        encounterTemplates: [{ id: 'tpl-1', name: 'AMBUSHPLAN',
+          monsters: [{ monsterId: 'goblin-warrior', count: 3 }] }],
         mapId: 'gym-pv-map', lore: [] }),
     });
     await api('/api/maps/gym-pv-map', {
@@ -2676,6 +2727,21 @@ export async function runPlayerView(CheckClass) {
     }).then((r) => r.text());
     check.ok(!campWire.includes('SECRETAGENDA'),
       'nor anywhere in the payload');
+    // The ambush drawer: prepared encounters are DM prep, stripped on BOTH
+    // routes - a player must never learn what is behind the wrong door.
+    check.ok(!campWire.includes('AMBUSHPLAN')
+      && !campWire.includes('encounterTemplates'),
+    'prepared encounters are absent from the single route');
+    const campList = await fetch('/api/campaigns', {
+      headers: { 'X-Toon-Token': joined.body.token },
+    }).then((r) => r.text());
+    check.ok(!campList.includes('AMBUSHPLAN'),
+      'and from the list route');
+    const campAsDm = await fetch('/api/campaigns/gym-pv-camp', {
+      headers: { 'X-Toon-Token': dmToken },
+    }).then((r) => r.text());
+    check.ok(campAsDm.includes('AMBUSHPLAN'),
+      'while the DM keeps the drawer');
 
     const mapWire = await fetch('/api/maps/gym-pv-map', {
       headers: { 'X-Toon-Token': joined.body.token },

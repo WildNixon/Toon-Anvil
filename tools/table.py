@@ -483,6 +483,10 @@ def redact_campaign(record: dict, profile: dict | None) -> dict:
         if isinstance(f, dict) and f.get("public")
     ]
     out.pop("lore", None)
+    # Prepared encounters are the DM's ambush drawer. They live on the
+    # campaign record precisely BECAUSE kinds are read-open to seated
+    # players - a new "templates" kind would have leaked by default.
+    out.pop("encounterTemplates", None)
     return out
 
 

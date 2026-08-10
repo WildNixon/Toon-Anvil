@@ -14,11 +14,13 @@
  */
 
 import { getState, el, toast } from '../../core/store.js';
+import { db } from '../../core/db.js';
 import * as session from '../../core/session.js';
-import { runnerPanel, publish } from './runner.js';
+import { runnerPanel, publish, state as fight, addMonsters } from './runner.js';
 import { partyPanel } from './party.js';
 import { diceRail } from '../../ui/components/dicerail.js';
 import { BEDS, playBed, stopBed, nowPlaying } from '../../core/providers.js';
+import { sheetPrompt } from '../../ui/kit.js';
 
 let box = null;
 let ctx = null;
@@ -46,6 +48,8 @@ function draw() {
     sources: ctx.sources(), monsters: ctx.monsters, redraw: draw,
   }));
 
+  if (campaign) box.append(preparedPanel());
+
   box.append(partyPanel(getState().characters || [], ctx.sources()));
 
   // The players' rolls, as they land - the DM sees the nat 20 without
@@ -54,6 +58,95 @@ function draw() {
   if (session.isOpen()) box.append(diceRail(getState().characters || []));
 
   box.append(ambiencePanel());
+}
+
+/**
+ * The ambush drawer. Templates live ON the campaign record - kinds are
+ * read-open to seated players, so a separate "templates" kind would have
+ * leaked the DM's prep by default; the campaign redactor strips this field
+ * instead. Deploying re-rolls hit points through instantiate(), so the same
+ * ambush is never the same fight twice.
+ */
+function preparedPanel() {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Prepared'));
+  const templates = campaign.encounterTemplates || [];
+  const monsterName = (id) => (ctx.monsters || [])
+    .find((x) => x.id === id)?.name || id;
+
+  if (!templates.length) {
+    panel.append(el('p', { class: 'muted', style: 'font-size:13px;margin:0 0 8px' },
+      'Nothing prepared yet. Build a fight below, then save it here for '
+      + 'the moment the party opens the wrong door.'));
+  }
+  for (const t of templates) {
+    const row = el('div', {
+      style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;'
+        + 'padding:4px 0;border-bottom:1px dotted var(--etch)',
+    });
+    row.append(el('strong', { style: 'min-width:120px' }, t.name));
+    row.append(el('span', { class: 'muted', style: 'flex:1;font-size:12px' },
+      (t.monsters || []).map((m) => `${m.count}× ${monsterName(m.monsterId)}`)
+        .join(' · ')));
+    row.append(el('button', {
+      class: 'act small',
+      onClick: () => {
+        let landed = 0;
+        for (const m of t.monsters || []) {
+          const mon = (ctx.monsters || []).find((x) => x.id === m.monsterId);
+          if (mon) { addMonsters(mon, m.count); landed += m.count; }
+        }
+        toast(landed
+          ? `${t.name} deployed — fresh hit points rolled`
+          : 'None of those monsters are in the bestiary any more', landed ? 'ok' : 'warn');
+        draw();
+      },
+    }, 'Deploy'));
+    row.append(el('button', {
+      class: 'act ghost small',
+      onClick: async () => {
+        await saveTemplates(templates.filter((x) => x.id !== t.id));
+      },
+    }, '×'));
+    panel.append(row);
+  }
+
+  panel.append(el('div', { class: 'btnrow', style: 'margin-top:8px' },
+    el('button', {
+      class: 'act ghost small',
+      onClick: async () => {
+        const inFight = fight.combatants
+          .filter((c) => c.kind === 'monster' && c.monsterId);
+        if (!inFight.length) {
+          toast('No monsters in the fight to save', 'warn');
+          return;
+        }
+        const name = await sheetPrompt({
+          title: 'Save as prepared', label: 'Name this encounter',
+        });
+        if (name === null || !name.trim()) return;
+        const groups = {};
+        for (const c of inFight) {
+          groups[c.monsterId] = (groups[c.monsterId] || 0) + 1;
+        }
+        const entry = {
+          id: `tpl-${fight.combatants.length}-${(campaign.encounterTemplates || []).length + 1}`,
+          name: name.trim().slice(0, 60),
+          monsters: Object.entries(groups)
+            .map(([monsterId, count]) => ({ monsterId, count })),
+        };
+        await saveTemplates([...(campaign.encounterTemplates || []), entry]);
+        toast(`Prepared: ${entry.name}`, 'ok');
+      },
+    }, 'Save as prepared')));
+  return panel;
+}
+
+async function saveTemplates(templates) {
+  const fresh = { ...campaign, encounterTemplates: templates };
+  await db.put('campaigns', fresh);
+  campaign = fresh;
+  draw();
 }
 
 /**
