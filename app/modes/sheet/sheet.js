@@ -20,6 +20,7 @@ import { dataFile } from '../../core/db.js';
 import { saveCharacter, adjustHp as shellAdjustHp, go } from '../../app.js';
 import * as session from '../../core/session.js';
 import { tabs } from '../../ui/kit.js';
+import { cardModel, pushRollCard } from '../../ui/components/rollcard.js';
 
 export const title = 'Play';
 
@@ -28,6 +29,50 @@ let container = null;
 // lose your place; a reload starts at Overview, which is also what the UI
 // tests rely on (every frozen string lives there).
 let tab = 'overview';
+
+// Armed for the NEXT roll, then spent. Module-level so a redraw mid-fight
+// does not disarm what the player just pressed.
+let rollMode = null; // null | 'adv' | 'dis'
+
+function syncRollModeBar() {
+  const bar = container?.querySelector('#rollmode');
+  if (!bar) return;
+  for (const b of bar.querySelectorAll('button')) {
+    const on = (b.dataset.mode || null) === (rollMode || '') || (!rollMode && !b.dataset.mode);
+    b.className = `act small${on ? '' : ' ghost'}`;
+    b.setAttribute('aria-pressed', String(on));
+  }
+}
+
+/** Consume the armed mode - one roll spends it, back to normal. */
+function takeRollMode() {
+  const armed = rollMode;
+  rollMode = null;
+  syncRollModeBar();
+  return { advantage: armed === 'adv', disadvantage: armed === 'dis' };
+}
+
+function rollModeBar() {
+  const bar = el('div', {
+    id: 'rollmode', role: 'group', 'aria-label': 'Roll mode',
+    class: 'btnrow', style: 'gap:6px;margin:0 0 10px',
+  });
+  const mk = (mode, label) => {
+    const on = (rollMode || '') === (mode || '');
+    return el('button', {
+      class: `act small${on ? '' : ' ghost'}`,
+      'aria-pressed': String(on),
+      dataset: mode ? { mode } : {},
+      onClick: () => {
+        // Tapping the armed one disarms it.
+        rollMode = (rollMode === mode) ? null : mode;
+        syncRollModeBar();
+      },
+    }, label);
+  };
+  bar.append(mk(null, 'Normal'), mk('adv', 'Advantage'), mk('dis', 'Disadvantage'));
+  return bar;
+}
 
 export async function render(root) {
   container = root;
@@ -73,6 +118,7 @@ function draw() {
       }, 'To the forge'));
       container.append(banner);
     }
+    container.append(rollModeBar());
     container.append(vitalsPanel(derived));
     container.append(el('div', { class: 'grid two' },
       abilitiesPanel(derived), skillsPanel(derived)));
@@ -120,9 +166,9 @@ function vitalsPanel(d) {
       'rolled'));
   }
   add('Initiative', sign(d.initiative), 'click to roll', () => {
-    const r = d20({ mod: d.initiative });
+    const r = d20({ mod: d.initiative, ...takeRollMode() });
     log('initiative', { total: r.total, nat: r.nat });
-    toast(`Initiative ${fmt(r)}`);
+    pushRollCard(cardModel({ label: 'Initiative', roll: r }));
   });
   add('Speed', `${d.speeds.walk}`, 'feet');
   add('Prof', sign(d.proficiencyBonus));
@@ -261,9 +307,9 @@ function abilitiesPanel(d) {
     const save = d.saves[ab];
     const cell = el('div', { class: 'stat clickable' });
     cell.addEventListener('click', () => {
-      const r = d20({ mod: d.mods[ab] });
+      const r = d20({ mod: d.mods[ab], ...takeRollMode() });
       log('journal', { text: `${ABILITY_NAMES[ab]} check: ${fmt(r)}` });
-      toast(`${ABILITY_NAMES[ab]} check ${fmt(r)}`);
+      pushRollCard(cardModel({ label: `${ABILITY_NAMES[ab]} check`, roll: r }));
     });
     cell.append(el('div', { class: 'k' }, ab.toUpperCase()));
     cell.append(el('div', { class: 'v' }, String(d.abilities[ab])));
@@ -271,6 +317,27 @@ function abilitiesPanel(d) {
     grid.append(cell);
   }
   panel.append(grid);
+
+  // Saving throws get their own taps - "roll a WIS save" is said at every
+  // table more often than any check, and it had no button.
+  panel.append(el('div', { class: 'eyebrow', style: 'margin-top:12px' },
+    'Saving throws'));
+  const saves = el('div', {
+    style: 'display:flex;flex-wrap:wrap;gap:6px;margin-top:6px',
+  });
+  for (const ab of ABILITIES) {
+    saves.append(el('button', {
+      class: `act small${d.saves[ab].proficient ? '' : ' ghost'}`,
+      'aria-label': `${ABILITY_NAMES[ab]} saving throw`,
+      onClick: () => {
+        const r = d20({ mod: d.saves[ab].mod, ...takeRollMode() });
+        log('journal', { text: `${ABILITY_NAMES[ab]} save: ${fmt(r)}` });
+        pushRollCard(cardModel({ label: `${ab.toUpperCase()} save`, roll: r }));
+      },
+    }, `${ab.toUpperCase()} ${sign(d.saves[ab].mod)}`));
+  }
+  panel.append(saves);
+
   if (Object.keys(d.substitutions).length) {
     panel.append(el('p', { class: 'mono', style: 'margin-top:10px;color:var(--accent-2)' },
       Object.entries(d.substitutions)
@@ -288,9 +355,9 @@ function skillsPanel(d) {
     const row = el('div', {
       style: 'display:flex;gap:8px;align-items:center;padding:3px 4px;cursor:pointer',
       onClick: () => {
-        const r = d20({ mod: info.mod });
+        const r = d20({ mod: info.mod, ...takeRollMode() });
         log('journal', { text: `${cap(skill)}: ${fmt(r)}` });
-        toast(`${cap(skill)} ${fmt(r)}`);
+        pushRollCard(cardModel({ label: cap(skill), roll: r }));
       },
     });
     row.append(el('span', {
@@ -342,10 +409,13 @@ function attacksPanel(d) {
  * with Math.random() over the entry count instead of rolling the die.
  */
 async function rollAttack(atk, d) {
-  const res = resolveAttack(atk, { attackerName: d.name });
+  const res = resolveAttack(atk, { attackerName: d.name, ...takeRollMode() });
   for (const ev of res.events) await log(ev.type, ev.payload);
-  toast(`${res.crit ? 'CRIT! ' : ''}${atk.name}: ${fmt(res.roll)} to hit, `
-    + `${res.total} damage`, res.crit ? 'ok' : 'info');
+  pushRollCard(cardModel({
+    label: `${atk.name} to hit`,
+    roll: res.roll,
+    extra: `${res.total} damage`,
+  }));
   if (res.fumble) await fireNatTriggers(d, res.roll.nat);
 }
 

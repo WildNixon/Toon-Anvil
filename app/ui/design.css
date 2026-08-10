@@ -656,6 +656,84 @@ th {
 #toast.ok   { border-left-color: var(--ok); }
 #toast[hidden] { display: none; }
 
+/* ---------- roll cards: results worth looking at ----------------------- */
+/* The stack sits above the toast and never blocks a tap (pointer-events
+   none). Crit and fumble carry their meaning in TEXT and border - the
+   flare is flavour, and prefers-reduced-motion (below) removes it without
+   removing the statement. */
+
+#rollcards {
+  position: fixed; right: 14px; bottom: 72px; z-index: 190;
+  display: flex; flex-direction: column; gap: 8px;
+  width: min(78vw, 280px); pointer-events: none;
+}
+.rollcard {
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--etch); border-left: 4px solid var(--accent);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 8px 12px 9px;
+  animation: rollcard-in .18s ease-out;
+}
+.rc-head { display: flex; align-items: baseline; gap: 8px; }
+.rc-label {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.rc-mode {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+  color: var(--accent-2);
+}
+.rc-row { display: flex; align-items: baseline; gap: 10px; }
+.rc-total {
+  font-family: var(--mono); font-size: 30px; font-weight: 700;
+  line-height: 1.1;
+}
+.rc-detail { display: flex; align-items: baseline; gap: 6px; }
+.rc-faces { display: inline-flex; gap: 4px; }
+.rc-faces .face {
+  font-family: var(--mono); font-size: 12px;
+  border: 1px solid var(--etch); border-radius: var(--radius);
+  padding: 1px 5px; color: var(--muted);
+}
+.rc-faces .face.used { color: var(--ink); border-color: var(--muted); }
+.rc-faces .face.spare { opacity: .55; text-decoration: line-through; }
+.rc-mod { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.rc-flag {
+  font-family: var(--display); font-size: 14px; letter-spacing: .1em;
+  margin-top: 2px;
+}
+.rc-extra {
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  margin-top: 2px;
+}
+.rollcard.crit {
+  border-left-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold-soft), var(--shadow);
+  animation: rollcard-in .18s ease-out, rollcard-flare .8s ease-out;
+}
+.rollcard.crit .rc-total, .rollcard.crit .rc-flag { color: var(--gold); }
+.rollcard.fumble {
+  border-left-color: var(--bad);
+  animation: rollcard-in .18s ease-out, rollcard-crack .3s ease-in-out;
+}
+.rollcard.fumble .rc-total, .rollcard.fumble .rc-flag { color: var(--bad-text); }
+
+@keyframes rollcard-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+@keyframes rollcard-flare {
+  0%   { box-shadow: 0 0 0 0 var(--gold-soft), var(--shadow); }
+  60%  { box-shadow: 0 0 22px 6px var(--gold-soft), var(--shadow); }
+  100% { box-shadow: 0 0 0 1px var(--gold-soft), var(--shadow); }
+}
+@keyframes rollcard-crack {
+  0%, 100% { transform: none; }
+  25% { transform: translateX(-3px); }
+  55% { transform: translateX(3px); }
+  80% { transform: translateX(-1px); }
+}
+
 /* ---------- scroll containment: wide content never scrolls the page ---- */
 
 .scroll-x { overflow-x: auto; max-width: 100%; }

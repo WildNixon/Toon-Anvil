@@ -23,6 +23,7 @@
  */
 
 import { seededRng } from '../core/rng.js';
+import { d20 } from '../core/dice.js';
 import { derive } from '../core/derive.js';
 import { checkAll, INVARIANT_IDS } from './invariants.js';
 import { serverBase } from '../core/db.js';
@@ -1974,6 +1975,70 @@ export const SUITES = [
           const names = pregen.forgeParty(8, src, 5).map((h) => h.name);
           c.eq(new Set(names).size, names.length,
             'no two heroes in one forge share a name', names.join(', '));
+        },
+      },
+    ],
+  },
+  {
+    id: 'rollcard',
+    title: 'Roll cards',
+    why: 'The card is the table\'s shared read of a die. If it marks the '
+       + 'wrong face under advantage or forgets a crit, the wrong story gets '
+       + 'told out loud. The model is pure, so the marking rules are graded '
+       + 'here without a DOM.',
+    scenarios: [
+      {
+        id: 'rollcard_reads_the_dice',
+        title: 'Faces, marks, crits and modes survive the trip to a card',
+        async run(c, { rollcard }) {
+          c.feature('rollcard');
+          const adv = rollcard.cardModel({ label: 'X', roll: {
+            faces: [14, 7], nat: 14, mod: 5, total: 19, advantage: true } });
+          c.eq(adv.faces.length, 2, 'advantage keeps both faces');
+          c.ok(adv.faces[0].used && !adv.faces[1].used,
+            'and marks the used one');
+          c.ok(adv.advantage && !adv.disadvantage, 'the mode is carried');
+          const dis = rollcard.cardModel({ label: 'X', roll: {
+            faces: [14, 7], nat: 7, mod: 0, total: 7, disadvantage: true } });
+          c.ok(!dis.faces[0].used && dis.faces[1].used,
+            'disadvantage marks the low face');
+          const twin = rollcard.cardModel({ label: 'X', roll: {
+            faces: [14, 14], nat: 14, mod: 0, total: 14 } });
+          c.eq(twin.faces.filter((f) => f.used).length, 1,
+            'equal faces mark exactly one, never both');
+          const crit = rollcard.cardModel({ label: 'X', roll: {
+            faces: [20], nat: 20, mod: 3, total: 23, isCrit: true } });
+          c.ok(crit.crit && !crit.fumble, 'a natural 20 reads as a crit');
+          const fum = rollcard.cardModel({ label: 'X', roll: {
+            faces: [1], nat: 1, mod: 3, total: 4, isFumble: true } });
+          c.ok(fum.fumble && !fum.crit, 'a natural 1 reads as a fumble');
+        },
+      },
+      {
+        id: 'rollcard_matches_real_dice',
+        title: 'Twenty seeded advantage rolls land intact',
+        async run(c, { rollcard }) {
+          c.feature('rollcard', 'dice');
+          const rng = seededRng(7).stream('card');
+          let totalsOk = true;
+          let usedOk = true;
+          let flagsOk = true;
+          const seen = [];
+          for (let i = 0; i < 20; i += 1) {
+            const r = d20({ mod: 4, advantage: true, rng });
+            const m = rollcard.cardModel({ label: 'X', roll: r });
+            const used = m.faces.filter((f) => f.used);
+            if (!(m.total === r.total && m.faces.length === 2)) totalsOk = false;
+            if (!(used.length === 1 && used[0].v === r.nat)) usedOk = false;
+            if (m.crit !== r.isCrit || m.fumble !== r.isFumble) flagsOk = false;
+            if (!(totalsOk && usedOk && flagsOk) && seen.length < 2) {
+              seen.push(JSON.stringify({ r, m }));
+            }
+          }
+          c.ok(totalsOk, 'totals and both faces agree across 20 rolls',
+            seen.join(' | ').slice(0, 160));
+          c.ok(usedOk, 'the marked face IS the used face, every time');
+          c.ok(flagsOk, 'crit and fumble flags agree with the die');
         },
       },
     ],

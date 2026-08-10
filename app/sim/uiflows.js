@@ -319,6 +319,65 @@ export const FLOWS = [
   },
 
   {
+    id: 'sheet_rolls',
+    title: 'The sheet rolls into cards, advantage armed per roll',
+    async run(c, { doc }) {
+      c.feature('ui', 'sheet', 'rollcard');
+      c.ok(await goToMode(doc, 'Play', 'Abilities'), 'the sheet opens');
+      const cards = () => doc.querySelector('#rollcards');
+      const clear = () => cards()?.replaceChildren();
+
+      // A plain ability check lands as a card, not a toast.
+      clear();
+      // startsWith, not \bSTR\b: the cell's textContent is "STR10+0 / ..."
+      // and R->1 is no word boundary. Same trap as the claim captions.
+      const cell = [...doc.querySelectorAll('.stat.clickable')]
+        .find((s) => s.textContent.trim().startsWith('STR'));
+      c.ok(!!cell, 'the STR cell is clickable');
+      cell?.click();
+      const card = await waitFor(() => doc.querySelector('#rollcards .rollcard'),
+        { timeout: 4000 });
+      c.ok(!!card, 'the roll lands as a card');
+      c.ok(/Strength check/i.test(card?.textContent || ''),
+        'named for what it was', (card?.textContent || '').slice(0, 60));
+      c.eq(card?.querySelectorAll('.rc-faces .face').length, 1,
+        'a normal roll shows one die face');
+
+      // Advantage arms for exactly one roll, then disarms itself.
+      const advBtn = [...doc.querySelectorAll('#rollmode button')]
+        .find((b) => b.textContent.trim() === 'Advantage');
+      c.ok(!!advBtn, 'an Advantage arm exists on the sheet');
+      advBtn?.click();
+      clear();
+      cell?.click();
+      const advCard = await waitFor(() => doc.querySelector('#rollcards .rollcard'),
+        { timeout: 4000 });
+      c.eq(advCard?.querySelectorAll('.rc-faces .face').length, 2,
+        'advantage rolls two dice and shows both');
+      c.eq(advCard?.querySelectorAll('.rc-faces .face.used').length, 1,
+        'exactly one face is marked as used');
+      c.ok(/advantage/.test(advCard?.textContent || ''), 'and the card says so');
+      clear();
+      cell?.click();
+      const spent = await waitFor(() => doc.querySelector('#rollcards .rollcard'),
+        { timeout: 4000 });
+      c.eq(spent?.querySelectorAll('.rc-faces .face').length, 1,
+        'one roll spends the armed mode - the next is normal');
+
+      // Saving throws finally have a tap of their own.
+      const saveBtn = [...doc.querySelectorAll('main button')]
+        .find((b) => (b.getAttribute('aria-label') || '').includes('saving throw'));
+      c.ok(!!saveBtn, 'a saving-throw tap exists');
+      clear();
+      saveBtn?.click();
+      const saveCard = await waitFor(() => doc.querySelector('#rollcards .rollcard'),
+        { timeout: 4000 });
+      c.ok(/save/i.test(saveCard?.textContent || ''),
+        'the save lands as a card', (saveCard?.textContent || '').slice(0, 60));
+    },
+  },
+
+  {
     id: 'build_equipment',
     title: 'A new character can leave Build armed and armoured',
     async run(c, { doc }) {
@@ -2713,9 +2772,15 @@ export async function runQuickParty(CheckClass) {
       .querySelector('main') && button(dmDoc, 'Setup') ? true : null),
     { timeout: 15000 });
     check.ok(!!onSetup, 'the DM client booted');
-    check.ok(await goToMode(dmDoc, 'Setup',
-      (d = dmDoc) => /The table is open/.test(mainText(d))),
-    'the Setup lens shows the open table', mainText(dmDoc).slice(0, 120));
+    // The seat-plaque re-render can eat the first nav click right after
+    // boot (the same defect seat_switch works around) - one honest retry,
+    // and the failure detail names whatever screen actually showed.
+    const toSetup = () => goToMode(dmDoc, 'Setup',
+      (d = dmDoc) => /The table is open/.test(mainText(d)));
+    let onSetupLens = await toSetup();
+    if (!onSetupLens) onSetupLens = await toSetup();
+    check.ok(onSetupLens,
+      'the Setup lens shows the open table', mainText(dmDoc).slice(0, 120));
 
     // The panel may re-render as live state settles (plaque, table status) -
     // resolve the input and its button TOGETHER, from the same render, right
