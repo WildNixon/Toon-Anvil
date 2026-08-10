@@ -1,6 +1,6 @@
 # Toon Anvil — soak run findings
 
-Generated 2026-08-10T22:13:18+00:00 from `soak/findings.jsonl` (24 findings, 0 already fixed).
+Generated 2026-08-10T23:24:11+00:00 from `soak/findings.jsonl` (25 findings, 4 already fixed).
 
 Every item below was **confirmed against a running server**, not inferred from reading. Anything I could not reproduce is not here.
 
@@ -10,7 +10,7 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 | --- | --- | --- |
 | critical | 1 | A security hole or data loss. Fix before the next session. |
 | high | 5 | Breaks a shipped feature in normal play. A DM or player hits this. |
-| medium | 6 | Wrong or confusing, but there is a way round it. |
+| medium | 7 | Wrong or confusing, but there is a way round it. |
 | low | 3 | Papercut, polish, or a latent trap that needs an odd setup. |
 | idea | 9 | Not a defect - an expansion or refinement worth discussing. |
 
@@ -28,25 +28,25 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 
 ## High
 
-### FIGHT-1-resistance-dead — Resistance and immunity never apply in the shared fight, though the code and README both say they do
+### FIGHT-1-resistance-dead — Resistance and immunity never applied in the shared fight - FIXED
 
-**HIGH** · area: shared combat runner · effort: M · status: confirmed
+**HIGH** · area: shared combat runner · effort: M · status: fixed
 
-**Evidence.** runner.js:675 calls applyTo(c.id, mult * Math.abs(n)) with TWO arguments. applyTo's signature (runner.js:342) is (id, delta, damageType = null), so damageType is always null, and mitigate() (engine.js:269) returns early on `if (!damageType)`. There is no damage-type control anywhere in the runner UI, so nothing can ever supply one. The res.mitigation toast at runner.js:677-679 is therefore dead code. applyTo's own docstring (runner.js:339-340) says 'resistance is halved - by hand, both are routinely missed', and README:201 claims 'resistances applied by the engine'. addCustom (runner.js:285) does initialise resistances/immunities arrays, so the data path exists - only the call and the control are missing. The player sheet has the same gap (app.js:104-108 passes no damage type).
+**Evidence.** runner.js:675 called applyTo(c.id, mult * Math.abs(n)) with two arguments, so damageType was always null and mitigate() (engine.js:269) returned early on every hit ever taken in the shared runner. The res.mitigation toast was dead code. applyTo's own docstring and README:201 both claimed resistance was applied.
 
-**Reproduction.** Add a monster with resistances to a shared fight, hit it for 10 in the runner ribbon: full 10 is applied, no mitigation toast. Since this project's ethos is measured-not-claimed, the docstring and README line are part of the defect.
+**Reproduction.** FIXED. The ribbon now carries a damage-type picker (untyped by default, so the two-tap flow is exactly as fast as before) and passes it as applyTo's third argument; healing never carries a type whatever the picker says. DAMAGE_TYPES now lives in core/engine.js beside mitigate(), the thing that consumes it, so a screen offering a choice and the engine resolving it cannot drift apart on spelling. The row also shows what the creature actually resists or is immune to - the picker is a guess without it, since the statblock is not on that screen.
 
-**Proposed fix.** Add a damage-type selector to the ribbon (a small select beside the number, remembered per combatant), pass it as applyTo's third argument, and let the existing mitigation toast finally fire. Until the control exists, the two claims in the docstring and README should be corrected rather than left standing.
+**Proposed fix.** Promoted into the graded gym as `damage_type_reaches_the_engine`. NOTE the reproduction I first wrote for this was WRONG and the harness caught it: it called applyTo(id, -10) with two arguments, copying the buggy call, so it could never have gone green however the app was fixed - untyped damage passing through unmitigated is correct and deliberate. The defect was that a DM had no way to say 'fire', so the test now asserts the CONTROL exists as well as the arithmetic. STILL OPEN, separately: the player sheet's own HP ribbon (app.js:100-116) passes neither a damage type nor the character's resistances, so a player adjusting their own HP gets no mitigation either.
 
-### FIGHT-2-midfight-initiative — Monsters deployed mid-fight never roll initiative and never get a turn - this breaks the Deploy button
+### FIGHT-2-midfight-initiative — Monsters deployed mid-fight never rolled initiative - FIXED
 
-**HIGH** · area: shared combat runner · effort: M · status: confirmed
+**HIGH** · area: shared combat runner · effort: M · status: fixed
 
-**Evidence.** rollInitiative() (runner.js:301-310) is idempotent and would handle late arrivals correctly - it only rolls where c.init === null. But its ONLY render site is guarded by `if (!state.started && !empty)` (runner.js:455); the started branch offers Next/Prev turn and no re-roll. addCustom (runner.js:284) and addMonsters both set init: null. sort() is only ever called from rollInitiative (runner.js:306). So a combatant added after the fight starts keeps init: null, sorts to the bottom via `b.init ?? -99` (runner.js:313), renders as '--' (runner.js:614) and never acts. This directly breaks LAN C2: the prepared-encounter drawer's Deploy button (stage.js:125-135) exists precisely to drop monsters into a running fight.
+**Evidence.** rollInitiative() was only rendered under `if (!state.started && !empty)` (runner.js:455), so anything added after the fight began kept init:null, sorted to the bottom via `b.init ?? -99`, rendered as '--' and never acted. That broke the C2 prepared-encounter Deploy button, whose entire purpose is dropping monsters into a running fight.
 
-**Reproduction.** Start a fight, then deploy a prepared encounter (or add a custom combatant). The new arrivals show '--' for initiative, sit at the bottom of the order, and Next turn never reaches them.
+**Reproduction.** FIXED. A new admit() puts every combatant into the fight and, when the fight is already running, rolls its initiative and sorts it into the order. All three constructors - addCharacter, addMonsters, addCustom - go through it. Sorting renumbers everybody and state.turn is an INDEX, so admit() carries the turn marker across by identity via a new keepTurn() helper.
 
-**Proposed fix.** Roll initiative for any combatant with init === null at the moment it is added, and insert it into the existing order rather than re-sorting the whole array (re-sorting mid-fight moves the turn marker - see FIGHT-3). The DM should not have to think about it; a monster that walks in is a monster in the order.
+**Proposed fix.** Promoted into the graded gym as `a_fight_survives_its_own_roster_changing`, which asserts the late arrival rolls, lands in order, and does not move whose turn it is.
 
 ### LEAK-1-clock-events — A secret clock's label reaches every player through the unredacted event log
 
@@ -90,15 +90,15 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 
 **Proposed fix.** One guard in _read_json: if the parsed payload is not a dict - or not a list, for /api/events - return the 'bad json body' 400 that the None case already gets. Three lines turns sixty-nine silent connection drops into one honest refusal.
 
-### FIGHT-3-remove-shifts-turn — Removing a combatant above the turn marker silently advances the turn to someone else
+### FIGHT-3-remove-shifts-turn — Removing a combatant above the turn marker moved the turn - FIXED
 
-**MEDIUM** · area: shared combat runner · effort: S · status: confirmed
+**MEDIUM** · area: shared combat runner · effort: S · status: fixed
 
-**Evidence.** runner.js:289-292: remove() filters the array and then only guards `if (state.turn >= state.combatants.length) state.turn = 0`. state.turn is a positional index, so deleting anything at an index BELOW the marker shifts every later combatant up one while turn keeps its old number - it now points at a different creature. 'Remove the dead thing' is one of the most-pressed buttons in a fight, which is what makes this land often.
+**Evidence.** remove() filtered the array and only guarded `turn >= length`, so deleting anything BELOW the marker's index shifted everyone up while turn kept its old number, silently pointing at a different creature.
 
-**Reproduction.** Five combatants, turn === 3 (the fourth). Remove the combatant at index 1. The array shifts; turn still reads 3, which is now the fifth creature. Somebody's turn is skipped and nobody notices, because the highlight simply moves.
+**Reproduction.** FIXED alongside FIGHT-2, because it is the same invariant: state.turn is an index into a list that changed. keepTurn() captures whose turn it is by id, runs the mutation, and restores the index; if the marked combatant is the one that left, the index stays put and is clamped, which lands it on whoever is next in order. Fixing FIGHT-2 without this would have introduced FIGHT-3 on a new path, so the two could not honestly be separated.
 
-**Proposed fix.** Capture the current combatant's id before filtering and restore the index by id afterwards, clamping only if that combatant was the one removed (in which case the turn should stay on the next one along, not jump to 0).
+**Proposed fix.** Covered by `a_fight_survives_its_own_roster_changing` in the graded gym.
 
 ### FIGHT-4-death-saves-persist — Death saves are only ever cleared by a long rest, so the next fight starts with old failures showing
 
@@ -140,6 +140,16 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 
 **Proposed fix.** Either render the bar on every tab that can roll, or clear rollMode when the tab changes. Clearing on tab change is the smaller, safer change and matches the 'armed per roll, auto-reset' intent the LAN B1 work described.
 
+### SHEET-2-player-hp-no-mitigation — A player adjusting their own HP gets no resistance or immunity either
+
+**MEDIUM** · area: character sheet · effort: M · status: confirmed
+
+**Evidence.** The other half of FIGHT-1, left open when the shared runner was fixed. app.js:100-116 adjustHp() calls applyDamage with only { name: derived.name } - no damageType AND no resistances or immunities from derive(). So even if a type were supplied, mitigate() has nothing to match against. A player taking fire damage on their own sheet takes the full number regardless of what their character resists.
+
+**Reproduction.** Not yet reproduced as a scenario - the runner fix was scoped to the shared fight, where the README's claim lives. The code path is unambiguous: adjustHp passes neither of the two things mitigation needs.
+
+**Proposed fix.** Pass derived.resistances / derived.immunities through, and add a damage-type control to the sheet's HP ribbon. Note the ribbon's buttons are frozen strings the gym asserts on, so the control goes BESIDE them rather than replacing anything. Smaller than it sounds now that DAMAGE_TYPES exists and the runner has a working pattern to copy.
+
 ## Low
 
 ### API-2-pdf-500-on-long-name — A long character name makes the sheet PDF export return 500
@@ -152,15 +162,15 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 
 **Proposed fix.** Cap the name (and any other free-text field the PDF typesets) to a sane length and return 400 above it. Worth doing with API-1 since it is the same route family and the same missing habit - validate the body before acting on it.
 
-### FIGHT-5-custom-has-no-side — A custom combatant has no side, so the first ally/foe tap appears to do nothing
+### FIGHT-5-custom-has-no-side — A custom combatant had no side, so the first ally/foe tap did nothing - FIXED
 
-**LOW** · area: shared combat runner · effort: S · status: confirmed
+**LOW** · area: shared combat runner · effort: S · status: fixed
 
-**Evidence.** side: appears exactly twice in runner.js - line 208 (addCharacter, 'ally') and line 260 (addMonsters, 'enemy'). addCustom (runner.js:280-287) sets neither side nor concentrating. The row chip reads c.side === 'ally' (runner.js:619) so an undefined side renders as 'foe'; toggleSide does c.side === 'enemy' ? 'ally' : 'enemy', so undefined becomes 'enemy' - the value it was already displaying. The first tap therefore changes nothing on screen and the DM taps again. The board token defaults to data-side='enemy' (map.js:285) for the same reason. adopt() (runner.js:103) patches it, but only after a server round-trip.
+**Evidence.** addCharacter emitted side:'ally' and addMonsters side:'enemy'; addCustom emitted neither, so the chip rendered 'foe' for undefined and toggleSide turned undefined into 'enemy' - the value already on screen.
 
-**Reproduction.** Add a custom combatant in the shared runner. It shows as a foe. Tap the side chip once: still a foe. Tap again: now an ally.
+**Reproduction.** FIXED. addCustom now emits side:'ally' and concentrating:null like its two neighbours - an ally by default because a combatant a DM types in mid-fight is usually a hireling, a summon or an NPC fighting alongside the party.
 
-**Proposed fix.** Give addCustom the same defaults as its neighbours - side: 'ally' (a custom combatant the DM types in is usually an NPC ally or a summon) and concentrating: null - so all three constructors emit the same shape.
+**Proposed fix.** Covered by `a_fight_survives_its_own_roster_changing` in the graded gym.
 
 ### RAIL-1-createdAt-no-offset — The dice rail's session boundary compares a timezone-less timestamp against UTC ones
 

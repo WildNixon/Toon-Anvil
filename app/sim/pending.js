@@ -42,69 +42,6 @@ async function freshTable(name = 'Pending DM') {
 
 export const PENDING = [
   {
-    id: 'FIGHT-1-resistance-dead',
-    title: 'Resistance is halved in the shared fight',
-    why: 'applyTo takes a damageType and the ribbon never passes one, so '
-       + 'mitigate() returns early and a resistant creature takes full '
-       + 'damage. The runner docstring and README both claim otherwise.',
-    async run(c) {
-      const runner = await import('../modes/dm/runner.js');
-      runner.reset?.();
-      runner.addCustom({ name: 'Stone Thing', ac: 12, hp: 40, initMod: 0 });
-      const it = runner.state.combatants.at(-1);
-      it.resistances = ['fire'];
-
-      // What the ribbon does today: two arguments, no damage type.
-      const before = it.hp;
-      runner.applyTo(it.id, -10);
-      const taken = before - runner.state.combatants
-        .find((x) => x.id === it.id).hp;
-      c.eq(taken, 5, 'a fire-resistant creature takes half of 10');
-    },
-  },
-  {
-    id: 'FIGHT-2-midfight-initiative',
-    title: 'A monster deployed mid-fight gets a turn',
-    why: 'rollInitiative is only offered before the fight starts, so anything '
-       + 'added later keeps init:null, sorts to the bottom and never acts. '
-       + 'This is what the C2 Deploy button does for a living.',
-    async run(c) {
-      const runner = await import('../modes/dm/runner.js');
-      runner.reset?.();
-      runner.addCustom({ name: 'A', ac: 10, hp: 10, initMod: 3 });
-      runner.addCustom({ name: 'B', ac: 10, hp: 10, initMod: 1 });
-      runner.rollInitiative();
-      c.ok(runner.state.started, 'the fight has started');
-
-      runner.addCustom({ name: 'Ambusher', ac: 13, hp: 15, initMod: 2 });
-      const late = runner.state.combatants.find((x) => x.name === 'Ambusher');
-      c.ok(late.init !== null,
-        'the late arrival has an initiative', String(late.init));
-    },
-  },
-  {
-    id: 'FIGHT-3-remove-shifts-turn',
-    title: 'Removing a combatant leaves the turn on the same creature',
-    why: 'state.turn is a positional index and remove() only clamps the high '
-       + 'end, so deleting anything above the marker silently moves the turn '
-       + 'onto somebody else. Removing the dead thing is a constant action.',
-    async run(c) {
-      const runner = await import('../modes/dm/runner.js');
-      runner.reset?.();
-      for (const n of ['A', 'B', 'C', 'D', 'E']) {
-        runner.addCustom({ name: n, ac: 10, hp: 10, initMod: 0 });
-      }
-      runner.rollInitiative();
-      runner.state.turn = 3;
-      const whose = runner.state.combatants[3].id;
-
-      // Remove somebody EARLIER in the order than the current turn.
-      runner.remove(runner.state.combatants[1].id);
-      c.eq(runner.state.combatants[runner.state.turn]?.id, whose,
-        'the turn still belongs to whoever it belonged to');
-    },
-  },
-  {
     id: 'FIGHT-4-death-saves-persist',
     title: 'Being healed above 0 clears the death saves',
     why: 'deathSaves is reset only by longRest, so a healed character keeps '
@@ -122,21 +59,6 @@ export const PENDING = [
       c.eq(healed.deathSaves?.failures ?? 0, 0,
         'healing above 0 clears the failures',
         JSON.stringify(healed.deathSaves));
-    },
-  },
-  {
-    id: 'FIGHT-5-custom-has-no-side',
-    title: 'A custom combatant is born with a side',
-    why: 'addCharacter emits ally and addMonsters emits enemy; addCustom '
-       + 'emits neither, so the chip reads foe and the first tap changes '
-       + 'nothing visible.',
-    async run(c) {
-      const runner = await import('../modes/dm/runner.js');
-      runner.reset?.();
-      runner.addCustom({ name: 'Hireling', ac: 12, hp: 9, initMod: 0 });
-      const it = runner.state.combatants.at(-1);
-      c.ok(it.side === 'ally' || it.side === 'enemy',
-        'it has a side at all', String(it.side));
     },
   },
   {

@@ -264,6 +264,20 @@ export function resolveSpell(spell, mech, opts = {}) {
  * otherwise halve every attack for a character resistant to anything, which
  * is far worse than not modelling it at all.
  */
+/**
+ * The thirteen damage types, in the order a list is scanned.
+ *
+ * Kept here beside mitigate(), the thing that consumes them, so a screen
+ * offering a choice and the engine resolving it cannot drift apart on
+ * spelling. Matching is case-insensitive but not fuzzy: "Fire " or "fire
+ * damage" would silently never match a resistance, and silently is the
+ * whole problem this list exists to avoid.
+ */
+export const DAMAGE_TYPES = [
+  'acid', 'bludgeoning', 'cold', 'fire', 'force', 'lightning', 'necrotic',
+  'piercing', 'poison', 'psychic', 'radiant', 'slashing', 'thunder',
+];
+
 export function mitigate(amount, damageType, opts = {}) {
   const { resistances = [], immunities = [], vulnerabilities = [] } = opts;
   if (!damageType) return { amount, applied: null };

@@ -1496,6 +1496,89 @@ export const SUITES = [
         },
       },
       {
+        id: 'a_fight_survives_its_own_roster_changing',
+        title: 'Arrivals get a turn, departures do not steal one',
+        run(c, { dm }) {
+          c.feature('dm', 'runner', 'combat', 'initiative');
+          const R = dm.runner;
+
+          // Deploying a prepared encounter mid-fight is the whole point of
+          // the drawer, and it used to add creatures with init:null that
+          // sorted to the bottom and never acted.
+          R.reset();
+          R.addCustom({ name: 'A', ac: 10, hp: 10, initMod: 3 });
+          R.addCustom({ name: 'B', ac: 10, hp: 10, initMod: 1 });
+          R.rollInitiative();
+          R.addCustom({ name: 'Ambusher', ac: 13, hp: 15, initMod: 2 });
+          const late = R.state.combatants.find((x) => x.name === 'Ambusher');
+          c.ok(late.init !== null,
+            'a combatant admitted mid-fight rolls initiative', String(late.init));
+          c.ok(R.state.combatants.every((x, i, all) => i === 0
+            || (all[i - 1].init ?? -99) >= (x.init ?? -99)),
+          'and lands in order rather than at the bottom',
+          R.state.combatants.map((x) => `${x.name}:${x.init}`).join(' '));
+
+          // state.turn is an INDEX, so anything that reorders or shortens
+          // the list moves it onto somebody else unless carried by identity.
+          R.reset();
+          for (const n of ['A', 'B', 'C', 'D', 'E']) {
+            R.addCustom({ name: n, ac: 10, hp: 10, initMod: 0 });
+          }
+          R.rollInitiative();
+          R.state.turn = 3;
+          const whose = R.state.combatants[3].id;
+          R.remove(R.state.combatants[1].id);
+          c.eq(R.state.combatants[R.state.turn]?.id, whose,
+            'removing an earlier combatant leaves the turn where it was');
+
+          // Admitting mid-fight re-sorts, which must not move it either.
+          R.state.turn = R.state.combatants.findIndex((x) => x.id === whose);
+          R.addCustom({ name: 'Late', ac: 10, hp: 10, initMod: 5 });
+          c.eq(R.state.combatants[R.state.turn]?.id, whose,
+            'and neither does somebody walking in');
+
+          // All three constructors emit the same shape; addCustom did not,
+          // so its side chip read "foe" and the first tap changed nothing.
+          const custom = R.state.combatants.find((x) => x.name === 'Late');
+          c.ok(custom.side === 'ally' || custom.side === 'enemy',
+            'a custom combatant is born with a side', String(custom.side));
+        },
+      },
+      {
+        id: 'damage_type_reaches_the_engine',
+        title: 'The ribbon can say "fire", so resistance can happen',
+        run(c, { dm }) {
+          c.feature('dm', 'runner', 'combat', 'resistance');
+          const R = dm.runner;
+          R.reset();
+          R.addCustom({ name: 'Stone Thing', ac: 12, hp: 40, initMod: 0 });
+          const it = R.state.combatants.at(-1);
+          it.resistances = ['fire'];
+
+          const before = it.hp;
+          R.applyTo(it.id, -10, 'fire');
+          c.eq(before - R.state.combatants.find((x) => x.id === it.id).hp, 5,
+            'typed damage is halved against a resistance');
+
+          // The model was never the problem. applyTo has always taken a
+          // damageType; the ribbon passed two arguments and never one, so
+          // mitigate() returned early on every hit in every fight ever run
+          // while the docstring and README said resistance was applied.
+          // Assert the CONTROL exists, because that was the missing half -
+          // and untyped damage passing through unmitigated is correct, so
+          // asserting on an untyped hit can never prove anything.
+          const panel = R.runnerPanel({
+            characters: [], sources: null, monsters: [], redraw: () => {},
+          });
+          const picker = panel.querySelector('select[aria-label^="Damage type"]');
+          c.ok(!!picker, 'the ribbon offers a damage type');
+          const offered = [...(picker?.options || [])].map((o) => o.value);
+          c.ok(offered.includes('fire') && offered.includes(''),
+            'including fire, and untyped as the default',
+            offered.slice(0, 6).join(','));
+        },
+      },
+      {
         id: 'encounter_runner',
         title: 'The runner tracks initiative, damage and rounds',
         run(c, { monsters, dm, sources }) {

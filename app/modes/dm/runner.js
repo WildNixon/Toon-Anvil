@@ -26,7 +26,7 @@
 
 import { el, esc, toast } from '../../core/store.js';
 import { derive } from '../../core/derive.js';
-import { applyDamage } from '../../core/engine.js';
+import { applyDamage, DAMAGE_TYPES } from '../../core/engine.js';
 import { sheetPrompt } from '../../ui/kit.js';
 import { d20 } from '../../core/dice.js';
 import { instantiate } from '../../sim/encounter.js';
@@ -197,10 +197,52 @@ export function band(c) {
   return 'unhurt';
 }
 
+/**
+ * Run `fn`, and keep the turn marker on whoever it was already on.
+ *
+ * state.turn is an INDEX, so anything that reorders or shortens the list
+ * moves it onto a different creature without touching it. That is how
+ * "remove the dead goblin" - the most-pressed button in a fight - could
+ * silently skip somebody's turn.
+ *
+ * If the marked combatant is the one that left, the index stays put and
+ * is clamped into range, which lands it on whoever is next in order.
+ */
+function keepTurn(fn) {
+  const whose = state.combatants[state.turn]?.id ?? null;
+  fn();
+  if (!state.combatants.length) { state.turn = 0; return; }
+  const at = state.combatants.findIndex((c) => c.id === whose);
+  if (at >= 0) state.turn = at;
+  else if (state.turn >= state.combatants.length) state.turn = 0;
+}
+
+/**
+ * Put a combatant into the fight - and, if the fight is already running,
+ * into the ORDER.
+ *
+ * rollInitiative() is only offered before the first round, so anything
+ * arriving later kept init:null, sorted to the bottom on `b.init ?? -99`,
+ * rendered as "--" and never acted. The prepared-encounter drawer exists
+ * to drop monsters into a running fight, so its whole reason for being
+ * quietly did nothing. A monster that walks in is a monster in the order,
+ * and the DM should not have to think about it.
+ */
+function admit(combatant) {
+  state.combatants.push(combatant);
+  if (!state.started) return combatant;
+  if (combatant.init === null) {
+    combatant.init = d20({ mod: combatant.initMod, rng: cryptoRng('init') }).total;
+  }
+  // Sorting renumbers everybody, so the marker rides across by identity.
+  keepTurn(sort);
+  return combatant;
+}
+
 /** Add a player character, deriving its real numbers. */
 export function addCharacter(character, sources) {
   const d = derive(character, sources);
-  state.combatants.push({
+  admit({
     id: nextId(),
     kind: 'pc',
     characterId: character.id,
@@ -249,7 +291,7 @@ export function addMonsters(monster, count = 1) {
   const rng = cryptoRng('runner');
   for (let i = 0; i < count; i += 1) {
     const m = instantiate(monster, i, rng);
-    state.combatants.push({
+    admit({
       id: nextId(),
       kind: 'monster',
       monsterId: monster.id,
@@ -278,8 +320,15 @@ export function addMonsters(monster, count = 1) {
 }
 
 export function addCustom({ name, ac = 12, hp = 10, initMod = 0 }) {
-  state.combatants.push({
+  admit({
     id: nextId(), kind: 'custom', name: name || 'Combatant',
+    // An ally by default: a combatant the DM types in mid-fight is usually
+    // a hireling, a summon or an NPC fighting alongside the party. Its two
+    // neighbours have always emitted a side, and without one the chip read
+    // "foe" while toggleSide's first tap turned undefined into 'enemy' -
+    // the value already on screen - so the first tap appeared to do nothing.
+    side: 'ally',
+    concentrating: null,
     ac: Number(ac) || 10, hp: Number(hp) || 1, hpMax: Number(hp) || 1, temp: 0,
     initMod: Number(initMod) || 0, init: null,
     conditions: [], resistances: [], immunities: [], notes: '',
@@ -287,8 +336,9 @@ export function addCustom({ name, ac = 12, hp = 10, initMod = 0 }) {
 }
 
 export function remove(id) {
-  state.combatants = state.combatants.filter((c) => c.id !== id);
-  if (state.turn >= state.combatants.length) state.turn = 0;
+  keepTurn(() => {
+    state.combatants = state.combatants.filter((c) => c.id !== id);
+  });
 }
 
 /**
@@ -669,10 +719,26 @@ function combatantRow(c, index, redraw, { readOnly = false, mine = null } = {}) 
   const amount = el('input', {
     type: 'number', value: '', placeholder: '0', style: 'width:66px',
   });
+
+  // Damage TYPE, without which none of the mitigation below can happen.
+  // applyTo has always taken one and the ribbon never passed it, so
+  // mitigate() returned early on every single hit and a fire-resistant
+  // creature took the full number - while this function's own docstring
+  // and the README both said resistance was applied. Untyped stays the
+  // default, so the two-tap flow is exactly as fast as it was; a type is
+  // there for the hits where it changes the answer.
+  const dmgType = el('select', {
+    'aria-label': `Damage type for ${c.name}`,
+    style: 'max-width:106px',
+  }, el('option', { value: '' }, 'untyped'),
+  ...DAMAGE_TYPES.map((t) => el('option', { value: t }, t)));
+
   const apply = (mult) => {
     const n = Number(amount.value);
     if (!n) return;
-    const res = applyTo(c.id, mult * Math.abs(n));
+    // Healing has no damage type, whatever the picker happens to say.
+    const res = applyTo(c.id, mult * Math.abs(n),
+      mult < 0 ? (dmgType.value || null) : null);
     amount.value = '';
     if (res?.mitigation) {
       toast(`${c.name} is ${res.mitigation} — took ${res.landed}`, 'ok');
@@ -687,6 +753,17 @@ function combatantRow(c, index, redraw, { readOnly = false, mine = null } = {}) 
     redraw();
   };
   top.append(amount);
+  top.append(dmgType);
+  // What this creature actually shrugs off. Without it the picker is a
+  // guess: the defences live in the statblock, which is not on this screen.
+  const defences = [];
+  if (c.resistances?.length) defences.push(`resists ${c.resistances.join(', ')}`);
+  if (c.immunities?.length) defences.push(`immune to ${c.immunities.join(', ')}`);
+  if (defences.length) {
+    top.append(el('span', {
+      class: 'muted', style: 'font-size:12px;align-self:center',
+    }, defences.join(' · ')));
+  }
   top.append(el('button', { class: 'act small', onClick: () => apply(-1) }, 'Hit'));
   top.append(el('button', { class: 'act ghost small', onClick: () => apply(+1) }, 'Heal'));
   top.append(el('button', {
