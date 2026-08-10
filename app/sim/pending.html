@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toon Anvil — pending reproductions</title>
+<link rel="stylesheet" href="../ui/design.css">
+<style>
+  body { max-width: 900px; margin: 0 auto; padding: 24px 18px 60px; }
+  pre { white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
+  .still  { color: #a8321a; font-weight: 700; }
+  .fixed  { color: #1d6b3f; font-weight: 700; }
+  .note { border-left: 3px solid var(--rule, #b9a68a); padding-left: 12px; }
+</style>
+</head>
+<body>
+<h1>Pending reproductions</h1>
+
+<p class="note">Every scenario here is <strong>expected to fail</strong>.
+A failure means the defect is still present; the message tells you what
+should have been true instead. When one turns <span class="fixed">FIXED</span>
+the bug is gone — promote it into <code>appgym.js</code> and delete it from
+<code>pending.js</code>, so the gym keeps guarding it forever.</p>
+
+<p>This is deliberately <em>not</em> part of the graded gym. A suite with a
+permanent red in it stops being a gate.</p>
+
+<p><button id="run" class="act">Run the reproductions</button>
+   <span id="summary" class="muted"></span></p>
+
+<pre id="log"></pre>
+
+<script type="module">
+import { PENDING } from './pending.js';
+import { Check } from './appgym.js';
+
+const log = document.getElementById('log');
+const summary = document.getElementById('summary');
+const say = (s = '') => { log.textContent += `${s}\n`; };
+
+document.getElementById('run').addEventListener('click', async () => {
+  log.textContent = '';
+  summary.textContent = 'running…';
+  let still = 0; let fixed = 0;
+
+  for (const scenario of PENDING) {
+    const c = new Check(scenario.id);
+    let error = null;
+    try {
+      await scenario.run(c);
+    } catch (err) {
+      error = err;
+    }
+    // Inverted on purpose: a clean pass means the defect is GONE.
+    const reproduced = !!error || c.failures.length > 0;
+    if (reproduced) still += 1; else fixed += 1;
+
+    say(`${reproduced ? 'STILL BROKEN' : 'FIXED       '}  ${scenario.id}`);
+    say(`              ${scenario.title}`);
+    if (error) say(`              threw: ${error}`);
+    for (const f of c.failures) {
+      say(`              ${f.label}${f.detail ? ` — ${f.detail}` : ''}`);
+    }
+    say();
+  }
+
+  summary.innerHTML = `<span class="still">${still} still broken</span>`
+    + ` · <span class="fixed">${fixed} fixed</span>`
+    + ` · ${PENDING.length} reproductions`;
+  say(`${still} still broken, ${fixed} fixed, ${PENDING.length} total.`);
+  window.__PENDING = { still, fixed, total: PENDING.length };
+});
+</script>
+</body>
+</html>

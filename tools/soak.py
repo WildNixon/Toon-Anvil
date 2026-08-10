@@ -123,6 +123,14 @@ def report() -> str:
         "Every item below was **confirmed against a running server**, not "
         "inferred from reading. Anything I could not reproduce is not here.",
         "",
+        "Most of these have a **live reproduction** carrying the same id, in "
+        "`app/sim/pending.js`. Open `/sim/pending.html` and run them: each one "
+        "is expected to FAIL, and a failure is the defect still being present. "
+        "When a fix lands its reproduction turns green — promote it into "
+        "`appgym.js` and delete it from `pending.js`, so the gym guards it "
+        "from then on. They are kept out of the graded gym on purpose: a suite "
+        "with a permanent red in it stops being a gate.",
+        "",
         "| Severity | Count | Means |",
         "| --- | --- | --- |",
     ]
