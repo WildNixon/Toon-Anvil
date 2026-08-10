@@ -2268,6 +2268,96 @@ export const SUITES = [
         },
       },
       {
+        id: 'join_code_buys_only_a_player_seat',
+        title: 'The join code buys a player seat, never the DM\'s',
+        async run(c, { table }) {
+          c.feature('table', 'join', 'permissions');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          if (!dm.ok) { c.ok(false, 'a table opened to test against'); return; }
+
+          // The code is shouted across a room and printed as a QR, so
+          // everybody at the table has it. It must not be worth a DM seat.
+          // join() used to hand back a token bound to any profile id that
+          // existed, and "p-dm" always exists.
+          const grab = await table.joinRaw({
+            code: dm.code, name: 'Mallory', profileId: 'p-dm',
+          });
+          c.ok(grab.ok, 'the join itself still succeeds - a seat is a seat');
+          c.eq(grab.profile?.role, 'player',
+            'but the seat is a player\'s, whatever profile the body named',
+            JSON.stringify(grab.profile));
+          c.ok(grab.profile?.id !== 'p-dm',
+            'and it is a new profile, not the DM\'s', grab.profile?.id);
+
+          // The role is the whole point, so prove it where it is spent:
+          // a DM-only action must refuse this token.
+          const forged = await table.forge(false, grab.token);
+          c.eq(forged.status, 403,
+            'and a DM-only action refuses that token');
+          await table.close();
+        },
+      },
+      {
+        id: 'a_claimed_character_is_not_up_for_grabs',
+        title: 'One character has one player',
+        async run(c, { table }) {
+          c.feature('table', 'claim', 'permissions');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          await table.put('characters', 'gym-claimed',
+            { name: 'Alice the Brave', classes: [] }, dm.token);
+          const alice = await table.join(dm.code, 'Alice');
+          const bob = await table.join(dm.code, 'Bob');
+
+          const mine = await table.claim('gym-claimed', alice.token);
+          c.ok(mine.ok, 'the first player claims an unclaimed character');
+
+          // Claiming used to be unconditional, so a second player could
+          // take a sheet somebody was already playing - and then write it.
+          const theirs = await table.claim('gym-claimed', bob.token);
+          c.ok(!theirs.ok,
+            'a second player cannot claim it', JSON.stringify(theirs.body));
+          const wrote = await table.put('characters', 'gym-claimed',
+            { name: 'Bob Was Here', classes: [] }, bob.token);
+          c.eq(wrote.status, 403,
+            'and cannot write the sheet they failed to claim');
+          const after = await table.get('characters', 'gym-claimed', dm.token);
+          c.eq(after.name, 'Alice the Brave',
+            'the character on disk is untouched');
+
+          // The DM handing a character to another player is a real thing
+          // that happens mid-campaign, and stays possible.
+          const handed = await table.claimRaw(
+            { characterId: 'gym-claimed', profileId: bob.profile.id }, dm.token);
+          c.ok(handed.ok, 'the DM can still hand a character over');
+
+          await table.del('characters', 'gym-claimed', dm.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'samples_is_the_dms_own_folder',
+        title: 'The folder beside the project still opens for the DM',
+        async run(c, { table }) {
+          c.feature('table', 'samples');
+          // This route reaches OUTSIDE the project - it lists and serves
+          // every .html sitting next to it - and it had no local gate, so
+          // under --lan any phone could read the DM's drafts off disk.
+          //
+          // The refusal itself is UNREACHABLE from here: _is_local() reads
+          // the socket's peer address, and a same-origin browser is always
+          // loopback. Same shape as the join-code visibility rule - the
+          // negative is proven by curl from a non-local address, and what
+          // the gym pins is that the gate did not break the DM's own use.
+          const list = await table.samples();
+          c.eq(list.status, 200,
+            'the DM\'s own machine still gets the listing');
+          c.ok(Array.isArray(list.body?.files),
+            'and it is still a list of files', typeof list.body?.files);
+        },
+      },
+      {
         id: 'colour_is_a_seat_choice',
         title: 'A seat recolours itself - and only itself',
         async run(c, { table }) {

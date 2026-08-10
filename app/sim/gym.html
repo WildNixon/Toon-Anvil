@@ -167,6 +167,15 @@ async function buildCtx() {
         leave: (token) => call('/api/table/leave', { method: 'POST' }, token),
         claim: (characterId, token) => call('/api/table/claim',
           { method: 'POST', body: JSON.stringify({ characterId }) }, token),
+        // Hand-crafted bodies. The helpers above send what the APP sends,
+        // which is the one thing an attacker will not do - these two send
+        // whatever the scenario wants, because the question is what the
+        // server accepts, not what the client happens to offer.
+        joinRaw: (body) => call('/api/table/join',
+          { method: 'POST', body: JSON.stringify(body) }),
+        claimRaw: (body, token) => call('/api/table/claim',
+          { method: 'POST', body: JSON.stringify(body) }, token),
+        samples: () => call('/api/samples'),
         put: (kind, id, record, token, client) => call(`/api/${kind}/${id}`,
           { method: 'PUT', body: JSON.stringify(record) }, token, client),
         del: (kind, id, token) => call(`/api/${kind}/${id}`,

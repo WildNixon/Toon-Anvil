@@ -79,6 +79,10 @@ data/sheets/
 # Gym run history: machine-local measurements, not source.
 data/appgym.jsonl
 data/_*.txt
+# The soak run's raw notebook - one JSON line per confirmed finding, and the
+# machine-local scratch a hunt leaves behind. SOAK-REPORT.md IS tracked: the
+# report is the deliverable, the notebook it was generated from is not.
+soak/
 
 # --- build inputs and generated copies -------------------------------------
 # srd_raw is the input to tools/srd_convert.py. The BUILT compendium in

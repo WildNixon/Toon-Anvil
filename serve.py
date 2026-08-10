@@ -787,9 +787,11 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._send_json(out)
 
             if action == "join":
+                # profileId is deliberately NOT forwarded any more - see
+                # table.join(). A payload naming a profile is not evidence
+                # it owns it, and "p-dm" is a profile like any other.
                 out = mod.join(payload.get("code") or "",
-                               payload.get("name") or "Player",
-                               payload.get("profileId"))
+                               payload.get("name") or "Player")
                 if out.get("ok"):
                     bump("table", None, self._client())
                 return self._send_json(out, 200 if out.get("ok") else 403)
@@ -804,11 +806,16 @@ class Handler(SimpleHTTPRequestHandler):
                 who = mod.whoami(self._token())
                 if not who:
                     return self._send_json({"error": "join first"}, 401)
-                target = payload.get("profileId") if who["role"] == "dm" else who["id"]
+                is_dm = who["role"] == "dm"
+                target = payload.get("profileId") if is_dm else who["id"]
                 cid = safe_id(str(payload.get("characterId") or ""))
                 if not cid:
                     return self._send_json({"error": "bad character id"}, 400)
-                out = mod.set_owner(target or who["id"], cid)
+                # Only the DM may take a character off another player, and
+                # that is a handover rather than a second claim.
+                out = mod.set_owner(target or who["id"], cid, force=is_dm)
+                if not out.get("ok"):
+                    return self._send_json(out, 409)
                 bump("table", cid, self._client())
                 return self._send_json(out)
 
@@ -1428,6 +1435,16 @@ class Handler(SimpleHTTPRequestHandler):
             # The user's hand-written homebrew pages live beside this project.
             # Listing them lets Homebrew mode offer one-click import instead of
             # making them hunt through a file picker every time.
+            #
+            # Loopback only. This is the one route that reaches OUTSIDE the
+            # project, and under --lan it was handing every phone on the wifi
+            # a directory listing of the folder holding the app - then serving
+            # any .html in it whole. Reading the DM's drafts off their own
+            # disk is a this-machine action; a player's phone has no business
+            # in it, and a table being open does not change that.
+            if not self._is_local():
+                return self._send_json({"error": "that folder is only "
+                                        "readable on the DM's own machine"}, 403)
             found = []
             for p in sorted(ROOT.parent.glob("*.htm*")):
                 found.append({"name": p.name, "size": p.stat().st_size,
@@ -1435,6 +1452,11 @@ class Handler(SimpleHTTPRequestHandler):
             return self._send_json({"dir": str(ROOT.parent), "files": found})
 
         if len(parts) == 2 and parts[0] == "samples":
+            # Same rule as the listing above: the folder beside the project
+            # is the DM's own, and only reachable from the DM's own machine.
+            if not self._is_local():
+                return self._send_json({"error": "that folder is only "
+                                        "readable on the DM's own machine"}, 403)
             name = parts[1]
             if "/" in name or "\\" in name or ".." in name or not name.endswith((".html", ".htm")):
                 return self._send_json({"error": "bad name"}, 400)

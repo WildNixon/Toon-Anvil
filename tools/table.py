@@ -103,8 +103,24 @@ def close_table() -> dict:
     return {"ok": True, "closed": True}
 
 
-def join(code: str, name: str, profile_id: str | None = None) -> dict:
-    """Join with a code. Returns a token bound to a profile."""
+def join(code: str, name: str) -> dict:
+    """Join with a code. Returns a token bound to a NEW player profile.
+
+    This used to accept a profile_id and hand back a token bound to it if
+    the id existed. That was a back door with the lid off: "p-dm" always
+    exists (open_table creates it below), so one POST carrying the code
+    everybody at the table can already see returned a token with
+    role="dm" - the forge, the grants, close, monster hit points, secret
+    clocks, faction agendas, prepared encounters, the shelf. Measured, not
+    theorised. Naming a profile is not proof you are its owner; the token
+    is, and a browser that still holds one never calls join at all.
+
+    So the code buys a seat, and only ever a player's seat. The DM's seat
+    comes from open_table(), which is loopback-only - physical access to
+    the machine is the anchor, exactly as it was before. Nothing in app/
+    ever sent profile_id (session.js defaults it to null), so no honest
+    client notices this is gone.
+    """
     with _lock:
         data = read()
         if not data.get("open"):
@@ -113,18 +129,15 @@ def join(code: str, name: str, profile_id: str | None = None) -> dict:
             # Deliberately vague: confirming which half was wrong helps guessing.
             return {"ok": False, "error": "that code does not match."}
 
-        if profile_id and profile_id in data["profiles"]:
-            prof = data["profiles"][profile_id]
-        else:
-            clean = (name or "Player").strip()[:40] or "Player"
-            pid = f"p-{re.sub(r'[^a-z0-9]+', '-', clean.lower()).strip('-') or 'player'}"
-            n = 1
-            while pid in data["profiles"]:
-                n += 1
-                pid = f"{pid}-{n}"
-            prof = {"id": pid, "name": clean, "role": "player",
-                    "colour": None, "characterIds": []}
-            data["profiles"][pid] = prof
+        clean = (name or "Player").strip()[:40] or "Player"
+        pid = f"p-{re.sub(r'[^a-z0-9]+', '-', clean.lower()).strip('-') or 'player'}"
+        n = 1
+        while pid in data["profiles"]:
+            n += 1
+            pid = f"{pid}-{n}"
+        prof = {"id": pid, "name": clean, "role": "player",
+                "colour": None, "characterIds": []}
+        data["profiles"][pid] = prof
 
         token = secrets.token_urlsafe(24)
         data["tokens"][token] = {"profileId": prof["id"],
@@ -185,13 +198,41 @@ def status(token: str | None = None) -> dict:
     }
 
 
-def set_owner(profile_id: str, character_id: str) -> dict:
-    """Bind a character to a profile."""
+def set_owner(profile_id: str, character_id: str, force: bool = False) -> dict:
+    """Bind a character to a profile. A claimed character is not up for grabs.
+
+    Claiming used to be unconditional, which meant a seated player could
+    POST somebody else's character id and be granted write access to their
+    sheet - may_write() reports is_mine for BOTH profiles once both list
+    the id. Proven: Alice claims her hero, Bob claims the same hero, Bob
+    PUTs over it, and the file on disk comes back named after Bob.
+
+    The same gap made the honest case racy - two phones tapping the same
+    pregen in the claim strip both "succeeded", and the party quietly had
+    one character with two owners.
+
+    `force` is the DM's override, because handing a character to another
+    player is a real thing a DM does mid-campaign. serve.py passes it only
+    when the token's role is dm.
+    """
     with _lock:
         data = read()
-        prof = data.get("profiles", {}).get(profile_id)
+        profiles = data.get("profiles", {})
+        prof = profiles.get(profile_id)
         if not prof:
             return {"ok": False, "error": "no such profile"}
+
+        holder = next((p for p in profiles.values()
+                       if p["id"] != profile_id
+                       and character_id in (p.get("characterIds") or [])), None)
+        if holder and not force:
+            return {"ok": False,
+                    "error": f"{holder['name']} is already playing that character."}
+        if holder and force:
+            # A handover, not a copy: one character has one player.
+            holder["characterIds"] = [c for c in holder["characterIds"]
+                                      if c != character_id]
+
         ids = set(prof.get("characterIds", []))
         ids.add(character_id)
         prof["characterIds"] = sorted(ids)
