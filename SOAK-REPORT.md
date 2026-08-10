@@ -1,6 +1,6 @@
 # Toon Anvil — soak run findings
 
-Generated 2026-08-10T22:04:15+00:00 from `soak/findings.jsonl` (23 findings, 0 already fixed).
+Generated 2026-08-10T22:13:18+00:00 from `soak/findings.jsonl` (24 findings, 0 already fixed).
 
 Every item below was **confirmed against a running server**, not inferred from reading. Anything I could not reproduce is not here.
 
@@ -12,7 +12,7 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 | high | 5 | Breaks a shipped feature in normal play. A DM or player hits this. |
 | medium | 6 | Wrong or confusing, but there is a way round it. |
 | low | 3 | Papercut, polish, or a latent trap that needs an odd setup. |
-| idea | 8 | Not a defect - an expansion or refinement worth discussing. |
+| idea | 9 | Not a defect - an expansion or refinement worth discussing. |
 
 ## Critical
 
@@ -181,6 +181,16 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 **Evidence.** Recorded because a soak report that only lists faults gives a false picture of where the code stands. tools/fuzz.py put ten hostile ids into the record path - '../../etc/passwd', 'a/../../b', '..%2f..%2fserve.py', a 300-character name, '%00', 'con', 'nul', '.', '..' and whitespace - and every one was refused. Zero ACCEPTED results in a 236-request sweep. Combined with the traversal check on /samples (serve.py:1439) and the resolved-path containment on shelf refile and remove, client-supplied strings do not reach the filesystem.
 
 **Proposed fix.** No action. Keep tools/fuzz.py in the repo and re-run it after any route change - it is cheap, it refuses to point at a real data directory, and this result is the baseline it defends.
+
+### GOOD-2-engine-holds-on-fresh-seeds — Confirmed SOUND: 3,600 campaigns on seeds the project has never run, zero invariant violations
+
+**IDEA** · area: engine / campaign emulator · effort: S · status: confirmed
+
+**Evidence.** The gym is fully deterministic - every seed hardcoded - so repeating it adds nothing. The campaign emulator is the one harness here that genuinely varies (runner.js:87 seeds 0..n-1), and every sweep in the repo's history has used that same low range, most recently 0..95. So the whole seed space above 96 had never been touched. Ran all 12 SRD subclasses against seeds 1000-1299 - 300 seeds none of them had ever seen - each to level 20, checking every INVARIANT at every tick: hp within bounds, temp hp non-negative, resources within pool, slots within pool, prepared within budget.
+
+**Reproduction.** 3600 campaigns. violations 0, errors 0, incomplete 0. Driven by calling campaign.runCampaign directly from /sim/sim.html on the isolated instance, rather than runSweep, because runSweep only ever generates seeds 0..n-1 and so cannot reach new ground however large n gets.
+
+**Proposed fix.** No action on the engine - this is the strongest single piece of evidence in the run that the rules core is sound, and it is worth recording precisely because a report of nothing but faults misrepresents where the code stands. One harness note though: runSweep's seed range starting at 0 every time means a bigger sweep is always a SUPERSET of the last one, never new territory. A seedFrom option would make repeat sweeps able to explore instead of re-confirm - cheap, and the difference between a long run that learns something and one that does not.
 
 ### IDEA-1-one-combat-model — The 'one combat model' epic did not land - joining a table still LOSES features
 
