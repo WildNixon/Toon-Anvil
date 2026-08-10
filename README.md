@@ -78,103 +78,65 @@ Everything below was exercised by hand before release — not "it renders", but
 | **Sandbox** | Throwaway in-memory session with an export path back out. |
 | **Settings** | Storage mode, connector status, and local ambience. |
 
-**Not finished — known and deliberate**
+**The old to-do list — every item shipped**
 
-These are limitations, not bugs. Nothing here is hidden at runtime; the app
+This section used to be the project's public list of what was not finished.
+Every item on it has since shipped, each behind the application gym and each
+judged by a ruler that lives in the repo:
+
+- **Spellbook in Build** — Learn/Prepare against the class table's own
+  budgets; Play casts by name, spends the lowest fitting slot, takes up
+  concentration, and the Chronicle records it.
+- **Starting equipment in Build** — book packages grant items, equip armour,
+  and set the purse; skipping keeps the 15 GP stake.
+- **Ability-score methods enforce** — point buy blocks over-budget and
+  out-of-range; standard array assigns only unclaimed values; Manual stays
+  the named escape hatch.
+- **Rolled hit points** — Play → Max HP takes the table's number, marks the
+  tile *rolled*, and hands back to the rules on request.
+- **The bestiary browses by default** — thirty of 330 by challenge rating,
+  CR chips, an Open button per row.
+- **Reactions simulate** — a bounded trigger/response model; ten corpus
+  subclasses spend reactions in measurement.
+- **Corpus tie rate 27% → 17%** — feature actions score what they *do*
+  (conditions, saves, forced movement, parsed damage).
+- **Statblock yield 0.29 → 0.69** — column gutters, no-text-left-behind
+  blocking, statblock stitching, and name rescue across page breaks; the
+  2014 Monster Manual went from 72 creatures to 260, and the Deck's shelf
+  rows report what each book yields.
+- **Subclass grouping 0.40 → 0.76** — in-text names, anchor headings, and
+  name-shape classes, with **named / anchored / guessed** provenance on
+  every result; the 2026 playtest format assembles end to end, spell
+  tables included, and the small-caps letter salad is cured at the glyph
+  level (lines cluster on the true baseline, gated so clean books keep
+  their exact bytes).
+
+**Honest limits — what genuinely remains**
+
+These are the edges, not bugs. Nothing here is hidden at runtime; the app
 reports each one where it matters.
 
-1. **Spell selection lives in Build.** Slots, save DC, attack bonus and
-   always-prepared spells all derive, and Build carries a **Spellbook**: your
-   class list, searchable, with Learn/Prepare against the class table's own
-   cantrip and prepared-spell columns as hard budgets (over-budget imports
-   are flagged, never stripped). Play's Spells page casts by name — the
-   lowest fitting slot is spent, concentration is taken up, and the
-   Chronicle records the spell. Still honest gaps: species cantrips and SRD
-   domain/oath lists exist only as prose, so they aren't auto-granted, and
-   Warlock Pact Magic is not modelled — casting says so rather than faking
-   it.
-2. **Starting equipment is chosen in Build.** Every class (and background)
-   offers its book packages — "Take option A" grants the items, equips the
-   armour, and sets the purse to the option's own gold. What the price list
-   can't name (a Monk's instrument) is still granted, marked unresolved.
-   Skipping keeps the 15 GP stake; the Market remains the other road.
-3. **Ability-score methods enforce.** Point buy blocks over-budget and
-   out-of-range changes, and names pre-existing offenders instead of
-   silently pricing them at zero; standard array assigns through selects
-   that offer only unclaimed values. Manual remains the named escape hatch
-   for tables that roll their own rules.
-4. **Reactions are simulated — a bounded model, honestly bounded.** The mapper
-   classifies each reaction's trigger and response from its prose, and the
-   simulator fires the ones it can model: *hit by an attack* and *taking
-   damage* triggers, answered by halving the damage, subtracting a parsed die,
-   gaining resistance to the triggering type, or striking back (one reaction
-   per round, RAW). Ten corpus subclasses now spend reactions in measurement —
-   the Berserker's Retaliation fires about once every four PC actions. Every
-   other family — reactions to misses, to an ally being hit, to spells, to
-   rolls, and any trigger the classifier can't read — stays inert, and the
-   play guide names the reason per instance. Known over-fire risk: unparsed
-   riders on a trigger ("before your first turn") are not honoured, so such a
-   reaction fires more often in the simulator than at a table.
-5. **17% of the reference corpus still measures as tied.** Feature actions now
-   score what they do — conditions inflicted, saves forced, forced movement,
-   parsed damage — so "push 15 feet" and "frighten on a failed save" finally
-   measure apart, and the tie rate fell from 27%. The remaining ceiling is
-   regex-lossy payload parsing: two subclasses whose features parse to the
-   same payload still measure identically, and "plays most like" says they
-   can't be separated instead of inventing a resemblance.
-6. **Rolled hit points have a field.** Max HP derives by the 2024
-   fixed-value rule; Play → Max HP takes your table's rolled number
-   instead, marks the tile *rolled*, and "Back to the rules" hands the
-   maximum back to the derivation.
-7. **The bestiary browses by default.** Open it and the first thirty of
-   330 are listed by challenge rating, with CR chips to narrow and an Open
-   button per row; typing still finds by name, type, or "cr 5".
-8. **Books yield their statblocks, and the yield is measured.** The statblock
-   parser still round-trips all 330 bundled monsters exactly; what changed is
-   everything upstream of it. Extraction no longer zips two-column pages
-   (a zero-crossing gutter is trusted even when art makes the split lopsided),
-   no text is dropped on the floor (heading-less pages and page-lead prose
-   reach the block stream), statblocks shattered across label-shaped headings
-   stitch back into one block, and a creature whose name was the last line of
-   the previous page gets it back. `tools/yield_eval.py` is the ruler: it
-   counts challenge-rating lines across a book's extracted text as a census
-   and reports recall per shelved book — across a thirteen-book shelf that
-   number went from 0.29 to 0.66, and the 2014 Monster Manual from 72
-   creatures to 256 of a 411-line census. The Deck's shelf rows show each
-   book's yield, because a bestiary that reads "3 monsters" is telling you
-   the extraction struggled. The remaining ceiling is named, not hidden:
-   badly interleaved pages where the two columns mixed mid-line still refuse
-   (about a third of that Monster Manual), a section heading is still refused
-   outright rather than parsed confidently from the first record inside it,
-   and every refusal is kept in `unclassified.json` rather than discarded.
-9. **PDF grouping reads the document's own structure, and says which signal
-   it used.** Three signals, in order of trust: the text names the subclass
-   outright ("3rd level Toymaker feature" — and the level marker counts in a
-   feature's *heading* too, which is how official UA titles them); a heading
-   shaped like a subclass name ("College of Creation") **anchors** the bare
-   "At 3rd level" features beneath it; and only when neither speaks is
-   grouping inferred from level order — and an inferred group of fewer than
-   three features is discarded as noise rather than shipped as a subclass.
-   The name's shape supplies the class (a College is a bard's, an Oath a
-   paladin's) before any word-search of the prose. Measured against a census
-   of every subclass name the extracted text carries, grouping went from
-   matching 40% of names to 70% across the shelf's subclass documents. The
-   library's combine tool remains the correction for what's left — a guess
-   you can correct beats a guess you can't — and every result still carries
-   its coverage number and its **named / anchored / guessed** provenance.
-   The small-caps letter salad that used to be this list's ceiling is
-   fixed at the glyph level: some UA PDFs carry two text streams offset by
-   under two points (merged and zipped character-by-character by
-   top-tolerance extraction) and draw display initials whose boxes dip
-   below their neighbours. Lines are now clustered on the TRUE baseline
-   from each glyph's text matrix — but only where a scatter score (which
-   also sees the all-capitals form of the salad) proves the default
-   extraction is zipped and the rebuild measurably cures it, so books
-   that extract cleanly keep their exact bytes. The 2026 playtest format
-   assembles end to end: "NAME (CLASS)" headings anchor their subclasses
-   with the class taken straight from the parentheses, "LEVEL 3: FEATURE"
-   headings supply levels and clean feature names, and bonus-spell rows
-   ("3 Detect Magic, Shield") land as the subclass's spell table.
+1. **Warlock Pact Magic is not modelled** — casting says so rather than
+   faking it — and species cantrips and SRD domain/oath lists exist only as
+   prose, so they are not auto-granted.
+2. **The reaction model is bounded.** Reactions to misses, to an ally being
+   hit, to spells, and to rolls stay inert, and the play guide names the
+   reason per instance. Unparsed riders on a trigger ("before your first
+   turn") are not honoured, so such a reaction over-fires in the simulator.
+3. **17% of the reference corpus measures as tied.** Payload parsing is
+   regex-lossy: two subclasses whose features parse to the same payload
+   measure identically, and "plays most like" says they can't be separated
+   instead of inventing a resemblance.
+4. **Extraction has a floor.** Pages whose two columns interleaved mid-line
+   still refuse — about a third of that Monster Manual — a section heading
+   is refused outright rather than parsed confidently from the first record
+   inside it, and every refusal is kept in `unclassified.json`, never
+   discarded. A bestiary row that reads "3 monsters" on the Deck is telling
+   you the extraction struggled.
+5. **PDF grouping is still a guess where the document gives no signal.**
+   Inferred groups carry that provenance, the library's combine tool is the
+   correction — a guess you can correct beats a guess you can't — and
+   saving the source page as HTML still beats a PDF.
 
 **Not planned:** anything that reads D&D Beyond, and any bulk crawl of a
 homebrew site.

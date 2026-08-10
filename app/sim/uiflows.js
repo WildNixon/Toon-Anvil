@@ -1918,9 +1918,20 @@ export async function runRoleGate(CheckClass) {
     // usually runs before them. On failure the note carries what the screen
     // ACTUALLY said - this check went red twice with no way to tell whether
     // the mode was blank, erroring, or showing something else entirely.
+    // The instrumented failure note caught this check's long-running flake
+    // red-handed: when it missed, main was still showing SETTINGS - the
+    // seat-plaque switch re-boots the shell, and that re-render can eat
+    // the first nav click while goToMode's success signal races ahead. A
+    // human would click Setup again; the flow does the same, ONCE, and
+    // still fails honestly if Setup never renders its workshop.
     check.ok(await goToMode(doc, 'Setup'), 'Setup opens');
-    const workshop = await waitFor(() => (/homebrew|workshop/i
-      .test(mainText(doc)) ? true : null), { timeout: 10000 });
+    let workshop = await waitFor(() => (/homebrew|workshop/i
+      .test(mainText(doc)) ? true : null), { timeout: 8000 });
+    if (!workshop) {
+      await goToMode(doc, 'Setup');
+      workshop = await waitFor(() => (/homebrew|workshop/i
+        .test(mainText(doc)) ? true : null), { timeout: 6000 });
+    }
     check.ok(!!workshop, 'and carries the homebrew workshop',
       workshop ? '' : `main says: ${mainText(doc).slice(0, 160)}`);
 
