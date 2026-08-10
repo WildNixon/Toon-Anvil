@@ -3698,7 +3698,9 @@ export const BARS = {
   // And again (45 -> 46) with the spellbook.
   // And again (46 -> 47) with the corpus-vectors pipeline.
   // And again (47 -> 48) with reaction classification and action payloads.
-  minFeaturesCovered: 48,
+  // And again (48 -> 50) with the couch epic: the QR join path and the
+  // pregen forge.
+  minFeaturesCovered: 50,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.
