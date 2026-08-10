@@ -606,6 +606,22 @@ th {
   text-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 0 3px rgba(255, 255, 255, .4);
   padding: 2px;
 }
+.map-token {
+  position: absolute;
+  /* Counter-scaled like the pins: a token stays token-sized at any zoom. */
+  transform: translate(-50%, -50%) scale(calc(1 / var(--k)));
+  transform-origin: 50% 50%;
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  color: #fff; text-shadow: 0 1px 1px rgba(0, 0, 0, .6);
+  background: #6d5c43; border: 2px solid rgba(0, 0, 0, .4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+  cursor: pointer; padding: 0;
+}
+.map-token[data-side='enemy'] { background: #8e2a1c; }
+.map-token[data-side='ally'] { background: #2f5d50; }
+
 .map-pin[data-kind='party'] { color: #2e6b46; font-size: 24px; }
 .map-pin[data-kind='quest'] { color: #8a6a24; }
 .map-pin[data-kind='faction'] { color: #2e4a6b; }

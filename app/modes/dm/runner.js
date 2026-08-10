@@ -121,6 +121,18 @@ export function toggleSide(id) {
   c.side = c.side === 'enemy' ? 'ally' : 'enemy';
 }
 
+/**
+ * Place a combatant on the battle board. Coordinates are normalized 0..1
+ * (the pin convention) and CLAMPED here - the board is the one writer, and
+ * a token must never leave the map no matter what a drag reports.
+ */
+export function setTokenPosition(id, x, y) {
+  const c = state.combatants.find((v) => v.id === id);
+  if (!c) return;
+  c.x = Math.min(1, Math.max(0, Number(x) || 0));
+  c.y = Math.min(1, Math.max(0, Number(y) || 0));
+}
+
 /** Is this encounter shared with a table, or scratch in this browser? */
 export function isShared() { return session.isOpen(); }
 

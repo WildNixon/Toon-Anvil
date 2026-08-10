@@ -180,9 +180,23 @@ function mapPanel() {
   const host = el('div', {});
   panel.append(host);
   // Read-only: what the server sent is already only what was revealed.
-  mapView(host, { record: mapRecord, editable: false });
+  // Battle tokens ride the redacted encounter - only PLACED fighters show
+  // (the DM's bench is the DM's mess), and the players watch the same
+  // board the DM is dragging on the Stage.
+  const tokens = (record?.combatants || [])
+    .filter((c) => Number.isFinite(c.x) && Number.isFinite(c.y))
+    .map((c) => ({
+      id: c.id,
+      label: c.name,
+      x: c.x,
+      y: c.y,
+      side: c.side,
+      colour: c.kind === 'pc' ? session.colourOf(c.characterId) : null,
+    }));
+  mapView(host, { record: mapRecord, editable: false, tokens });
   panel.append(el('p', { class: 'welcome-fine', style: 'margin-top:6px' },
-    'Wheel to zoom, drag to pan. What you see is what has been revealed.'));
+    'Wheel to zoom, drag to pan. What you see is what has been revealed'
+    + (tokens.length ? ' — and the fight, as the DM moves it.' : '.')));
   return panel;
 }
 

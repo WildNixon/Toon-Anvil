@@ -1610,7 +1610,7 @@ export const FLOWS = [
   {
     id: 'prepared_encounters',
     title: 'Save the fight for the wrong door, deploy it fresh',
-    async run(c, { doc }) {
+    async run(c, { doc, win }) {
       c.feature('ui', 'dm', 'prepared', 'encounters');
       c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
       c.ok(await goToMode(doc, 'Stage', 'Prepared'),
@@ -1653,6 +1653,31 @@ export const FLOWS = [
       { timeout: 6000 });
       c.ok(!!grew, 'deploying adds the monsters to the live fight',
         `mentions before ${before}`);
+
+      // --- the battle board: the fight lands on the campaign map --------
+      const board = await waitFor(() => doc.querySelector('main .map-token')
+        || null, { timeout: 8000 });
+      c.ok(!!board, 'the fight lands on the campaign map as tokens');
+      if (!board) return;
+      const beforeLeft = board.style.left;
+      // A synthesized drag - down on the token, a move, a drop. The map's
+      // pointer capture is try/caught for exactly this untrusted path.
+      const frameEl = board.closest('.map-frame');
+      const rect = board.getBoundingClientRect();
+      const opts = (x, y) => ({ bubbles: true, pointerId: 1,
+        clientX: x, clientY: y });
+      board.dispatchEvent(new win.PointerEvent('pointerdown',
+        opts(rect.x + 8, rect.y + 8)));
+      frameEl.dispatchEvent(new win.PointerEvent('pointermove',
+        opts(rect.x + 60, rect.y + 35)));
+      frameEl.dispatchEvent(new win.PointerEvent('pointerup',
+        opts(rect.x + 60, rect.y + 35)));
+      const dragged = await waitFor(() => {
+        const t = doc.querySelector('main .map-token');
+        return t && t.style.left !== beforeLeft ? true : null;
+      }, { timeout: 5000 });
+      c.ok(!!dragged, 'a dragged token moves, one write per drop',
+        `left ${beforeLeft} → ${doc.querySelector('main .map-token')?.style.left}`);
     },
   },
 
@@ -2616,9 +2641,10 @@ export async function runPlayerView(CheckClass) {
         id: 'current', round: 3, turn: 1, started: true, showMonsterHp: false,
         combatants: [
           { id: 'c1', kind: 'pc', name: 'Gym Player', ac: 16, hp: 22,
-            hpMax: 30, init: 18, conditions: [] },
+            hpMax: 30, init: 18, conditions: [], side: 'ally',
+            x: 0.3, y: 0.4 },
           { id: 'c2', kind: 'monster', name: 'Gym Ogre', ac: 11, hp: 13,
-            hpMax: 59, init: 9, conditions: [] },
+            hpMax: 59, init: 9, conditions: [], side: 'enemy' },
         ],
       }),
     });
@@ -2748,6 +2774,21 @@ export async function runPlayerView(CheckClass) {
     }).then((r) => r.text());
     check.ok(mapWire.includes('Shown Pin') && !mapWire.includes('HIDDENPIN'),
       'the map arrives with only its revealed pins');
+
+    // The battle board reaches the players: the placed fighter shows as a
+    // token on their map tab, the unplaced one stays on the DM's bench.
+    const mapTab = [...doc.querySelectorAll('main button')]
+      .find((b) => b.textContent.trim() === 'The map');
+    check.ok(!!mapTab, 'the Table offers the map tab');
+    mapTab?.click();
+    const tokensShown = await waitFor(() => {
+      const tk = doc.querySelectorAll('main .map-token');
+      return tk.length ? tk : null;
+    }, { timeout: 8000 });
+    check.eq(tokensShown ? tokensShown.length : 0, 1,
+      'exactly the PLACED fighter appears as a token');
+    check.ok(!!doc.querySelector('main .map-token[data-side="ally"]'),
+      'wearing its side');
 
     // --- the join code stays off a player's screen ------------------------
     // On loopback the wire legitimately carries it (every browser on the

@@ -16,7 +16,10 @@
 import { getState, el, toast } from '../../core/store.js';
 import { db } from '../../core/db.js';
 import * as session from '../../core/session.js';
-import { runnerPanel, publish, state as fight, addMonsters } from './runner.js';
+import {
+  runnerPanel, publish, state as fight, addMonsters, setTokenPosition,
+} from './runner.js';
+import { mapView } from '../../ui/map.js';
 import { partyPanel } from './party.js';
 import { diceRail } from '../../ui/components/dicerail.js';
 import { BEDS, playBed, stopBed, nowPlaying } from '../../core/providers.js';
@@ -49,6 +52,7 @@ function draw() {
   }));
 
   if (campaign) box.append(preparedPanel());
+  if (campaign?.mapId && fight.combatants.length) box.append(boardPanel());
 
   box.append(partyPanel(getState().characters || [], ctx.sources()));
 
@@ -147,6 +151,50 @@ async function saveTemplates(templates) {
   await db.put('campaigns', fresh);
   campaign = fresh;
   draw();
+}
+
+/**
+ * The battle board: the fight lands on the campaign map. Tokens are the
+ * combatants; a drag persists ONE position write per drop and publishes,
+ * so the players' Table shows the same board a beat later. Tokens without
+ * a position sit on a bench row along the bottom until the DM places them.
+ * Deliberately no grid, no fog, no measurement - tokens on a picture is
+ * the couch sweet spot; a VTT is out of scope.
+ */
+function boardPanel() {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Board'));
+  const host = el('div', {});
+  panel.append(host);
+  db.get('maps', campaign.mapId).then((rec) => {
+    if (!rec) {
+      host.append(el('p', { class: 'muted', style: 'font-size:13px' },
+        'The campaign has no map on the Deck yet.'));
+      return;
+    }
+    const tokens = fight.combatants.map((c, i) => ({
+      id: c.id,
+      label: c.name,
+      x: Number.isFinite(c.x) ? c.x : 0.06 + (i % 10) * 0.09,
+      y: Number.isFinite(c.y) ? c.y : 0.94,
+      side: c.side,
+      colour: c.kind === 'pc' ? session.colourOf(c.characterId) : null,
+    }));
+    mapView(host, {
+      record: rec,
+      editable: false,
+      tokens,
+      tokensEditable: true,
+      onTokenMoved: (id, x, y) => {
+        setTokenPosition(id, x, y);
+        publish();
+      },
+    });
+  });
+  panel.append(el('p', { class: 'welcome-fine', style: 'margin-top:6px' },
+    'Drag the circles. Unplaced fighters wait on the bench row at the '
+    + 'bottom; players watch the same board on their Table.'));
+  return panel;
 }
 
 /**

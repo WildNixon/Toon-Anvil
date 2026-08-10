@@ -31,6 +31,13 @@ export function mapView(host, {
   regions = [],
   onChange = null,
   onPartyMoved = null,
+  // Battle tokens: circular initial-chips in the same counter-scaled layer
+  // as the pins. [{id, label, x, y, side?, colour?}], coordinates 0..1.
+  // Display state belongs to the caller; a finished drag reports through
+  // onTokenMoved(id, x, y) - one call per drop, like pin writes.
+  tokens = null,
+  tokensEditable = false,
+  onTokenMoved = null,
 }) {
   let k = 1;
   let px = 0;
@@ -71,26 +78,46 @@ export function mapView(host, {
   /* ---- pan (and pin drag) ------------------------------------------ */
   let drag = null;
   frame.addEventListener('pointerdown', (e) => {
+    const tokenBtn = e.target.closest?.('.map-token');
     const pinBtn = e.target.closest?.('.map-pin');
-    if (pinBtn && editable) {
+    if (tokenBtn && tokensEditable) {
+      drag = { kind: 'token', id: tokenBtn.dataset.id, moved: false };
+    } else if (pinBtn && editable) {
       drag = { kind: 'pin', id: pinBtn.dataset.id, moved: false };
     } else {
       drag = { kind: 'pan', x: e.clientX - px, y: e.clientY - py };
     }
-    frame.setPointerCapture(e.pointerId);
+    // try/catch: synthetic pointer events (the UI tests) have no active
+    // pointer to capture, and a throw here would kill the drag machinery.
+    try { frame.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
   });
+  const layerPoint = (e) => {
+    const rect = layer.getBoundingClientRect();
+    return {
+      x: Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)),
+      y: Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height)),
+    };
+  };
   frame.addEventListener('pointermove', (e) => {
     if (!drag) return;
     if (drag.kind === 'pan') {
       px = e.clientX - drag.x;
       py = e.clientY - drag.y;
       apply();
+    } else if (drag.kind === 'token') {
+      const t = (tokens || []).find((x) => x.id === drag.id);
+      if (!t) return;
+      const p = layerPoint(e);
+      t.x = p.x;
+      t.y = p.y;
+      drag.moved = true;
+      drawTokens();
     } else {
       const pin = (record.pins || []).find((x) => x.id === drag.id);
       if (!pin) return;
-      const rect = layer.getBoundingClientRect();
-      pin.x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-      pin.y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+      const p = layerPoint(e);
+      pin.x = p.x;
+      pin.y = p.y;
       drag.moved = true;
       drawPins();
     }
@@ -101,6 +128,10 @@ export function mapView(host, {
       onChange?.(record);
       const pin = (record.pins || []).find((x) => x.id === drag.id);
       if (pin?.kind === 'party') settleParty(pin);
+    }
+    if (drag?.kind === 'token' && drag.moved) {
+      const t = (tokens || []).find((x) => x.id === drag.id);
+      if (t) onTokenMoved?.(t.id, t.x, t.y);
     }
     drag = null;
     try { frame.releasePointerCapture(e.pointerId); } catch { /* gone */ }
@@ -241,12 +272,33 @@ export function mapView(host, {
     drawEditor();
   });
 
+  /* ---- battle tokens ------------------------------------------------ */
+  const initials = (label) => String(label || '?').trim().split(/\s+/)
+    .map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+
+  function drawTokens() {
+    for (const old of layer.querySelectorAll('.map-token')) old.remove();
+    for (const t of tokens || []) {
+      layer.append(el('button', {
+        class: 'map-token',
+        'data-id': t.id,
+        'data-side': t.side || 'enemy',
+        title: t.label,
+        'aria-label': `${t.label} — battle token`,
+        style: `left:${(t.x * 100).toFixed(2)}%;top:${(t.y * 100).toFixed(2)}%`
+          + (t.colour ? `;background:${t.colour}` : ''),
+      }, initials(t.label)));
+    }
+  }
+
   apply();
   drawPins();
+  if (tokens) drawTokens();
 
   return {
     armPlacement,
     redrawPins: drawPins,
+    redrawTokens: drawTokens,
     destroy: () => { frame.remove(); editor.remove(); },
   };
 }

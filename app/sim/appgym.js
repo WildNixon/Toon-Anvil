@@ -3664,6 +3664,53 @@ export const SUITES = [
         },
       },
       {
+        id: 'board_positions_clamped_and_stable',
+        title: 'Tokens stay on the map, and reinforcements never steal a turn',
+        run(c, { dm, monsters }) {
+          c.feature('shared', 'encounter', 'board');
+          const runner = dm.runner;
+          runner.reset();
+          const goblin = monsters.find((m) => /goblin/i.test(m.name))
+            || monsters[0];
+          runner.addMonsters(goblin, 2);
+          const [a, b] = runner.state.combatants;
+
+          runner.setTokenPosition(a.id, 0.25, 0.75);
+          c.ok(a.x === 0.25 && a.y === 0.75, 'a legal drop lands as given');
+          runner.setTokenPosition(a.id, 4.2, -3);
+          c.ok(a.x === 1 && a.y === 0, 'an off-map drop is clamped to the edge',
+            `${a.x},${a.y}`);
+
+          const snap = runner.snapshot();
+          c.ok(snap.combatants[0].x === 1 && snap.combatants[0].y === 0,
+            'positions travel with the snapshot');
+          c.ok(!('x' in (snap.combatants[1] || {}))
+            || snap.combatants[1].x === undefined,
+          'an unplaced fighter carries no position at all');
+
+          // A record from before the board existed adopts cleanly.
+          runner.reset();
+          runner.adopt({ combatants: [
+            { id: 'c1', kind: 'pc', name: 'P', hp: 9, hpMax: 9 }],
+          round: 2, turn: 0, started: true });
+          c.ok(runner.state.combatants[0].x === undefined,
+            'legacy records stay unplaced rather than inventing a spot');
+
+          // Mid-fight reinforcements append - whoever was acting keeps
+          // acting, whatever arrives through the ambush drawer.
+          runner.reset();
+          runner.addMonsters(goblin, 2);
+          runner.state.started = true;
+          runner.state.turn = 1;
+          const acting = runner.state.combatants[1].id;
+          runner.addMonsters(goblin, 3);
+          c.eq(runner.state.combatants[runner.state.turn].id, acting,
+            'the active combatant is unchanged by a deploy');
+          c.eq(runner.state.combatants.length, 5, 'and everyone arrived');
+          runner.reset();
+        },
+      },
+      {
         id: 'adopt_keeps_ids_unique',
         title: 'Adding to an adopted fight does not collide with what arrived',
         run(c, { dm, monsters }) {
@@ -4415,6 +4462,16 @@ export const MUTATIONS = [
           const res = ctx.dm.runner.applyTo(id, delta, type);
           if (res) delete res.concentrationDc;
           return res;
+        } } } }),
+  },
+  {
+    id: 'board_tokens_unclamped',
+    what: 'a dragged token can leave the map entirely',
+    patch: (ctx) => ({ dm: { ...ctx.dm,
+      runner: { ...ctx.dm.runner,
+        setTokenPosition: (id, x, y) => {
+          const c = ctx.dm.runner.state.combatants.find((v) => v.id === id);
+          if (c) { c.x = Number(x); c.y = Number(y); }
         } } } }),
   },
 ];
