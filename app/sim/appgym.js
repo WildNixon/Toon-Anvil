@@ -1896,6 +1896,41 @@ export const SUITES = [
         },
       },
       {
+        id: 'code_rides_one_trusted_field',
+        title: 'The join code lives in exactly one serve-layer field',
+        async run(c, { table }) {
+          c.feature('table', 'join', 'security');
+          await table.close();
+          const closed = await table.status();
+          c.ok(!('code' in closed.body),
+            'a closed table has no code field at all',
+            JSON.stringify(closed.body).slice(0, 120));
+
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          c.ok(kim.ok, 'a player joined');
+          if (!kim.ok) { await table.close(); return; }
+
+          // The gym runs on loopback - the trusted seat - so every request
+          // from here legitimately receives the top-level code, and the
+          // off-loopback refusal is out of reach: _is_local() reads the
+          // socket peer address, which a same-origin fetch cannot fake.
+          // What IS provable from here: the code must live ONLY in that one
+          // field the serve layer attaches. status() itself never embeds
+          // it, so stripping the top-level key must erase every trace.
+          const dmView = await table.status(dm.token);
+          c.eq(dmView.body.code, dm.code, 'the DM seat is shown the code');
+          const kimView = await table.status(kim.token);
+          c.eq((kimView.body.me || {}).role, 'player',
+            'and the player view really carried a player token');
+          const rest = JSON.stringify({ ...kimView.body, code: undefined });
+          c.ok(!rest.includes(dm.code),
+            'outside that field the payload never carries the code',
+            rest.slice(0, 160));
+          await table.close();
+        },
+      },
+      {
         id: 'server_refuses_the_wrong_writer',
         title: 'A player cannot write another player\'s character',
         async run(c, { table }) {

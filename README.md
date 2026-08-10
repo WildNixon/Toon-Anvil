@@ -195,7 +195,7 @@ working with no network.
 | **Deck** | The campaign as a control panel. The in-game **day** and its **weather** (computed from the campaign's seed — deterministic, so every screen derives the same sky and any day is recomputable), the **interactive map** (drop the setting's image; pan, zoom, pin locations, factions, quests and the party; reveal pins one by one), **factions** with standing sliders, public toggles and SECRET agendas plus a standing-over-days chart, and the **economy**: a price dial per region that the players' Market actually charges — turn it and their open screens re-price, live. Also ingests a setting document: split by headings, file each section as a region, faction, NPC or lore with one click. |
 | **World** | The prep: bestiary, encounter builder, treasure hoards, improv generators, rules reference — behind sub-tabs, each with its own search. Nothing here redraws off the live feed, so a half-typed search survives a player's die roll. |
 | **Story** | The whole party's event log as it happens — every roll, purchase and promise with the character's name on it — plus the open threads: promises unkept, secrets unused, NPCs met once. Read-only: the story is what the table did. |
-| **Setup** | Before the campaign: open the table (the code shows big, and only on the server's own machine), the forge toggle, and the homebrew workshop — homebrew is added and accepted by the DM here, before the start, and stays a DM-only tool after. |
+| **Setup** | Before the campaign: open the table (the code shows big, and only to the DM's seat — the server's own machine, or any device holding the DM token), the forge toggle, and the homebrew workshop — homebrew is added and accepted by the DM here, before the start, and stays a DM-only tool after. |
 
 **Treasure and improv results still say where they came from** — SRD content
 is marked `SRD`, authored tables are marked `authored`, and a DM reading one
@@ -247,7 +247,9 @@ python run.py --lan
 
 That is the only command that makes Toon Anvil reachable by other machines —
 without it nothing changes. It binds every interface, opens *your* browser on
-`127.0.0.1` (the server treats loopback as the DM's trusted seat), and prints
+`127.0.0.1` (the server treats loopback as the DM's trusted seat — and once a
+table is open, the DM token counts as that seat too, so the join code follows
+you if you carry a laptop to the couch), and prints
 two addresses: the one you open and the one players type. The first `--lan`
 run may raise the Windows firewall prompt — allow Python on **Private**
 networks or phones will time out silently.

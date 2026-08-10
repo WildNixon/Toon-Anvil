@@ -2502,6 +2502,20 @@ export async function runPlayerView(CheckClass) {
     }).then((r) => r.text());
     check.ok(mapWire.includes('Shown Pin') && !mapWire.includes('HIDDENPIN'),
       'the map arrives with only its revealed pins');
+
+    // --- the join code stays off a player's screen ------------------------
+    // On loopback the wire legitimately carries it (every browser on the
+    // DM's machine is the trusted seat), so the screen is the claim here:
+    // no player-reachable surface may ever DRAW a join code. Checked on the
+    // two screens a player lives on. The joingate placeholder is 'ANVIL-....'
+    // and dots are not in the code alphabet, so the shape regex cannot
+    // false-positive on static copy.
+    const codeShape = /ANVIL-[ACDEFHJKLMNPRTUVWXY34679]{4}/;
+    check.ok(!codeShape.test(doc.documentElement.innerHTML),
+      'no join code is drawn on the Party screen', opened.body.code);
+    await goToMode(doc, 'Play');
+    check.ok(!codeShape.test(doc.documentElement.innerHTML),
+      'nor on the player\'s own sheet', opened.body.code);
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {

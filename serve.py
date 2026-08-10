@@ -1238,9 +1238,13 @@ class Handler(SimpleHTTPRequestHandler):
             if mod is None:
                 return self._send_json({"open": False, "me": None, "profiles": []})
             out = mod.status(self._token())
-            # The code goes only to the machine running the server, so the DM
-            # can read it off their own screen and say it aloud.
-            if out["open"] and self._is_local():
+            # The code goes to the machine running the server, or to whoever
+            # holds the DM token: the DM who opened the table at the desk and
+            # then sat on the couch with a laptop is still the DM. Players
+            # never see it - status() itself never embeds it, this branch
+            # adds it only for the trusted seat.
+            me = out.get("me") or {}
+            if out["open"] and (self._is_local() or me.get("role") == "dm"):
                 out["code"] = mod.read().get("code")
             return self._send_json(out)
 

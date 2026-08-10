@@ -6,9 +6,9 @@
  * because homebrew is added and accepted by the DM before the start, and
  * stays a DM-only tool after.
  *
- * The join code renders only on the machine running the server: the server
- * itself withholds it from anyone else, so this screen cannot leak what it
- * was never given.
+ * The join code renders only for the trusted seat - the machine running the
+ * server, or whoever holds the DM token: the server itself withholds it from
+ * everyone else, so this screen cannot leak what it was never given.
  */
 
 import { el, toast } from '../../core/store.js';
@@ -78,7 +78,7 @@ function tablePanel() {
     }, status.code));
   } else {
     panel.append(el('p', { class: 'muted', style: 'font-size:13px' },
-      'The code shows only on the machine running the server.'));
+      "The code shows only to the DM's seat."));
   }
 
   const players = (status.profiles || []).filter((p) => p.role === 'player');
