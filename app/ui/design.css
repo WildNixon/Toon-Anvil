@@ -317,7 +317,12 @@ a { color: var(--accent-text); }
 .brand { font-family: var(--display); font-weight: 700; font-size: 21px; text-transform: uppercase; letter-spacing: .04em; }
 .brand em { font-style: normal; color: var(--chrome-gold); }
 
-nav.modes { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; align-items: center; }
+/* position: relative so absolutely-positioned children (the .vh
+   screen-reader spans on nav buttons) anchor INSIDE the nav. Without it
+   their containing block is the document, and a .vh span sitting beside a
+   scrolled-away button stretches the PAGE to the button's layout position -
+   the phone scrolled sideways because of text nobody can see. */
+nav.modes { position: relative; display: flex; gap: 4px; flex: 1; flex-wrap: wrap; align-items: center; }
 nav.modes button {
   font-family: var(--mono); font-size: 12px; font-weight: 600;
   letter-spacing: .1em; text-transform: uppercase;
@@ -462,7 +467,9 @@ label.field {
 
 input, select, textarea {
   width: 100%;
-  font-family: var(--serif); font-size: 15px;
+  /* 16px, not 15: iOS zooms the whole page on focusing any input under
+     16px, and the couch is full of iPhones. */
+  font-family: var(--serif); font-size: 16px;
   padding: 9px 11px;
   background: var(--paper); color: var(--ink);
   border: 1px solid var(--etch); border-radius: var(--radius);
@@ -662,6 +669,28 @@ th {
    flare is flavour, and prefers-reduced-motion (below) removes it without
    removing the statement. */
 
+/* ---------- action sheet: the prompt() replacement --------------------- */
+
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 210;
+  background: rgba(20, 14, 8, .5);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.action-sheet {
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--etch); border-bottom: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, .3);
+  width: min(480px, 100vw); padding: 14px 16px 18px;
+  max-height: 80vh; overflow-y: auto;
+}
+.action-sheet h3 { margin: 0 0 10px; }
+.action-sheet .sheet-act {
+  display: block; width: 100%; min-height: 46px; margin-top: 8px;
+  text-align: left;
+}
+.action-sheet .btnrow .sheet-act { display: inline-block; width: auto; }
+
 #rollcards {
   position: fixed; right: 14px; bottom: 72px; z-index: 190;
   display: flex; flex-direction: column; gap: 8px;
@@ -747,6 +776,11 @@ th {
   /* Ten labels cannot wrap under a sticky bar without eating the screen:
      the nav becomes one scrollable row instead. */
   nav.modes {
+    /* min-width: 0 or the scroll never engages: a flex child defaults to
+       min-width auto, refuses to shrink below its content, and the whole
+       PAGE scrolls sideways instead of the nav - which is exactly what
+       phones did until the phone_layout flow measured it. */
+    min-width: 0;
     flex-wrap: nowrap; overflow-x: auto;
     scroll-snap-type: x proximity;
     scrollbar-width: none;
@@ -760,6 +794,21 @@ th {
   .rb-conds .chip.rb-more { display: inline-flex; }
   .rb-switch select { max-width: 110px; }
   main { padding: 16px 12px 80px; }
+
+  /* Fingers, not cursors: the taps a fight leans on grow to 44px. Text
+     stays exactly what it was - the − and + are load-bearing strings. */
+  .rb-adjust button { min-width: 44px; min-height: 44px; }
+  button.act.small { min-height: 44px; }
+  .stat.clickable { min-height: 44px; }
+}
+
+@media (max-width: 400px) {
+  /* Chrome slims so play keeps the pixels on a 375px phone. #who stays -
+     "whose phone is this" matters MOST on a phone - it just shrinks. */
+  .topbar { padding: 6px 10px; gap: 8px; }
+  .topbar .who { font-size: 10px; }
+  main { padding: 12px 8px 76px; }
+  .panel { padding: 12px 10px; }
 }
 
 /* ------------------------------------------------------------------ */

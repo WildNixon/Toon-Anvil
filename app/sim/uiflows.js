@@ -2901,6 +2901,98 @@ export async function runQuickParty(CheckClass) {
   };
 }
 
+/**
+ * The phone pass: at 390px nothing scrolls the page sideways, inputs are
+ * 16px (under that, iOS zooms the whole page on focus), and the taps a
+ * fight leans on are 44px. A dedicated narrow frame, because every other
+ * flow runs at desktop width and would never catch a regression here.
+ */
+export async function runPhoneLayout(CheckClass) {
+  const check = new CheckClass('phone_layout');
+  const t0 = performance.now();
+  let error = null;
+  let frame = null;
+  try {
+    check.feature('ui', 'phone', 'sheet', 'party');
+
+    frame = document.createElement('iframe');
+    frame.src = '/index.html?storage=memory';
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:390px;'
+      + 'height:844px;border:0';
+    document.body.append(frame);
+    await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
+    const doc = frame.contentDocument;
+    const win = frame.contentWindow;
+
+    const ready = await waitFor(() => (doc.querySelector('main') ? true : null),
+      { timeout: 15000 });
+    check.ok(!!ready, 'the app boots at phone width');
+    if (!ready) throw new Error('no app at 390px');
+
+    // Take the player seat if the welcome asks.
+    const seatBtn = [...doc.querySelectorAll('.welcome button')]
+      .find((b) => /player/i.test(b.textContent));
+    seatBtn?.click();
+    await waitUntilSettled(doc);
+
+    // A character, so the sheet and the ribbon exist.
+    const buildOpen = await goToMode(doc, 'Build', 'Roster');
+    check.ok(buildOpen, 'Build opens at phone width');
+    if (buildOpen) {
+      button(doc, 'New character')?.click();
+      await waitUntilSettled(doc);
+    }
+
+    const noSideScroll = (label) => {
+      const m = doc.querySelector('main');
+      check.ok(m.scrollWidth <= m.clientWidth + 1,
+        `${label}: content never scrolls the page sideways`,
+        `scrollWidth ${m.scrollWidth} vs ${m.clientWidth}`);
+      check.ok(doc.documentElement.scrollWidth <= 391,
+        `${label}: nor does the document`,
+        String(doc.documentElement.scrollWidth));
+    };
+
+    check.ok(await goToMode(doc, 'Play', 'Abilities'), 'the sheet opens');
+    noSideScroll('the sheet');
+
+    const anyInput = doc.querySelector('main input[type=number], main input[type=text]');
+    check.eq(anyInput ? win.getComputedStyle(anyInput).fontSize : 'none',
+      '16px', 'inputs are 16px - under that iOS zooms the page on focus');
+
+    const adjust = [...doc.querySelectorAll('.rb-adjust button')];
+    check.ok(adjust.length >= 2, 'the ribbon adjust buttons exist');
+    check.ok(adjust.every((b) => {
+      const r = b.getBoundingClientRect();
+      return r.width >= 44 && r.height >= 44;
+    }), 'and are 44px finger targets',
+    adjust.map((b) => { const r = b.getBoundingClientRect();
+      return `${Math.round(r.width)}x${Math.round(r.height)}`; }).join(', '));
+
+    // The party board (players' main read of the fight) fits too.
+    check.ok(await ensureSeat(doc, 'dm'), 'the DM shell is reachable');
+    check.ok(await goToMode(doc, 'Stage', 'Pass. Perc'),
+      'the party board renders at phone width');
+    noSideScroll('the party board');
+  } catch (err) {
+    error = `${err.name}: ${err.message}`;
+  } finally {
+    frame?.remove();
+  }
+  return {
+    id: 'phone_layout',
+    title: 'A 390px phone plays without fighting the page',
+    passed: check.passed,
+    total: check.total,
+    failures: check.failures,
+    features: [...check.touched],
+    error,
+    empty: !error && check.total === 0,
+    ok: !error && check.total > 0 && check.failures.length === 0,
+    ms: +(performance.now() - t0).toFixed(0),
+  };
+}
+
 export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
   const frame = document.createElement('iframe');
   // Ephemeral: no real character is created, no real chronicle is appended to.
@@ -2979,5 +3071,7 @@ export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
   onProgress({ flow: 'join_deeplink' });
   results.push(await runQuickParty(CheckClass));
   onProgress({ flow: 'quick_party' });
+  results.push(await runPhoneLayout(CheckClass));
+  onProgress({ flow: 'phone_layout' });
   return results;
 }

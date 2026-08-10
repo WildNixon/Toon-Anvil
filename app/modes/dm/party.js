@@ -121,7 +121,9 @@ export function partyPanel(characters, sources) {
     tr.append(el('td', { class: 'mono' }, String(r.insight)));
     table.append(tr);
   }
-  panel.append(table);
+  // Eight columns on a phone must scroll INSIDE the panel, never widen the
+  // page - this screen is a player's main view of the fight on the couch.
+  panel.append(el('div', { class: 'scroll-x' }, table));
 
   // Saves get their own table: eight columns of numbers is already dense, and
   // saves are looked up in a different moment ("everyone make a Dex save").
@@ -141,7 +143,7 @@ export function partyPanel(characters, sources) {
     }
     saves.append(tr);
   }
-  panel.append(saves);
+  panel.append(el('div', { class: 'scroll-x' }, saves));
 
   const withSenses = rows.filter((r) => r.senses.length || r.resistances.length);
   if (withSenses.length) {

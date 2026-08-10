@@ -19,6 +19,75 @@ import { el } from '../core/store.js';
  * `items` is [{ id, label }]; `onSelect(id)` is called with the clicked id.
  * The caller owns the state and redraws; this stays stateless.
  */
+/**
+ * A bottom action sheet - the phone-sized replacement for window.prompt
+ * menus, which cannot be styled, cannot be tapped comfortably, and cannot
+ * be driven by the UI tests at all. Resolves the picked action's id, or
+ * null on cancel/dismiss.
+ */
+export function actionSheet({ title, actions = [] }) {
+  return new Promise((resolve) => {
+    const backdrop = el('div', { class: 'sheet-backdrop' });
+    const done = (v) => { backdrop.remove(); resolve(v); };
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) done(null);
+    });
+    const sheet = el('div', {
+      class: 'action-sheet', role: 'dialog', 'aria-modal': 'true',
+      'aria-label': title,
+    });
+    sheet.append(el('h3', {}, title));
+    for (const a of actions) {
+      sheet.append(el('button', {
+        class: 'act sheet-act', onClick: () => done(a.id),
+      }, a.label));
+    }
+    sheet.append(el('button', {
+      class: 'act ghost sheet-act', onClick: () => done(null),
+    }, 'Cancel'));
+    backdrop.append(sheet);
+    document.body.append(backdrop);
+    sheet.querySelector('button')?.focus();
+  });
+}
+
+/**
+ * One question, one input - the window.prompt replacement. Resolves the
+ * typed string (possibly empty), or null on cancel. Enter submits.
+ */
+export function sheetPrompt({ title, label, value = '', type = 'text' }) {
+  return new Promise((resolve) => {
+    const backdrop = el('div', { class: 'sheet-backdrop' });
+    const done = (v) => { backdrop.remove(); resolve(v); };
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) done(null);
+    });
+    const sheet = el('div', {
+      class: 'action-sheet', role: 'dialog', 'aria-modal': 'true',
+      'aria-label': title,
+    });
+    sheet.append(el('h3', {}, title));
+    const input = el('input', { type, value, 'aria-label': label });
+    sheet.append(el('label', { class: 'field' }, label));
+    sheet.append(input);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') done(input.value);
+      if (e.key === 'Escape') done(null);
+    });
+    const row = el('div', { class: 'btnrow', style: 'margin-top:10px' });
+    row.append(el('button', {
+      class: 'act sheet-act', onClick: () => done(input.value),
+    }, 'OK'));
+    row.append(el('button', {
+      class: 'act ghost sheet-act', onClick: () => done(null),
+    }, 'Cancel'));
+    sheet.append(row);
+    backdrop.append(sheet);
+    document.body.append(backdrop);
+    input.focus();
+  });
+}
+
 export function tabs({ items, active, onSelect }) {
   const bar = el('div', { class: 'tabs', role: 'tablist' });
   for (const { id, label } of items) {

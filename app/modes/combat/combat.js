@@ -16,6 +16,7 @@ import {
 } from '../../core/engine.js';
 import { CONDITIONS } from '../../core/rules2024.js';
 import { saveCharacter, go } from '../../app.js';
+import { actionSheet, sheetPrompt } from '../../ui/kit.js';
 
 export const title = 'Combat';
 
@@ -237,32 +238,53 @@ async function damageCombatant(index, delta) {
   draw();
 }
 
-function editCombatant(index) {
+async function editCombatant(index) {
   const e = { ...enc() };
   const c = e.combatants[index];
-  const choice = prompt(
-    `${c.name}\n\n`
-    + '1 = add condition\n2 = clear conditions\n3 = set concentration\n'
-    + '4 = death save\n5 = remove from encounter',
-    '1',
-  );
-  if (choice === '1') {
-    const name = prompt(`Condition (${CONDITIONS.join(', ')})`, 'Prone');
+  // Was a numbered window.prompt menu - untappable on a phone and
+  // invisible to the UI tests. The action sheet is both.
+  const choice = await actionSheet({
+    title: c.name,
+    actions: [
+      { id: 'condition', label: 'Add condition' },
+      { id: 'clear', label: 'Clear conditions' },
+      { id: 'conc', label: 'Set concentration' },
+      { id: 'death', label: 'Death save' },
+      { id: 'remove', label: 'Remove from encounter' },
+    ],
+  });
+  if (!choice) return;
+  if (choice === 'condition') {
+    const name = await actionSheet({
+      title: 'Condition',
+      actions: CONDITIONS.map((n) => ({ id: n, label: n })),
+    });
     if (!name) return;
-    const rounds = parseInt(prompt('Lasts how many rounds? (blank = until removed)', ''), 10);
+    const roundsStr = await sheetPrompt({
+      title: name, type: 'number',
+      label: 'Lasts how many rounds? (blank = until removed)',
+    });
+    if (roundsStr === null) return;
+    const rounds = parseInt(roundsStr, 10);
     c.conditions = [...(c.conditions || []),
       { name, rounds: Number.isFinite(rounds) ? rounds : null }];
     log('condition_gained', { target: c.name, condition: name });
-  } else if (choice === '2') {
+  } else if (choice === 'clear') {
     c.conditions = [];
-  } else if (choice === '3') {
-    c.concentrating = prompt('Concentrating on what? (blank to clear)', c.concentrating || '') || null;
-  } else if (choice === '4') {
+  } else if (choice === 'conc') {
+    const what = await sheetPrompt({
+      title: 'Concentration',
+      label: 'Concentrating on what? (blank to clear)',
+      value: c.concentrating || '',
+    });
+    if (what === null) return;
+    c.concentrating = what || null;
+  } else if (choice === 'death') {
     const res = deathSave();
     for (const ev of res.events) log(ev.type, { ...ev.payload, name: c.name });
     toast(`${c.name} death save: ${res.roll.nat} - ${res.outcome}`,
       res.successes ? 'ok' : 'bad');
-  } else if (choice === '5') {
+  } else if (choice === 'remove') {
     e.combatants.splice(index, 1);
     if (e.turn >= e.combatants.length) e.turn = 0;
   }
