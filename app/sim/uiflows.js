@@ -51,6 +51,53 @@ export async function waitFor(fn, { timeout = 6000, every = 60 } = {}) {
   }
 }
 
+/**
+ * Wait for the join gate on a freshly booted frame.
+ *
+ * The three flows that need an UNSEATED browser all did the same thing:
+ *
+ *     const gate = await waitFor(() => doc.querySelector('.welcome'),
+ *                                { timeout: 10000 });
+ *     const input = gate.querySelector('input[aria-label="Join code"]');
+ *
+ * so when the wait ran out, the line AFTER the failing one threw "Cannot
+ * read properties of null" - a timeout wearing a crash's clothes, which is
+ * the hardest kind of red to read.
+ *
+ * Measured flaky rather than broken: on a freshly started server all three
+ * fail; on the same server warm, only one does; run alone, each passes.
+ * Booting a frame by hand and letting it settle finds .welcome present, so
+ * the app renders the gate correctly and what runs out is the budget - a
+ * cold module cache with forty other flows competing for the machine. That
+ * mattered little while the gym only ever ran against a warm, lived-in
+ * server, and matters a lot now that isolated instances are the norm.
+ */
+export async function waitForGate(doc, { timeout = 25000 } = {}) {
+  return waitFor(() => doc.querySelector('.welcome') || null, { timeout });
+}
+
+/**
+ * Boot one app frame and throw it away, so the first REAL boot is warm.
+ *
+ * Whichever standalone flow goes first otherwise pays for every module
+ * fetch and the first paint, and is the one that loses its budget. A
+ * warm-up that fails is not a test failure - it is not measuring anything.
+ */
+async function warmUpApp() {
+  const frame = document.createElement('iframe');
+  frame.src = '/index.html';
+  frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;'
+    + 'height:1000px;border:0';
+  document.body.append(frame);
+  try {
+    await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
+    await waitFor(() => (frame.contentDocument?.querySelector('main')
+      ? true : null), { timeout: 15000 });
+  } catch { /* nothing here is graded */ } finally {
+    frame.remove();
+  }
+}
+
 /** Wait for something to CHANGE, given a reader and its previous value. */
 export async function waitForChange(read, before, opts) {
   return waitFor(() => {
@@ -2334,9 +2381,9 @@ export async function runJoinGate(CheckClass) {
     await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
     const doc = frame.contentDocument;
 
-    const gate = await waitFor(() => doc.querySelector('.welcome') || null,
-      { timeout: 10000 });
+    const gate = await waitForGate(doc);
     check.ok(!!gate, 'a browser with no seat is offered the join gate');
+    if (!gate) throw new Error('the join gate never appeared');
     check.ok(/A table is open/.test(gate?.textContent || ''),
       'and told why', (gate?.textContent || '').slice(0, 60));
 
@@ -3018,10 +3065,9 @@ export async function runJoinDeeplink(CheckClass) {
     await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
     const doc = frame.contentDocument;
 
-    const gate = await waitFor(() => doc.querySelector('.welcome') || null,
-      { timeout: 10000 });
+    const gate = await waitForGate(doc);
     check.ok(!!gate, 'the join gate greeted the visitor');
-    if (!gate) throw new Error('no join gate');
+    if (!gate) throw new Error('the join gate never appeared');
 
     const codeInput = gate.querySelector('input[aria-label="Join code"]');
     const nameInput = gate.querySelector('input[aria-label="Your name"]');
@@ -3186,9 +3232,9 @@ export async function runQuickParty(CheckClass) {
     await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
     const doc = frame.contentDocument;
 
-    const gate = await waitFor(() => doc.querySelector('.welcome') || null,
-      { timeout: 10000 });
+    const gate = await waitForGate(doc);
     check.ok(!!gate, 'a stranger is met by the join gate');
+    if (!gate) throw new Error('the join gate never appeared');
     setField(gate.querySelector('input[aria-label="Join code"]'), code);
     setField(gate.querySelector('input[aria-label="Your name"]'), 'Couch Kid');
     button(doc, 'Join', { within: gate })?.click();
@@ -3467,8 +3513,10 @@ export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
     frame.remove();
   }
 
-  // Last, and outside the shared ephemeral frame: this one needs the real
-  // server, so it manages its own clients and cleans up after itself.
+  // Last, and outside the shared ephemeral frame: these need the real
+  // server, so each manages its own clients and cleans up after itself.
+  // The warm-up buys the first of them a fair start - see warmUpApp.
+  await warmUpApp();
   results.push(await runRoleGate(CheckClass));
   onProgress({ flow: 'role_gate' });
   results.push(await runJoinGate(CheckClass));

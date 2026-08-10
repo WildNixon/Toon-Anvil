@@ -1,6 +1,6 @@
 # Toon Anvil — soak run findings
 
-Generated 2026-08-10T21:58:07+00:00 from `soak/findings.jsonl` (23 findings, 0 already fixed).
+Generated 2026-08-10T22:04:15+00:00 from `soak/findings.jsonl` (23 findings, 0 already fixed).
 
 Every item below was **confirmed against a running server**, not inferred from reading. Anything I could not reproduce is not here.
 
@@ -110,15 +110,15 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 
 **Proposed fix.** Clear deathSaves whenever hp rises above 0 - that is the rule (stabilising or being healed ends the death-save sequence), and it belongs in the engine so every screen inherits it rather than in each caller.
 
-### HARNESS-1-cold-join-flows — Three standalone join flows are FLAKY under load - they fail, then pass, with no code change
+### HARNESS-1-cold-join-flows — Standalone join flows are flaky on a cold instance - improved from 3 failures to 1, not cured
 
-**MEDIUM** · area: gym harness · effort: S · status: confirmed
+**MEDIUM** · area: gym harness · effort: M · status: partly fixed
 
-**Evidence.** runJoinGate, runPlayerView and runJoinDeeplink (uiflows.js:2301, 2674, 2978) boot /index.html and wait for the .welcome join gate with waitFor(..., {timeout: 10000}) (uiflows.js:2337). When the wait times out, gate is null and the very next line - gate.querySelector at uiflows.js:2343 - throws the TypeError that appears in the log, so a timing miss is reported as a crash rather than as 'the gate did not appear'. Measured across four runs on the same build: on a freshly started instance all THREE fail; on the same instance warm, only join_gate fails; run standalone with nothing else competing, runJoinGate passes with 13 checks and zero failures. Booting the frame by hand and settling 4s finds .welcome present, so the app renders the gate correctly - the budget is what runs out. Proven not to be a code regression: the identical failures occur on an instance running the pre-fix server (git HEAD) with the same new tests - before FAIL 125/127 with three UI flows red, after PASS 127/127 with the same flows red.
+**Evidence.** The three flows needing an UNSEATED browser waited for the .welcome gate with a 10s budget and then dereferenced the result, so a timeout threw 'Cannot read properties of null' from the line AFTER the one that failed - a timeout wearing a crash's clothes. Measured across five runs on the same build: freshly started instance, all THREE fail; same instance warm, one fails; run standalone with nothing competing, it passes with 13 checks. Booting a frame by hand and settling 4s finds .welcome present, so the app renders the gate correctly and the budget is what runs out. Also proven not to be a code regression - the identical failures occur against the pre-fix server with the same tests.
 
-**Reproduction.** Run the UI tier on a freshly started instance: three flows fail. Re-run without changing anything: fewer fail. Call flows.runJoinGate(Check) alone from the gym console: it passes. Nothing about the app changed between those three outcomes.
+**Reproduction.** PARTIALLY FIXED, and measured on a fourth, genuinely cold instance (port 7903, empty data dir, fresh browser origin): a warm-up frame is now booted and discarded before the standalone block, the gate budget is 25s, and a miss is reported as 'the join gate never appeared'. Result on cold: THREE failures became ONE. player_sees_a_players_table and join_deeplink now pass cold; join_gate still fails, but with the honest message instead of a TypeError. Logic tier unaffected throughout: 127/127 scenarios, 1586/1586 checks.
 
-**Proposed fix.** Two parts. (1) Stop reporting a timeout as a TypeError - waitFor returning null should fail the check with 'the join gate never appeared', which is the truth and is diagnosable. A crash in the assertion line hides which of ten things went wrong. (2) Use waitUntilSettled (uiflows.js:101), this project's existing anti-flake primitive, and raise the budget for a first boot; or boot and discard one warm-up frame before the standalone block so first-module-fetch is paid once outside the measurement. This matters more now than it did: isolated instances are the plan for unattended runs, and a suite that is only green on a warm, lived-in server cannot gate anything overnight.
+**Proposed fix.** The residual is NOT root-caused and I will not pretend otherwise. What is ruled out: a stale localStorage token (clearing it changes nothing), a leaked iframe (every flow removes its frame in a finally), and the app failing to render the gate (a hand-booted frame shows it). What remains to try: waitUntilSettled instead of a bare waitFor, and instrumenting the frame's own console during the wait so the next failure says WHY rather than only that it timed out. Worth finishing before relying on unattended overnight runs, because a suite that is only green on a warm server cannot gate anything.
 
 ### PWA-1-stale-service-worker — The service worker is still v9 and caches none of the LAN modules, so an installed PWA breaks offline
 
