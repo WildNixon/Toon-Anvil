@@ -11,7 +11,7 @@ import { d20, fmt } from '../../core/dice.js';
 import {
   resolveAttack, fireTriggers, applyDamage as engineApplyDamage,
   shortRest as engineShortRest, longRest as engineLongRest,
-  useSlot as engineUseSlot,
+  useSlot as engineUseSlot, deathSave as engineDeathSave,
 } from '../../core/engine.js';
 import {
   ABILITIES, ABILITY_NAMES, SKILLS, fromCopper, CONDITIONS,
@@ -162,10 +162,35 @@ function draw() {
 
 /* ------------------------------------------------------------------ */
 
+/** "Fighter — Champion", resolved to display names where the data has them. */
+function classLine(d) {
+  const { compendium } = getState();
+  return (d.classes || []).map((entry) => {
+    const cls = (compendium?.classes || []).find(
+      (x) => x.id === String(entry.class).toLowerCase());
+    const sub = entry.subclass
+      ? (cls?.subclasses || []).find((s) => s.id === entry.subclass)?.name
+        || entry.subclass
+      : null;
+    const base = cls?.name
+      || String(entry.class || '').replace(/^./, (m) => m.toUpperCase());
+    return sub ? `${base} — ${sub}` : base;
+  }).filter(Boolean).join(' / ');
+}
+
 function vitalsPanel(d) {
   const panel = el('div', { class: 'panel rivets' });
   panel.append(el('span', { class: 'lvl' }, `Level ${d.level}`));
   panel.append(el('h3', {}, d.name || 'Unnamed'));
+  const line = classLine(d);
+  if (line) {
+    panel.append(el('p', {
+      class: 'muted', style: 'margin:-6px 0 10px;font-size:13px',
+    }, line));
+  }
+
+  // At 0 HP the sheet's job changes: the death-save pips ARE the moment.
+  if (d.hp.current === 0 && d.hp.max > 0) panel.append(deathPanel(d));
 
   const stats = el('div', { class: 'grid stats' });
   const add = (k, v, sub, onClick) => {
@@ -319,6 +344,67 @@ async function toggleCondition(cond) {
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * Death saves, on the sheet, at the moment they matter. Three circles a
+ * side, filled as they land; the roll goes through the same card path as
+ * every other d20, and death_save is a notable event - the Chronicle
+ * remembers the night the dice went quiet.
+ */
+function deathPanel(d) {
+  const ds = d.deathSaves || { successes: 0, failures: 0 };
+  const wrap = el('div', { class: 'death-panel', role: 'group',
+    'aria-label': 'Death saves' });
+  wrap.append(el('div', { class: 'eyebrow' }, 'Death saves'));
+
+  const pips = el('div', { class: 'death-pips' });
+  const row = (label, n, cls) => {
+    const r = el('div', { class: 'death-row' });
+    r.append(el('span', { class: 'death-k' }, label));
+    for (let i = 0; i < 3; i += 1) {
+      r.append(el('span', {
+        class: `pip ${cls}${i < n ? ' filled' : ''}`,
+        'aria-hidden': 'true',
+      }));
+    }
+    return r;
+  };
+  pips.append(row('Successes', ds.successes, 'ok'));
+  pips.append(row('Failures', ds.failures, 'bad'));
+  wrap.append(pips);
+
+  if (ds.failures >= 3) {
+    wrap.append(el('p', { class: 'death-word bad' }, 'Fallen.'));
+  } else if (ds.successes >= 3) {
+    wrap.append(el('p', { class: 'death-word' },
+      'Stable - unconscious, but the dice are done with you.'));
+  } else {
+    wrap.append(el('button', {
+      class: 'act', onClick: () => rollDeathSave(),
+    }, 'Death save'));
+  }
+  return wrap;
+}
+
+async function rollDeathSave() {
+  const res = engineDeathSave();
+  tellTable('save', 'Death save', res.roll);
+  for (const ev of res.events) await log(ev.type, ev.payload);
+  await saveCharacter((c) => {
+    const ds = { ...(c.deathSaves || { successes: 0, failures: 0 }) };
+    if (res.outcome === 'revive') {
+      // A natural 20: back up on 1 HP, slate wiped.
+      c.hp = { ...(c.hp || {}), current: 1 };
+      c.deathSaves = { successes: 0, failures: 0 };
+      return c;
+    }
+    ds.successes = Math.min(3, ds.successes + res.successes);
+    ds.failures = Math.min(3, ds.failures + res.failures);
+    c.deathSaves = ds;
+    return c;
+  });
+  draw();
+}
 
 function abilitiesPanel(d) {
   const panel = el('div', { class: 'panel rivets' });

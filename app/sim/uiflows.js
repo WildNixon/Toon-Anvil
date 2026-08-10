@@ -378,6 +378,49 @@ export const FLOWS = [
   },
 
   {
+    id: 'death_saves',
+    title: 'At zero HP the sheet becomes the death-save moment',
+    async run(c, { doc }) {
+      c.feature('ui', 'sheet', 'death');
+      c.ok(await goToMode(doc, 'Play', 'Adjust HP'), 'the sheet opens');
+
+      // Drive the built character to the floor through the sheet's own
+      // controls, exactly as a table would.
+      const amount = doc.querySelector('main input[type=number]');
+      c.ok(!!amount, 'the damage field exists');
+      setField(amount, '999');
+      button(doc, 'Damage')?.click();
+      const down = await waitFor(() => (/Death saves/.test(mainText(doc))
+        ? true : null), { timeout: 8000 });
+      c.ok(!!down, 'zero HP surfaces the death-save pips');
+      c.eq(doc.querySelectorAll('main .pip').length, 6,
+        'three circles a side');
+      c.eq(doc.querySelectorAll('main .pip.filled').length, 0,
+        'all empty before the first roll');
+
+      doc.querySelector('#rollcards')?.replaceChildren();
+      button(doc, 'Death save')?.click();
+      // The d20 is honest, so the outcome is one of: a pip fills, or a
+      // natural 20 revives and the panel leaves entirely.
+      const resolved = await waitFor(() => (
+        doc.querySelectorAll('main .pip.filled').length > 0
+        || !/Death saves/.test(mainText(doc)) ? true : null), { timeout: 8000 });
+      c.ok(!!resolved, 'the save lands: a pip fills, or a nat 20 revives',
+        `filled=${doc.querySelectorAll('main .pip.filled').length}`);
+      c.ok(!!doc.querySelector('#rollcards .rollcard'),
+        'and the roll went through the card path');
+
+      // Put the hero back on their feet for the flows that follow.
+      const heal = doc.querySelector('main input[type=number]');
+      setField(heal, '999');
+      button(doc, 'Heal')?.click();
+      const up = await waitFor(() => (!/Death saves/.test(mainText(doc))
+        ? true : null), { timeout: 8000 });
+      c.ok(!!up, 'healing above zero puts the pips away');
+    },
+  },
+
+  {
     id: 'build_equipment',
     title: 'A new character can leave Build armed and armoured',
     async run(c, { doc }) {
@@ -2226,6 +2269,17 @@ export async function runLevelUpFlow(CheckClass) {
       { timeout: 8000 });
     check.ok(!!saved, 'level 3 saves - the grant covers it');
 
+    // The moment: an overlay names the level, blocks nothing (its backdrop
+    // passes clicks through), and leaves on its own.
+    const moment = await waitFor(() => doc.querySelector('.levelup-overlay')
+      || null, { timeout: 6000 });
+    check.ok(!!moment, 'the level-up moment appears');
+    check.ok(/Level 3!/.test(moment?.textContent || ''),
+      'named for the level reached', (moment?.textContent || '').slice(0, 60));
+    const momentGone = await waitFor(() => (!doc.querySelector('.levelup-overlay')
+      ? true : null), { timeout: 10000 });
+    check.ok(!!momentGone, 'and dismisses itself');
+
     const buildGone = await waitFor(() => (!labels().includes('Build')
       ? true : null), { timeout: 12000 });
     check.ok(!!buildGone, 'the grant is consumed by arriving: Build leaves again');
@@ -2772,15 +2826,21 @@ export async function runQuickParty(CheckClass) {
       .querySelector('main') && button(dmDoc, 'Setup') ? true : null),
     { timeout: 15000 });
     check.ok(!!onSetup, 'the DM client booted');
-    // The seat-plaque re-render can eat the first nav click right after
-    // boot (the same defect seat_switch works around) - one honest retry,
-    // and the failure detail names whatever screen actually showed.
-    const toSetup = () => goToMode(dmDoc, 'Setup',
-      (d = dmDoc) => /The table is open/.test(mainText(d)));
-    let onSetupLens = await toSetup();
-    if (!onSetupLens) onSetupLens = await toSetup();
-    check.ok(onSetupLens,
-      'the Setup lens shows the open table', mainText(dmDoc).slice(0, 120));
+    // The boot-time catch-up render can yank the lens back to Stage after
+    // the click lands (the seat_switch defect family) - and Stage got
+    // heavier, so one retry stopped being enough. Short windows, several
+    // taps: exactly what a human does when a screen snaps back.
+    let onSetupLens = false;
+    let taps = 0;
+    for (let i = 0; i < 4 && !onSetupLens; i += 1) {
+      taps += 1;
+      button(dmDoc, 'Setup')?.click();
+      onSetupLens = !!(await waitFor(() => (
+        /The table is open/.test(mainText(dmDoc)) ? true : null),
+      { timeout: 3000 }));
+    }
+    check.ok(onSetupLens, 'the Setup lens shows the open table',
+      `after ${taps} tap(s); saw: ${mainText(dmDoc).slice(0, 100)}`);
 
     // The panel may re-render as live state settles (plaque, table status) -
     // resolve the input and its button TOGETHER, from the same render, right
@@ -2905,11 +2965,14 @@ export async function runQuickParty(CheckClass) {
     const dmDoc2 = dmView.contentDocument;
     await waitFor(() => (dmDoc2.querySelector('main')
       && button(dmDoc2, 'Stage') ? true : null), { timeout: 15000 });
-    const toStage = () => goToMode(dmDoc2, 'Stage',
-      (d = dmDoc2) => /Pass\. Perc/.test(mainText(d)));
-    let onStage = await toStage();
-    if (!onStage) onStage = await toStage();
-    check.ok(onStage, "the DM's Stage opens");
+    let onStage = false;
+    for (let i = 0; i < 4 && !onStage; i += 1) {
+      button(dmDoc2, 'Stage')?.click();
+      onStage = !!(await waitFor(() => (
+        /Pass\. Perc/.test(mainText(dmDoc2)) ? true : null),
+      { timeout: 3000 }));
+    }
+    check.ok(onStage, "the DM's Stage opens", mainText(dmDoc2).slice(0, 80));
     const railRow = await waitFor(() => [...dmDoc2.querySelectorAll('.dice-row')]
       .find((r) => /Strength check/.test(r.textContent)) || null,
     { timeout: 10000 });

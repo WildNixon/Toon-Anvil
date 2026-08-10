@@ -718,6 +718,52 @@ th {
   animation: rollcard-in .18s ease-out;
 }
 
+/* ---------- death saves ------------------------------------------------- */
+
+.death-panel {
+  margin: 0 0 14px; padding: 10px 12px;
+  border: 1px solid var(--bad); border-radius: var(--radius);
+}
+.death-pips { display: flex; gap: 22px; flex-wrap: wrap; margin: 8px 0 10px; }
+.death-row { display: flex; align-items: center; gap: 6px; }
+.death-k {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.pip {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid var(--etch); display: inline-block;
+}
+.pip.ok.filled { background: var(--ok); border-color: var(--ok); }
+.pip.bad.filled { background: var(--bad); border-color: var(--bad); }
+.death-word { font-family: var(--display); font-size: 16px; letter-spacing: .06em; margin: 0; }
+.death-word.bad { color: var(--bad-text); }
+
+/* ---------- the level-up moment ----------------------------------------- */
+
+.levelup-overlay {
+  position: fixed; inset: 0; z-index: 205;
+  display: flex; align-items: center; justify-content: center;
+  /* The backdrop passes clicks through: celebration never blocks play. */
+  pointer-events: none;
+}
+.levelup-card {
+  pointer-events: auto; cursor: pointer;
+  background: var(--chrome); color: var(--chrome-ink);
+  border: 2px solid var(--chrome-gold); border-radius: var(--radius);
+  padding: 22px 36px; text-align: center;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, .45);
+  animation: rollcard-in .22s ease-out, rollcard-flare 1s ease-out;
+}
+.lu-burst {
+  font-family: var(--display); font-size: 30px; letter-spacing: .1em;
+  color: var(--chrome-gold);
+}
+.lu-features {
+  font-family: var(--mono); font-size: 12px; margin-top: 8px;
+  color: var(--chrome-dim); max-width: 380px;
+}
+
 #rollcards {
   position: fixed; right: 14px; bottom: 72px; z-index: 190;
   display: flex; flex-direction: column; gap: 8px;

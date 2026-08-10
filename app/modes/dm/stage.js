@@ -18,6 +18,7 @@ import * as session from '../../core/session.js';
 import { runnerPanel, publish } from './runner.js';
 import { partyPanel } from './party.js';
 import { diceRail } from '../../ui/components/dicerail.js';
+import { BEDS, playBed, stopBed, nowPlaying } from '../../core/providers.js';
 
 let box = null;
 let ctx = null;
@@ -51,6 +52,37 @@ function draw() {
   // anyone shouting the number across the couch. Only at a table: solo,
   // there is nobody else rolling.
   if (session.isOpen()) box.append(diceRail(getState().characters || []));
+
+  box.append(ambiencePanel());
+}
+
+/**
+ * One tap per mood. The six synth beds shipped for a year with a single
+ * call site buried in Settings; the moment of play is HERE. DM speakers
+ * only - the room hears the rain, the phones stay silent.
+ */
+function ambiencePanel() {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Ambience'));
+  const row = el('div', { class: 'btnrow' });
+  const current = nowPlaying();
+  for (const [id, bed] of Object.entries(BEDS)) {
+    row.append(el('button', {
+      class: `act small${current === id ? '' : ' ghost'}`,
+      'aria-pressed': String(current === id),
+      onClick: () => {
+        if (nowPlaying() === id) stopBed(); else playBed(id);
+        draw();
+      },
+    }, bed.label));
+  }
+  row.append(el('button', {
+    class: 'act small dark', onClick: () => { stopBed(); draw(); },
+  }, 'Quiet'));
+  panel.append(row);
+  panel.append(el('p', { class: 'welcome-fine', style: 'margin-top:6px' },
+    'Plays on this machine\'s speakers only.'));
+  return panel;
 }
 
 /* ------------------------------------------------------------------ */
