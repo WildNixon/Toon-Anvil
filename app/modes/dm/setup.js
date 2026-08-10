@@ -11,10 +11,12 @@
  * everyone else, so this screen cannot leak what it was never given.
  */
 
-import { el, toast } from '../../core/store.js';
+import { el, toast, getState, setState } from '../../core/store.js';
+import { db } from '../../core/db.js';
 import * as session from '../../core/session.js';
 import { refreshChrome } from '../../app.js';
 import { qrSvg } from '../../ui/qr.js';
+import { forgeParty, RECIPES } from '../../core/pregen.js';
 
 let box = null;
 let ctx = null;
@@ -25,7 +27,10 @@ export async function render(root, context) {
   ctx = context;
   box.innerHTML = '';
   box.append(tablePanel());
-  if (session.isOpen()) box.append(forgePanel());
+  if (session.isOpen()) {
+    box.append(quickPartyPanel());
+    box.append(forgePanel());
+  }
   box.append(await workshopPanel());
 }
 
@@ -141,6 +146,62 @@ function tablePanel() {
         ctx.redraw();
       },
     }, 'Close the table')));
+  return panel;
+}
+
+/* ------------------------------------------------------------------ */
+
+function quickPartyPanel() {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Quick party'));
+  panel.append(el('h3', {}, 'Ready heroes, one tap'));
+  panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
+    'Forge complete level-1 heroes from the SRD - abilities, skills, kit '
+    + 'and spells all set. They wait unclaimed at the join gate, so a phone '
+    + 'that scanned the code picks a hero and plays. Nobody builds unless '
+    + 'they want to.'));
+
+  const count = el('input', {
+    type: 'number', min: '1', max: String(RECIPES.length), value: '4',
+    'aria-label': 'Party size', style: 'width:72px',
+  });
+  const forgeBtn = el('button', { class: 'act' }, 'Forge 4 ready heroes');
+  count.addEventListener('input', () => {
+    const n = Math.max(1, Math.min(RECIPES.length, Number(count.value) || 1));
+    forgeBtn.textContent = `Forge ${n} ready heroes`;
+  });
+  forgeBtn.addEventListener('click', async () => {
+    const n = Math.max(1, Math.min(RECIPES.length, Number(count.value) || 1));
+    const { compendium } = getState();
+    const heroes = forgeParty(n, {
+      classes: compendium.classes,
+      species: compendium.species,
+      backgrounds: compendium.backgrounds,
+      spells: compendium.spells,
+      equipment: compendium.equipment,
+    }, Date.now() >>> 0);
+    // A stop mid-loop must never strand a half party silently - name the
+    // count and the reason, because "I clicked Forge and got two heroes"
+    // is a mystery nobody at a couch can debug.
+    let landed = 0;
+    try {
+      for (const hero of heroes) {
+        await db.put('characters', hero);
+        landed += 1;
+      }
+    } catch (err) {
+      toast(`Forged only ${landed} of ${heroes.length} - ${err.message}`, 'bad');
+      setState({ characters: await db.list('characters') });
+      ctx.redraw();
+      return;
+    }
+    setState({ characters: await db.list('characters') });
+    toast(`${heroes.length} heroes wait at the join gate`, 'ok');
+    ctx.redraw();
+  });
+
+  panel.append(el('div', { class: 'btnrow', style: 'margin-top:8px' },
+    count, forgeBtn));
   return panel;
 }
 

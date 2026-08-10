@@ -1848,6 +1848,137 @@ export const SUITES = [
 
   /* ---------------- the table -------------------------------------- */
   {
+    id: 'pregen',
+    title: 'Quick party pregens',
+    why: 'A pregen with an illegal skill or a ghost item is a trap that '
+       + 'springs mid-session, the first time a player taps the thing. '
+       + 'Forged heroes must be table-grade: born complete (their identity '
+       + 'fields freeze at the claim), rules-legal, armed, and deterministic '
+       + 'so a party can be rerolled by seed.',
+    scenarios: [
+      {
+        id: 'pregen_party_is_table_grade',
+        title: 'Every forged hero is complete, legal, and derivable',
+        async run(c, { pregen, sources, spells }) {
+          c.feature('pregen', 'table', 'derive');
+          const src = { ...sources, spells };
+          const party = pregen.forgeParty(8, src, 7);
+          c.eq(party.length, 8, 'eight recipes forge eight heroes');
+
+          const ABILITY_WORDS = { str: 'strength', dex: 'dexterity',
+            con: 'constitution', int: 'intelligence', wis: 'wisdom',
+            cha: 'charisma' };
+          const sortedArray = [...pregen.STANDARD_ARRAY]
+            .sort((a, b) => a - b).join(',');
+          const parseChoices = (s) => {
+            const m = /choose\s+(?:any\s+)?(\d+)/i.exec(s || '');
+            const after = (String(s || '').split(':')[1] || '');
+            return {
+              count: m ? Number(m[1]) : 0,
+              list: after.split(/,|\bor\b/).map((x) => x.trim())
+                .filter((x) => /^[A-Z]/.test(x)),
+            };
+          };
+          const bgSkills = (bg) => String(bg?.skillProficiencies || '')
+            .split(/\s+and\s+|,/i).map((s) => s.trim()).filter(Boolean);
+
+          for (const hero of party) {
+            const who = hero.pregen;
+            const recipe = pregen.RECIPES.find((r) => r.id === who);
+            const cls = (sources.classes || [])
+              .find((x) => x.id === hero.classes[0].class);
+            const bg = (sources.backgrounds || [])
+              .find((b) => b.id === hero.background);
+
+            c.eq(Object.values(hero.abilities).sort((a, b) => a - b).join(','),
+              sortedArray, `${who}: abilities are the standard array`);
+            c.eq(hero.abilityMethod, 'array', `${who}: and say so`);
+            c.ok(!('ownerId' in hero),
+              `${who}: born unclaimed - ownerId absent, not null`);
+            c.ok(!!(sources.species || []).find((s) => s.id === hero.species),
+              `${who}: a real species`, hero.species);
+            c.ok(!!bg, `${who}: a real background`, hero.background);
+
+            // 2024 rules: the +2/+1 must come from the background's three.
+            const legalAbs = String(bg?.abilityScores || '').toLowerCase();
+            for (const [ab, v] of Object.entries(hero.abilityBonuses || {})) {
+              c.ok(legalAbs.includes(ABILITY_WORDS[ab]),
+                `${who}: +${v} ${ab} is on the ${hero.background} list`,
+                legalAbs);
+            }
+
+            const { count, list } = parseChoices(cls?.skillChoices);
+            c.ok(recipe.skills.length <= count,
+              `${who}: takes no more class skills than offered`,
+              `${recipe.skills.length} of ${count}`);
+            if (list.length) {
+              for (const sk of recipe.skills) {
+                c.ok(list.includes(sk),
+                  `${who}: "${sk}" is on the class skill list`);
+              }
+            }
+            for (const sk of bgSkills(bg)) {
+              c.ok(hero.skills.includes(sk),
+                `${who}: background skill ${sk} carried`);
+            }
+
+            const conTotal = hero.abilities.con
+              + (hero.abilityBonuses.con || 0);
+            const wantHp = (cls?.hitDie || 8)
+              + Math.floor((conTotal - 10) / 2);
+            c.eq(hero.hp.max, wantHp, `${who}: level-1 HP formula`);
+            const d = derive(hero, src);
+            c.eq(d.hp.max, hero.hp.max,
+              `${who}: derive() agrees with the stored maximum`);
+            c.eq(d.proficiencyBonus, 2, `${who}: proficiency +2 at level 1`);
+            c.ok(d.ac >= 10, `${who}: an AC`, String(d.ac));
+
+            const wantKit = [recipe.kit.weapon, recipe.kit.armor,
+              recipe.kit.shield ? 'Shield' : null].filter(Boolean);
+            const got = hero.inventory.map((i) => i.name);
+            for (const item of wantKit) {
+              c.ok(got.includes(item),
+                `${who}: ${item} resolved from the SRD`, got.join(', '));
+            }
+            c.ok(hero.inventory.every((i) => i.qty === 1 && i.equipped),
+              `${who}: the kit arrives equipped`);
+
+            if (recipe.spells) {
+              const ids = new Set((spells || []).map((s) => s.id));
+              c.ok(hero.spells.prepared.length >= 1,
+                `${who}: a caster arrives with spells prepared`);
+              for (const id of [...hero.spells.prepared, ...hero.spells.known]) {
+                c.ok(ids.has(id), `${who}: spell "${id}" is real`);
+              }
+              // The anti-rot pair: a renamed SRD id must FAIL here, not
+              // silently thin the spellbook.
+              c.eq(hero.spells.prepared.length, recipe.spells.prepared.length,
+                `${who}: every curated prepared spell resolved`);
+              c.eq(hero.spells.known.length, recipe.spells.known.length,
+                `${who}: every curated cantrip resolved`);
+            }
+          }
+        },
+      },
+      {
+        id: 'pregen_same_seed_same_bytes',
+        title: 'Same seed, same party - byte for byte',
+        async run(c, { pregen, sources, spells }) {
+          c.feature('pregen');
+          const src = { ...sources, spells };
+          const a = JSON.stringify(pregen.forgeParty(4, src, 42));
+          c.ok(a === JSON.stringify(pregen.forgeParty(4, src, 42)),
+            'same seed, byte-identical party');
+          c.ok(a !== JSON.stringify(pregen.forgeParty(4, src, 43)),
+            'a new seed rerolls the party');
+          const names = pregen.forgeParty(8, src, 5).map((h) => h.name);
+          c.eq(new Set(names).size, names.length,
+            'no two heroes in one forge share a name', names.join(', '));
+        },
+      },
+    ],
+  },
+  {
     id: 'qr',
     title: 'The join QR',
     why: 'A QR that does not scan strands the whole couch at the join gate. '
@@ -4007,6 +4138,13 @@ export const MUTATIONS = [
         monsters: Array.from({ length: 9 },
           (_, i) => ctx.enc.instantiate(m[i % m.length], i, rng)),
         difficulty: 'high' }) } }),
+  },
+  {
+    id: 'pregen_unarmed_at_1hp',
+    what: 'forgeParty() sends heroes to the table unarmed at 1 HP',
+    patch: (ctx) => ({ pregen: { ...ctx.pregen,
+      forgeParty: (n, s, seed) => ctx.pregen.forgeParty(n, s, seed)
+        .map((h) => ({ ...h, inventory: [], hp: { ...h.hp, max: 1 } })) } }),
   },
 ];
 

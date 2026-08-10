@@ -98,6 +98,7 @@ import {
 import { FIXTURE_NAME, fixturePdfBytes } from './fixtures.js';
 import * as vec from './vectors.js';
 import { qrMatrix, qrSvg } from '../ui/qr.js';
+import * as pregen from '../core/pregen.js';
 
 const $ = (s) => document.querySelector(s);
 const log = (m) => { $('#log').textContent += `${m}\n`;
@@ -135,6 +136,7 @@ async function buildCtx() {
       spellBudget, spellbookProblems },
     vec,
     qr: { qrMatrix, qrSvg },
+    pregen,
     dbTokenKey: 'toonanvil.token',
     // Raw HTTP on purpose. Going through ServerAdapter would test the client;
     // the whole question here is what the SERVER refuses.

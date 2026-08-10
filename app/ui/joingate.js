@@ -107,7 +107,8 @@ function drawClaim(onDone) {
   if (unclaimed.length) {
     c.append(el('p', {}, 'Whose story is yours?'));
     const list = el('div', { class: 'welcome-choices', style: 'flex-direction:column' });
-    for (const ch of unclaimed.slice(0, 6)) {
+    const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : '');
+    for (const ch of unclaimed.slice(0, 8)) {
       list.append(el('button', {
         onClick: async () => {
           await session.claim(ch.id);
@@ -115,6 +116,15 @@ function drawClaim(onDone) {
           onDone?.(ch.id);
         },
       }, `Play as ${ch.name || 'Unnamed'}`));
+      // Who IS this hero? A sibling caption, never part of the button text -
+      // the button's exact wording is load-bearing for the tests.
+      const cls = ch.classes?.[0]?.class;
+      const line = [cap(ch.species), cls].filter(Boolean).join(' ');
+      if (line) {
+        list.append(el('div', {
+          class: 'welcome-fine', style: 'margin:-6px 0 4px',
+        }, line));
+      }
     }
     c.append(list);
   } else {

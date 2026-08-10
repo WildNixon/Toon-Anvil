@@ -39,7 +39,12 @@ export async function waitFor(fn, { timeout = 6000, every = 60 } = {}) {
   const until = Date.now() + timeout;
   for (;;) {
     let v = null;
-    try { v = fn(); } catch { v = null; }
+    // Await, so async predicates work. Without it, an async fn returns a
+    // pending Promise - truthy - and waitFor "succeeds" instantly with the
+    // FIRST evaluation, which cost a whole afternoon of phantom forge
+    // failures. Awaiting a plain value is identity, so sync predicates are
+    // untouched.
+    try { v = await fn(); } catch { v = null; }
     if (v) return v;
     if (Date.now() > until) return null;
     await sleep(every);
@@ -2650,6 +2655,187 @@ export async function runJoinDeeplink(CheckClass) {
   };
 }
 
+/**
+ * Quick party: the DM forges ready heroes from Setup, and a player who
+ * joined with just a name claims one and is playing a complete character.
+ */
+export async function runQuickParty(CheckClass) {
+  const check = new CheckClass('quick_party');
+  const t0 = performance.now();
+  let error = null;
+  const frames = [];
+  let dmToken = null;
+  let before = null; // captured right before forging; null = never forged
+  const listChars = () => fetch('/api/characters', {
+    headers: { 'X-Toon-Token': dmToken },
+  }).then((r) => r.json()).then((v) => (Array.isArray(v) ? v : []))
+    .catch(() => []);
+  try {
+    check.feature('ui', 'table', 'join', 'pregen');
+
+    const reachable = await api('/api/changes?since=0');
+    check.ok(reachable.status === 200, 'the shared server is reachable',
+      `HTTP ${reachable.status}`);
+    if (reachable.status !== 200) throw new Error('no server: no party to forge');
+
+    await api('/api/table/close', { method: 'POST' });
+    const opened = await api('/api/table/open', {
+      method: 'POST', body: JSON.stringify({ name: 'Gym DM' }),
+    });
+    dmToken = opened.body.token;
+    const code = opened.body.code;
+    check.ok(!!code, 'the DM opened a table', code);
+
+    // --- the DM's seat forges the party ----------------------------------
+    // ONE app frame at a time, always: every frame of this app on this
+    // origin shares the same localStorage token slot, so a second live
+    // frame silently rewrites the first one's seat. Real phones are real
+    // devices; the gym's stand-in for "another device" is a frame whose
+    // predecessor is gone.
+    const dmFrame = document.createElement('iframe');
+    dmFrame.src = '/index.html';
+    dmFrame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;'
+      + 'height:1000px;border:0';
+    document.body.append(dmFrame);
+    frames.push(dmFrame);
+    const dmErrors = [];
+    await new Promise((r) => { dmFrame.onload = r; setTimeout(r, 15000); });
+    dmFrame.contentWindow.localStorage.setItem('toonanvil.token', dmToken);
+    dmFrame.contentWindow.location.reload();
+    await new Promise((r) => { dmFrame.onload = r; setTimeout(r, 15000); });
+    dmFrame.contentWindow.addEventListener('error',
+      (e) => dmErrors.push(`error: ${e.message}`));
+    dmFrame.contentWindow.addEventListener('unhandledrejection',
+      (e) => dmErrors.push(`rejection: ${e.reason?.message || e.reason}`));
+    const dmDoc = dmFrame.contentDocument;
+
+    const onSetup = await waitFor(() => (dmFrame.contentWindow.document
+      .querySelector('main') && button(dmDoc, 'Setup') ? true : null),
+    { timeout: 15000 });
+    check.ok(!!onSetup, 'the DM client booted');
+    check.ok(await goToMode(dmDoc, 'Setup',
+      (d = dmDoc) => /The table is open/.test(mainText(d))),
+    'the Setup lens shows the open table', mainText(dmDoc).slice(0, 120));
+
+    // The panel may re-render as live state settles (plaque, table status) -
+    // resolve the input and its button TOGETHER, from the same render, right
+    // before using them.
+    const countInput = await waitFor(() => dmDoc
+      .querySelector('input[aria-label="Party size"]') || null,
+    { timeout: 8000 });
+    check.ok(!!countInput, 'a party-size input is offered');
+    if (!countInput) throw new Error('no forge panel');
+    // The user may have forged a real party for tonight - only ids that
+    // appear DURING this flow are the gym's to assert on and to delete.
+    before = new Set((await listChars()).map((ch) => ch.id));
+    setField(countInput, '3');
+    const forgeBtn = [...dmDoc.querySelectorAll('main button')]
+      .find((b) => b.textContent.trim().startsWith('Forge'));
+    check.eq(forgeBtn?.textContent.trim(), 'Forge 3 ready heroes',
+      'the button says how many');
+    forgeBtn?.click();
+
+    const forged = await waitFor(async () => {
+      const pg = (await listChars()).filter((ch) => !before.has(ch.id)
+        && String(ch.id).startsWith('pg-'));
+      return pg.length >= 3 ? pg : null;
+    }, { timeout: 10000 });
+    check.ok(!!forged, 'three heroes landed on the shared table',
+      forged ? forged.map((h) => h.name).join(', ')
+        : `landed=${(await listChars()).filter((ch) => !before.has(ch.id)).length}`
+          + ` toast="${dmDoc.querySelector('#toast')?.textContent || ''}"`
+          + ` iframeErrors=[${dmErrors.join('; ').slice(0, 160)}]`);
+    if (!forged) throw new Error('the forge produced nothing');
+    check.ok(forged.every((h) => !('ownerId' in h)),
+      'all of them unclaimed - ownerId absent');
+
+    // The DM's work is done - retire their frame BEFORE the player's boots,
+    // so exactly one app frame ever holds the shared token slot.
+    dmFrame.remove();
+
+    // --- a player claims one ---------------------------------------------
+    const frame = document.createElement('iframe');
+    frame.src = '/index.html';
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;'
+      + 'height:1000px;border:0';
+    document.body.append(frame);
+    frames.push(frame);
+    frame.contentWindow?.localStorage?.removeItem('toonanvil.token');
+    await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
+    const doc = frame.contentDocument;
+
+    const gate = await waitFor(() => doc.querySelector('.welcome') || null,
+      { timeout: 10000 });
+    check.ok(!!gate, 'a stranger is met by the join gate');
+    setField(gate.querySelector('input[aria-label="Join code"]'), code);
+    setField(gate.querySelector('input[aria-label="Your name"]'), 'Couch Kid');
+    button(doc, 'Join', { within: gate })?.click();
+
+    // Claim specifically a hero THIS flow forged - the list also offers any
+    // real unclaimed characters the user left waiting.
+    const forgedNames = new Set(forged.map((h) => h.name));
+    const claimBtn = await waitFor(() => [...doc.querySelectorAll('.welcome button')]
+      .find((b) => forgedNames.has(b.textContent.trim().replace(/^Play as /, '')))
+      || null, { timeout: 8000 });
+    check.ok(!!claimBtn, 'forged heroes are offered at the claim step',
+      [...doc.querySelectorAll('.welcome button')]
+        .map((b) => b.textContent.trim()).join(' | ').slice(0, 160));
+    if (!claimBtn) throw new Error('nothing to claim');
+    const heroName = claimBtn.textContent.trim().replace(/^Play as /, '');
+    // Read the caption ELEMENTS, not the card's textContent - element text
+    // concatenates without whitespace ("fighterPlay as..."), so a \b regex
+    // over the whole card can never match the caption's last word.
+    const captions = [...doc.querySelectorAll('.welcome .welcome-fine')]
+      .map((n) => n.textContent.trim());
+    check.ok(captions.some((t) => /\b(fighter|wizard|cleric|rogue|barbarian|bard|ranger|paladin)\b/.test(t)),
+      'each hero wears a class caption beside the button',
+      captions.join(' | ').slice(0, 160));
+
+    claimBtn.click();
+    const seated = await waitFor(() => (!doc.querySelector('.welcome')
+      && (doc.querySelector('#who')?.textContent || '').includes(heroName)
+      ? true : null), { timeout: 10000 });
+    check.ok(!!seated, `claiming seats them: the ribbon carries ${heroName}`);
+
+    const mine = forged.find((h) => h.name === heroName);
+    const vals = Object.values(mine?.abilities || {}).sort((a, b) => a - b);
+    check.eq(vals.join(','), '8,10,12,13,14,15',
+      'and the claimed hero has real rolled shoulders, not a flat 10 line');
+  } catch (err) {
+    error = `${err.name}: ${err.message}`;
+  } finally {
+    try {
+      // Diff-based cleanup: delete every pg- record this flow created, even
+      // when it failed halfway - a stranded half-party must not outlive the
+      // run that forged it. Guarded on the baseline: with no baseline the
+      // flow never forged, and a user's own pg- heroes are not ours to take.
+      if (before) {
+        for (const ch of await listChars()) {
+          if (!before.has(ch.id) && String(ch.id).startsWith('pg-')) {
+            // eslint-disable-next-line no-await-in-loop
+            await api(`/api/characters/${ch.id}`, {
+              method: 'DELETE', headers: { 'X-Toon-Token': dmToken } });
+          }
+        }
+      }
+      await api('/api/table/close', { method: 'POST' });
+    } catch { /* the server went away */ }
+    for (const f of frames) f.remove();
+  }
+  return {
+    id: 'quick_party',
+    title: 'Forge a party, claim a hero, play',
+    passed: check.passed,
+    total: check.total,
+    failures: check.failures,
+    features: [...check.touched],
+    error,
+    empty: !error && check.total === 0,
+    ok: !error && check.total > 0 && check.failures.length === 0,
+    ms: +(performance.now() - t0).toFixed(0),
+  };
+}
+
 export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
   const frame = document.createElement('iframe');
   // Ephemeral: no real character is created, no real chronicle is appended to.
@@ -2726,5 +2912,7 @@ export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
   onProgress({ flow: 'player_sees_a_players_table' });
   results.push(await runJoinDeeplink(CheckClass));
   onProgress({ flow: 'join_deeplink' });
+  results.push(await runQuickParty(CheckClass));
+  onProgress({ flow: 'quick_party' });
   return results;
 }
