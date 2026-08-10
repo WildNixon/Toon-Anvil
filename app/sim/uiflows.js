@@ -1046,6 +1046,43 @@ export const FLOWS = [
       next?.click();
       await waitUntilSettled(doc);
       c.ok(mainText(doc) !== roundBefore, 'advancing a turn changes the screen');
+
+      // Concentration in the shared fight: set it, hit them, get asked for
+      // the save - the thing every hand-run table forgets.
+      const concBtn = allButtons(doc).find((b) => b.textContent.trim() === 'conc');
+      c.ok(!!concBtn, 'a combatant can be marked as concentrating');
+      concBtn?.click();
+      const concInput = await waitFor(() => doc.querySelector(
+        '.action-sheet input') || null, { timeout: 5000 });
+      c.ok(!!concInput, 'the concentration sheet opens');
+      if (concInput) {
+        setField(concInput, 'Bless');
+        button(doc, 'OK', { within: doc.querySelector('.action-sheet') })?.click();
+        await waitUntilSettled(doc);
+        c.ok(/conc: Bless/.test(mainText(doc)),
+          'the concentration chip appears on the row');
+        // 4 damage: enough to ask for the save (DC floors at 10), never
+        // enough to DOWN the target - a downing hit rightly asks for no
+        // save at all, concentration just ends.
+        const dmg = doc.querySelector('main input[type=number]');
+        setField(dmg, '4');
+        button(doc, 'Hit')?.click();
+        const asked = await waitFor(() => (/must make a DC 10 Constitution/
+          .test(doc.querySelector('#toast')?.textContent || '') ? true : null),
+        { timeout: 5000 });
+        c.ok(!!asked, 'damage asks for the concentration save, DC named',
+          doc.querySelector('#toast')?.textContent?.slice(0, 80) || '(no toast)');
+      }
+
+      // Friend or foe is a tap: the first non-PC chip flips.
+      const foeChip = [...doc.querySelectorAll('main .chip')]
+        .find((x) => x.textContent.trim() === 'foe');
+      c.ok(!!foeChip, 'monsters wear a side chip');
+      foeChip?.click();
+      await waitUntilSettled(doc);
+      c.ok([...doc.querySelectorAll('main .chip')]
+        .some((x) => x.textContent.trim() === 'ally'),
+      'and one tap makes the charmed ogre an ally');
     },
   },
 

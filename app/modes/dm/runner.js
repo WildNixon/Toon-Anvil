@@ -27,6 +27,7 @@
 import { el, esc, toast } from '../../core/store.js';
 import { derive } from '../../core/derive.js';
 import { applyDamage } from '../../core/engine.js';
+import { sheetPrompt } from '../../ui/kit.js';
 import { d20 } from '../../core/dice.js';
 import { instantiate } from '../../sim/encounter.js';
 import { cryptoRng } from '../../core/rng.js';
@@ -97,8 +98,27 @@ export function adopt(record) {
   for (const c of state.combatants) {
     const n = Number(String(c.id || '').replace(/^c/, ''));
     if (Number.isFinite(n) && n > seq) seq = n;
+    // Records from before sides existed: PCs fight FOR the party, everything
+    // else against it, exactly as every fight had silently assumed.
+    if (c.side !== 'ally' && c.side !== 'enemy') {
+      c.side = c.kind === 'pc' ? 'ally' : 'enemy';
+    }
   }
   return true;
+}
+
+/** Set (or clear) what a combatant is concentrating on. */
+export function setConcentration(id, what) {
+  const c = state.combatants.find((x) => x.id === id);
+  if (!c) return;
+  c.concentrating = (what || '').trim() || null;
+}
+
+/** Flip a non-PC combatant between fighting for and against the party. */
+export function toggleSide(id) {
+  const c = state.combatants.find((x) => x.id === id);
+  if (!c || c.kind === 'pc') return;
+  c.side = c.side === 'enemy' ? 'ally' : 'enemy';
 }
 
 /** Is this encounter shared with a table, or scratch in this browser? */
@@ -173,6 +193,8 @@ export function addCharacter(character, sources) {
     kind: 'pc',
     characterId: character.id,
     name: character.name || 'Unnamed',
+    side: 'ally',
+    concentrating: null,
     ac: d.ac,
     hp: d.hp.current,
     hpMax: d.hp.max,
@@ -223,6 +245,8 @@ export function addMonsters(monster, count = 1) {
       // everything past the first, so reusing its name gave "Goblin Warrior 3 3"
       // - and left the first one unnumbered while its siblings were numbered.
       name: count > 1 ? `${monster.name} ${i + 1}` : monster.name,
+      side: 'enemy',
+      concentrating: null,
       ac: m.ac,
       hp: m.hp,
       hpMax: m.hpMax ?? m.hp,
@@ -307,18 +331,27 @@ export function applyTo(id, delta, damageType = null) {
   const c = state.combatants.find((x) => x.id === id);
   if (!c) return null;
   const res = applyDamage(
-    { hp: { current: c.hp }, hpMax: c.hpMax, temp: c.temp },
+    // concentrating rides along: the engine already computes the save DC
+    // (max of 10 and half the raw damage), and the runner stripping this
+    // field was the one reason the shared fight never asked for the save.
+    { hp: { current: c.hp }, hpMax: c.hpMax, temp: c.temp,
+      concentrating: c.concentrating },
     delta,
     { name: c.name, damageType,
       resistances: c.resistances, immunities: c.immunities },
   );
   c.hp = res.hp;
   c.temp = res.temp;
+  // At 0 HP concentration simply ENDS - there is no save to ask for. The
+  // model enforces the rule so every screen inherits it; without this, the
+  // save toast fired and was instantly overwritten by "is down".
+  if (res.downed && c.concentrating) c.concentrating = null;
   const landed = res.events.find((e) => e.type === 'damage_taken');
   return {
     landed: landed ? landed.payload.amount : Math.abs(delta),
     mitigation: landed?.payload.mitigation || null,
     downed: res.downed,
+    concentrationDc: res.downed ? null : (res.concentrationDc || null),
   };
 }
 
@@ -568,8 +601,23 @@ function combatantRow(c, index, redraw, { readOnly = false, mine = null } = {}) 
     class: 'mono', style: 'width:34px;font-weight:700',
   }, c.init === null || c.init === undefined ? '--' : String(c.init)));
   top.append(el('span', { class: 'chip' }, c.kind === 'pc' ? 'PC' : c.kind));
+  // Whose side this line fights on. PCs are always allies; anything else can
+  // be flipped - the summoned bear and the charmed guard fight FOR the party.
+  if (c.kind !== 'pc') {
+    const ally = c.side === 'ally';
+    top.append(el('span', {
+      class: `chip${ally ? ' ok' : ''}`,
+      style: readOnly ? '' : 'cursor:pointer',
+      title: readOnly ? '' : 'Tap to flip which side this one fights on',
+      onClick: readOnly ? null : () => { toggleSide(c.id); redraw(); },
+    }, ally ? 'ally' : 'foe'));
+  }
   top.append(el('strong', { style: 'flex:1;min-width:140px' },
     `${c.name}${down ? ' (down)' : ''}${yours ? ' - you' : ''}`));
+  if (c.concentrating) {
+    top.append(el('span', { class: 'chip warn', style: 'font-size:10px' },
+      `conc: ${c.concentrating}`));
+  }
   top.append(el('span', { class: 'mono', style: 'font-size:12px' }, `AC ${c.ac}`));
 
   if (c.hpHidden) {
@@ -617,6 +665,10 @@ function combatantRow(c, index, redraw, { readOnly = false, mine = null } = {}) 
     if (res?.mitigation) {
       toast(`${c.name} is ${res.mitigation} — took ${res.landed}`, 'ok');
     }
+    if (res?.concentrationDc) {
+      toast(`${c.name} must make a DC ${res.concentrationDc} Constitution `
+        + `save or lose ${c.concentrating}`, 'warn');
+    }
     if (res?.downed) toast(`${c.name} is down`, 'bad');
     log(mult < 0 ? 'damage_dealt' : 'healed',
       { target: c.name, amount: Math.abs(n) });
@@ -625,6 +677,20 @@ function combatantRow(c, index, redraw, { readOnly = false, mine = null } = {}) 
   top.append(amount);
   top.append(el('button', { class: 'act small', onClick: () => apply(-1) }, 'Hit'));
   top.append(el('button', { class: 'act ghost small', onClick: () => apply(+1) }, 'Heal'));
+  top.append(el('button', {
+    class: 'act ghost small',
+    'aria-label': `Set concentration for ${c.name}`,
+    onClick: async () => {
+      const what = await sheetPrompt({
+        title: 'Concentration',
+        label: 'Concentrating on what? (blank to clear)',
+        value: c.concentrating || '',
+      });
+      if (what === null) return;
+      setConcentration(c.id, what);
+      redraw();
+    },
+  }, 'conc'));
   top.append(el('button', {
     class: 'act ghost small', onClick: () => { remove(c.id); redraw(); },
   }, '×'));

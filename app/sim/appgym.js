@@ -3561,6 +3561,73 @@ export const SUITES = [
         },
       },
       {
+        id: 'runner_sides_and_concentration',
+        title: 'The shared fight knows friend from foe and asks for the save',
+        run(c, { dm, monsters }) {
+          c.feature('shared', 'encounter', 'concentration');
+          const runner = dm.runner;
+          runner.reset();
+          const ogre = monsters.find((m) => /ogre/i.test(m.name)) || monsters[0];
+          runner.addMonsters(ogre, 1);
+          c.eq(runner.state.combatants[0].side, 'enemy',
+            'a monster arrives as an enemy');
+
+          // Records from before sides existed default the way every fight
+          // silently assumed: PCs for the party, everything else against.
+          runner.reset();
+          runner.adopt({ combatants: [
+            { id: 'c1', kind: 'pc', name: 'Old PC', hp: 10, hpMax: 10 },
+            { id: 'c2', kind: 'monster', name: 'Old Ogre', hp: 40, hpMax: 40 },
+          ],
+          round: 1, turn: 0, started: true });
+          c.eq(runner.state.combatants[0].side, 'ally',
+            'a legacy PC becomes an ally');
+          c.eq(runner.state.combatants[1].side, 'enemy',
+            'a legacy monster stays an enemy');
+
+          runner.toggleSide('c2');
+          c.eq(runner.state.combatants[1].side, 'ally',
+            'the charmed ogre can switch sides');
+          runner.toggleSide('c1');
+          c.eq(runner.state.combatants[0].side, 'ally',
+            'a PC cannot be flipped against the party');
+
+          // Concentration: the engine computes max(10, floor(raw/2)) - the
+          // runner used to strip the field, so the save was never asked for.
+          runner.setConcentration('c1', 'Bless');
+          const small = runner.applyTo('c1', -6);
+          c.eq(small.concentrationDc, 10, 'small hits still mean a DC 10 save');
+          const big = runner.applyTo('c1', -3);
+          // 3 damage after a 6: fresh call, raw 3 -> still DC 10 floor.
+          c.eq(big.concentrationDc, 10, 'the DC never drops below 10');
+          runner.setConcentration('c2', 'Hold Person');
+          const heavy = runner.applyTo('c2', -22);
+          c.eq(heavy.concentrationDc, 11,
+            'a heavy hit asks for half the raw damage');
+          const heal = runner.applyTo('c2', 4);
+          c.ok(!heal.concentrationDc, 'healing never asks for the save');
+          runner.setConcentration('c1', '');
+          const after = runner.applyTo('c1', -8);
+          c.ok(!after.concentrationDc, 'clearing concentration clears the ask');
+
+          const snap = runner.snapshot();
+          c.ok(snap.combatants.every((x) => x.side === 'ally' || x.side === 'enemy'),
+            'sides travel with the snapshot');
+          c.eq(snap.combatants[1].concentrating, 'Hold Person',
+            'and so does concentration');
+
+          // At 0 HP there is no save - concentration simply ends, and the
+          // record says so. (The bug this asserts against: the save toast
+          // fired and was instantly overwritten by "is down".)
+          const kill = runner.applyTo('c2', -50);
+          c.ok(kill.downed && !kill.concentrationDc,
+            'a downing hit asks for no save');
+          c.eq(runner.state.combatants[1].concentrating, null,
+            'the spell is gone from the record');
+          runner.reset();
+        },
+      },
+      {
         id: 'adopt_keeps_ids_unique',
         title: 'Adding to an adopted fight does not collide with what arrived',
         run(c, { dm, monsters }) {
@@ -4302,6 +4369,17 @@ export const MUTATIONS = [
     patch: (ctx) => ({ pregen: { ...ctx.pregen,
       forgeParty: (n, s, seed) => ctx.pregen.forgeParty(n, s, seed)
         .map((h) => ({ ...h, inventory: [], hp: { ...h.hp, max: 1 } })) } }),
+  },
+  {
+    id: 'conc_check_forgotten',
+    what: 'the shared fight stops asking for the concentration save',
+    patch: (ctx) => ({ dm: { ...ctx.dm,
+      runner: { ...ctx.dm.runner,
+        applyTo: (id, delta, type) => {
+          const res = ctx.dm.runner.applyTo(id, delta, type);
+          if (res) delete res.concentrationDc;
+          return res;
+        } } } }),
   },
 ];
 

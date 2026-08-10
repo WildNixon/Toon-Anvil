@@ -212,14 +212,16 @@ async function damageCombatant(index, delta) {
     // An enemy losing HP is damage WE dealt; a PC losing HP is damage taken.
     await log(c.side === 'pc' ? 'damage_taken' : 'damage_dealt',
       { target: c.name, amount: -delta });
-    if (res.concentrationDc) {
-      toast(`${c.name} must make a DC ${res.concentrationDc} Constitution save `
-        + `or lose ${c.concentrating}`, 'warn');
-    }
     if (res.downed) {
+      // At 0 HP concentration simply ends - no save, and no second toast
+      // overwriting the one that mattered.
+      c.concentrating = null;
       if (c.side === 'pc') await log('downed', { name: c.name });
       else await log('kill', { target: c.name });
       toast(`${c.name} is down`, c.side === 'pc' ? 'bad' : 'ok');
+    } else if (res.concentrationDc) {
+      toast(`${c.name} must make a DC ${res.concentrationDc} Constitution save `
+        + `or lose ${c.concentrating}`, 'warn');
     }
   } else {
     await log('healed', { target: c.name, amount: delta });
