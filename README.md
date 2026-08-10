@@ -167,12 +167,14 @@ reports each one where it matters.
    under two points (merged and zipped character-by-character by
    top-tolerance extraction) and draw display initials whose boxes dip
    below their neighbours. Lines are now clustered on the TRUE baseline
-   from each glyph's text matrix — but only where a case-alternation
-   scatter score proves the default extraction is zipped and the rebuild
-   measurably cures it, so books that extract cleanly keep their exact
-   bytes. What remains for those documents is structural, not textual:
-   2026-format UA marks feature levels in tables rather than prose, which
-   the grouping signals do not yet read.
+   from each glyph's text matrix — but only where a scatter score (which
+   also sees the all-capitals form of the salad) proves the default
+   extraction is zipped and the rebuild measurably cures it, so books
+   that extract cleanly keep their exact bytes. The 2026 playtest format
+   assembles end to end: "NAME (CLASS)" headings anchor their subclasses
+   with the class taken straight from the parentheses, "LEVEL 3: FEATURE"
+   headings supply levels and clean feature names, and bonus-spell rows
+   ("3 Detect Magic, Shield") land as the subclass's spell table.
 
 **Not planned:** anything that reads D&D Beyond, and any bulk crawl of a
 homebrew site.

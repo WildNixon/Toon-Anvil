@@ -155,6 +155,13 @@ def _scatter_score(text: str) -> float:
     if not text:
         return 0.0
     hits = len(re.findall(r"[a-z][A-Z][a-z]", text))
+    # ALL-CAPS scatter has no lowercase at all, so the alternation pattern
+    # is blind to it - "M S (R )" scored zero and one page kept its salad.
+    # Isolated single-capital pairs are its signature; they weigh double
+    # because they cluster in short heading lines. A stray initialism in
+    # clean prose cannot open the gate alone, and even if it did, the
+    # halving guard holds: rebuilding clean text reproduces the same pairs.
+    hits += 2 * len(re.findall(r"\b[A-Z]\s+[A-Z]\b(?!\w)", text))
     return hits * 1000.0 / max(1, len(text))
 
 
@@ -737,6 +744,37 @@ SUBCLASS_NAME_SHAPE = re.compile(
     r"(?:Domain|Patron|Archetype|Conclave|Tradition|Origin|Bloodline)"
     r")\s*$")
 
+# 2026-format UA titles each subclass "WARRIOR OF THE MYSTIC ARTS (MONK)" -
+# any name at all, with the class in parentheses. The parens are the
+# strongest class signal there is, stronger even than the name's shape.
+# Deliberately NOT anchored at the end: a sidebar heading can share the
+# baseline and merge into the same line ("VESTIGE PATRON (WARLOCK) VESTIGE
+# COMPANION"), and the trailing words must not cost the anchor.
+CLASS_PAREN_ANCHOR = re.compile(
+    r"^\s*([A-Z][A-Za-z'\- ]{2,40}?)\s*\("
+    r"(barbarian|bard|cleric|druid|fighter|monk|paladin|ranger|rogue|"
+    r"sorcerer|warlock|wizard|artificer)\)",
+    re.I,
+)
+
+# The same format marks each feature "LEVEL 3: SPELLGUARD STRIKE" - the
+# level rides the title, and the display name is what follows the colon.
+LEVEL_TITLE_PREFIX = re.compile(r"^\s*LEVEL\s+\d+\s*:\s*", re.I)
+
+
+def _display_name(raw: str) -> str:
+    """ALL-CAPS headings become title case, connectors staying lowercase."""
+    t = raw.strip()
+    if not t or t != t.upper():
+        return t
+    small = {"of", "the", "and", "a", "an", "or", "in", "to"}
+    words = []
+    for i, w in enumerate(t.split()):
+        lw = w.lower()
+        words.append(lw if (i and lw in small) else lw.capitalize())
+    return " ".join(words)
+
+
 # What the name's own SHAPE says about the class. Only unambiguous forms are
 # mapped - "Order of X" belongs to several classes and stays unmapped.
 NAME_SHAPE_CLASS = [
@@ -766,6 +804,65 @@ SUBCLASS_IN_TEXT = re.compile(
     r"([A-Z][A-Za-z'’\-]*(?:\s+[A-Z][A-Za-z'’\-]*){0,3}?)\s+feature",
     re.I,
 )
+
+
+# A bonus-spell table row survives extraction as "3 Detect Magic, Shield" -
+# a level and a letters-heavy list. Spell-slot rows ("10 7 4 3 - -") are
+# digits and dashes and do not qualify.
+SPELL_ROW = re.compile(r"^\s*(\d{1,2})(?:st|nd|rd|th)?\s+"
+                       r"([A-Za-z][A-Za-z ,'/\-]{5,})\s*$")
+
+
+def _collect_anchors(blocks: list[dict]) -> list[dict]:
+    """Subclass anchors from the block stream, with their spell tables.
+
+    Two heading styles anchor a subclass: a name-shaped title ("College of
+    Creation"), and the 2026 style "WARRIOR OF THE MYSTIC ARTS (MONK)" -
+    where the parenthesised class is carried as an EXPLICIT class, the
+    strongest signal there is. Spell-table rows that follow an anchor
+    ("3 Detect Magic, Shield") attach to it as {level, spells}.
+    """
+    anchors: list[dict] = []
+
+    def scan_rows(snippet: str) -> None:
+        # Rows appear as block TITLES when the line after them was long
+        # enough to mark, and inside block BODIES when it was not - both
+        # happen in the same document. Every spell name is capitalised,
+        # which is what keeps prose like "2 or lower (the target..." out.
+        if not (anchors and snippet):
+            return
+        for line in snippet.split("\n"):
+            row = SPELL_ROW.match(line.strip())
+            if not row:
+                continue
+            spells = [s.strip() for s in row.group(2).split(",") if s.strip()]
+            if (1 <= len(spells) <= 6
+                    and all(s[0].isupper() and len(s) <= 30 for s in spells)):
+                anchors[-1]["spellRows"].append(
+                    {"level": int(row.group(1)), "spells": spells})
+
+    for b in blocks:
+        t = (b.get("title") or "").strip()
+        if not t and not b.get("text"):
+            continue
+        m = CLASS_PAREN_ANCHOR.match(t)
+        if m:
+            anchors.append({"name": _display_name(m.group(1)),
+                            "cls": m.group(2).lower(),
+                            "page": b["page"], "order": b["order"],
+                            "text": b["text"][:300], "spellRows": []})
+            scan_rows(b["text"][:600])
+            continue
+        if SUBCLASS_NAME_SHAPE.match(t):
+            anchors.append({"name": t, "cls": None,
+                            "page": b["page"], "order": b["order"],
+                            "text": b["text"][:300], "spellRows": []})
+            scan_rows(b["text"][:600])
+            continue
+        if anchors and b["page"] - anchors[-1]["page"] <= 5:
+            scan_rows(t)
+            scan_rows(b["text"][:600])
+    return anchors
 
 
 def subclass_named_in(text: str) -> str | None:
@@ -815,20 +912,29 @@ def assemble_subclasses(features: list[dict], doc_title: str,
 
     for f in features:
         lvl = level_of(f["title"] + " " + f["text"][:300])
-        entry = {"name": f["title"], "level": lvl, "text": f["text"], "page": f["page"]}
+        entry = {
+            "name": _display_name(LEVEL_TITLE_PREFIX.sub("", f["title"]))
+            or f["title"],
+            "level": lvl, "text": f["text"], "page": f["page"],
+        }
         sub = subclass_named_in(f["text"]) or subclass_named_in(f["title"])
         source = "text"
         intro = ""
+        cls_hint = None
+        spell_rows: list = []
         if not sub:
             a = anchor_for(f)
             if a:
                 sub, source, intro = a["name"], "anchor", a.get("text", "")
+                cls_hint = a.get("cls")
+                spell_rows = a.get("spellRows", [])
         if sub:
             key = re.sub(r"\s+", " ", sub.lower())
             g = named.setdefault(key, {
                 "name": sub, "features": [], "firstPage": f["page"],
                 "candidateNames": [sub], "nameSource": source,
-                "introText": intro,
+                "introText": intro, "explicitClass": cls_hint,
+                "spellRows": spell_rows,
             })
             g["features"].append(entry)
             g["firstPage"] = min(g["firstPage"], f["page"])
@@ -894,12 +1000,15 @@ def assemble_subclasses(features: list[dict], doc_title: str,
             continue
         name = (g["name"] or (g["candidateNames"][0] if g["candidateNames"]
                               else g["features"][0]["name"]))
-        # The name's own shape is the strongest class signal there is -
-        # "College of X" is a bard subclass wherever the word bard hides.
-        # The anchor's intro prose is next ("Bards of this college...");
-        # the features' joined text is the last resort, and it is the one
-        # that called the Twilight Domain a druid.
-        cls = next((c for s, c in NAME_SHAPE_CLASS if s.search(name)), None)
+        # Class signals in order of strength: the 2026 anchor's own
+        # parenthesised class beats everything; then the name's shape
+        # ("College of X" is a bard's wherever the word bard hides); then
+        # the anchor's intro prose; then the features' joined text - the
+        # search that once called the Twilight Domain a druid.
+        cls = g.get("explicitClass")
+        if not cls:
+            cls = next((c for s, c in NAME_SHAPE_CLASS if s.search(name)),
+                       None)
         if not cls:
             intro = str(g.get("introText") or "").lower()
             cls = next((c for c in CLASSES if c in intro), None)
@@ -920,7 +1029,15 @@ def assemble_subclasses(features: list[dict], doc_title: str,
 
             } for f in sorted(g["features"], key=lambda x: x["level"])],
             "flavor": {"eyebrow": doc_title, "subtitle": "", "quote": "", "lede": []},
-            "rollTables": [], "spellTable": None, "designNotes": [],
+            "rollTables": [],
+            # Bonus-spell rows that followed this group's anchor heading -
+            # "3 Detect Magic, Shield" - in the app's own shape: the mapper
+            # reads spellTable.byLevel and turns it into always-prepared
+            # spells, so any other shape breaks staging.
+            "spellTable": ({"byLevel": {str(r["level"]): r["spells"]
+                                        for r in g["spellRows"]}}
+                           if g.get("spellRows") else None),
+            "designNotes": [],
             "pages": [g["firstPage"], g.get("lastPage", g["firstPage"])],
             "adapter": "pdf",
             "fidelity": "low",
@@ -1161,18 +1278,14 @@ def selftest() -> dict:
     # --- subclass grouping, in the three styles real documents use -------
 
     def assemble_pages(pages: list[str]) -> list[dict]:
-        # Mirrors split(): stream order annotated, anchors collected from
-        # name-shaped titles, both handed to the assembler.
+        # Mirrors split(): stream order annotated, anchors collected by the
+        # same helper, both handed to the assembler.
         blocks = blocks_from(pages)
         for i, b in enumerate(blocks):
             b["order"] = i
         feats = [b for b in blocks if classify(b)[0] == "subclass_feature"]
-        anchors = [{"name": b["title"].strip(), "page": b["page"],
-                    "order": b["order"], "text": b["text"][:300]}
-                   for b in blocks
-                   if b.get("title")
-                   and SUBCLASS_NAME_SHAPE.match(b["title"].strip())]
-        return assemble_subclasses(feats, "gym-fixture", anchors)
+        return assemble_subclasses(feats, "gym-fixture",
+                                   _collect_anchors(blocks))
 
     # 2a. In-text naming (the Armokil style): "3rd-level Gymnast feature"
     #     as a subheading inside the feature text. This path has worked
@@ -1330,6 +1443,56 @@ def selftest() -> dict:
          _scatter_score(zipped) > 8.0 and _scatter_score(prose) < 2.0,
          f"zipped={_scatter_score(zipped):.1f} prose={_scatter_score(prose):.1f}")
 
+    # 3d. ALL-CAPS scatter has no lowercase, which left the alternation
+    #     pattern blind - "M S (R )" scored zero and kept its salad. The
+    #     single-capital-pair signal catches it, while ordinary title-case
+    #     prose ("A Midsummer Night") stays cold.
+    caps_salad = "M S (R )\nL 3:D M\nSteal magic to empower your strikes."
+    caps_prose = ("A Midsummer Night performance earns the troupe a "
+                  "standing ovation in the town square.")
+    case("allcaps_scatter_detected",
+         _window_scatter(caps_salad) > 8.0
+         and _scatter_score(caps_prose) < 2.0,
+         f"salad={_window_scatter(caps_salad):.1f} "
+         f"prose={_scatter_score(caps_prose):.1f}")
+
+    # 3e. The 2026 format, end to end: a "NAME (CLASS)" anchor over
+    #     "LEVEL N: FEATURE" headings and a bonus-spell table row. The
+    #     anchor names the group, the parens supply the class outright,
+    #     the level prefix leaves the feature's display name, and the
+    #     spell rows land as {level, spells}.
+    style_d = "\n".join([
+        "STORM CALLERS (MONK)",
+        "These monks pull the sky down into their fists and pay for it "
+        "in bruises and singed knuckles every single time.",
+        "3 Thunderwave, Shield",
+        "5 Gust of Wind, Shatter",
+        "LEVEL 3: THUNDER FIST",
+        "Your unarmed strikes crackle; once per turn you can deal an "
+        "extra die of Lightning damage to a creature you hit.",
+        "LEVEL 6: RIDE THE WIND",
+        "You gain a Fly Speed equal to your walking speed until the end "
+        "of your turn whenever you spend a Focus Point.",
+        "LEVEL 10: EYE OF THE STORM",
+        "Creatures of your choice within ten feet subtract your Wisdom "
+        "modifier from damage they take from Lightning or Thunder.",
+    ])
+    groups_e = assemble_pages([style_d])
+    ok_e = (len(groups_e) == 1
+            and groups_e[0]["name"] == "Storm Callers"
+            and groups_e[0]["class"] == "monk"
+            and groups_e[0]["nameSource"] == "anchor"
+            and [f["name"] for f in groups_e[0]["features"]]
+            == ["Thunder Fist", "Ride the Wind", "Eye of the Storm"]
+            and [f["level"] for f in groups_e[0]["features"]] == [3, 6, 10]
+            and groups_e[0]["spellTable"]
+            == {"byLevel": {"3": ["Thunderwave", "Shield"],
+                            "5": ["Gust of Wind", "Shatter"]}})
+    case("format_2026_assembles", ok_e,
+         json.dumps([(g["name"], g.get("class"),
+                      [f["name"] for f in g["features"]],
+                      g.get("spellTable")) for g in groups_e])[:220])
+
     failed = [c for c in cases if not c["ok"]]
     return {"ok": not failed, "passed": len(cases) - len(failed),
             "failed": len(failed), "cases": cases}
@@ -1367,10 +1530,7 @@ def split(path: Path) -> dict:
     # Anchor headings: any block titled like a subclass name, whatever it
     # classified as - the intro prose under "College of Creation" is
     # unclassified, and that is fine; the TITLE is the anchor.
-    anchors = [{"name": b["title"].strip(), "page": b["page"],
-                "order": b["order"], "text": b["text"][:300]}
-               for b in blocks
-               if b.get("title") and SUBCLASS_NAME_SHAPE.match(b["title"].strip())]
+    anchors = _collect_anchors(blocks)
 
     subclasses = assemble_subclasses(
         buckets.get("subclass_feature", []), path.stem, anchors)
