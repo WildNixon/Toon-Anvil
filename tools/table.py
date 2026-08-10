@@ -487,6 +487,13 @@ def redact_campaign(record: dict, profile: dict | None) -> dict:
     # campaign record precisely BECAUSE kinds are read-open to seated
     # players - a new "templates" kind would have leaked by default.
     out.pop("encounterTemplates", None)
+    # Clocks: the players see the pressure the DM has chosen to show them.
+    # A secret clock is ABSENT, not merely undrawn - its label alone
+    # ("the ritual completes") is the spoiler.
+    out["clocks"] = [
+        c for c in (record.get("clocks") or [])
+        if isinstance(c, dict) and c.get("public")
+    ]
     return out
 
 

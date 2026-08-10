@@ -83,6 +83,10 @@ export const EVENT_TYPES = {
 
   // --- the world (campaign state the DM drives from the Deck)
   day_advanced:       { cat: 'world', label: 'A day passed', notable: true },
+  // Notable because the app only logs a clock STRIKING, never every
+  // segment - the Chronicle wants the moment the ritual completes, not
+  // the arithmetic that got there.
+  clock_advanced:     { cat: 'world', label: 'A clock struck', notable: true },
   faction_standing:   { cat: 'world', label: 'Faction standing shifted' },
   region_moved:       { cat: 'world', label: 'The party moved', notable: true },
   campaign_founded:   { cat: 'world', label: 'A campaign began', notable: true },

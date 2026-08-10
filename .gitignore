@@ -15,6 +15,11 @@ data/characters/
 data/campaigns/
 data/npcs/
 data/shops/
+# Who sat at your table, by the name they typed. These kind files only began
+# appearing when seats gained a colour (a profile write-through); before that
+# profiles lived solely in the already-ignored data/table.json. Names of real
+# people are the most personal thing in the tree.
+data/profiles/
 data/events.jsonl
 # The fight currently on the table: whose turn it is, who is hurt, and every
 # monster's hit points. Live play state, not something to publish.

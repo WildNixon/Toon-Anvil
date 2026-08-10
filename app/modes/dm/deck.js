@@ -17,6 +17,7 @@ import { log } from '../../core/events.js';
 import {
   listCampaigns, activeCampaign, saveCampaign, setActive, newCampaign,
   newRegion, newFaction, currentRegion,
+  newClock, tickClock, advanceDayClocks,
 } from '../../core/campaign.js';
 import { query } from '../../core/events.js';
 import { lineChart, barChart } from '../../ui/chart.js';
@@ -134,6 +135,7 @@ function draw() {
   else if (campaign.sourceSlug && !(campaign.regions || []).length) {
     container.append(bookNudge());
   }
+  container.append(clocksPanel());
   container.append(mapPanel());
   const columns = el('div', { class: 'grid two' });
   columns.append(factionsPanel());
@@ -142,6 +144,107 @@ function draw() {
   container.append(regionsPanel());
   if (!ingest) container.append(ingestPanel());
   container.append(campaignPanel());
+}
+
+/* ------------------------------------------------------------------ */
+/* clocks                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Pressure that fills. Segments are BUTTONS, not a dial() - dial() owns
+ * the "X"/"X value" aria contract the tests hold, and a clock is a row of
+ * discrete taps rather than a slider.
+ */
+function clocksPanel() {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Clocks'));
+  panel.append(el('h3', {}, 'Pressure'));
+  const clocks = campaign.clocks || [];
+
+  if (!clocks.length) {
+    panel.append(el('p', { class: 'muted', style: 'font-size:13px;margin:0 0 8px' },
+      'No clocks yet. A clock is a promise with a countdown: the ritual '
+      + 'completes, the siege lands, the debt comes due.'));
+  }
+
+  const save = async (next, extra = null) => {
+    campaign.clocks = next;
+    await saveCampaign(campaign);
+    if (extra) await extra();
+    draw();
+  };
+
+  for (const c of clocks) {
+    const row = el('div', {
+      class: 'clock-row',
+      dataset: { id: c.id },
+    });
+    row.append(el('span', { class: 'clock-label' }, c.label));
+
+    const segs = el('div', {
+      class: 'clock-segs', role: 'group',
+      'aria-label': `${c.label} — ${c.filled} of ${c.size} filled`,
+    });
+    for (let i = 0; i < c.size; i += 1) {
+      segs.append(el('button', {
+        class: `clock-seg${i < c.filled ? ' on' : ''}`,
+        'aria-label': `${c.label} segment ${i + 1}`,
+        onClick: () => {
+          // Tapping the last filled segment empties back to it; tapping
+          // any other fills up to it. A clock is dragged forwards more
+          // often than back, and this is one tap for either.
+          const want = (i + 1 === c.filled) ? i : i + 1;
+          save(clocks.map((x) => (x.id === c.id
+            ? tickClock(x, want - x.filled) : x)),
+          want >= c.size && c.filled < c.size
+            ? () => log('clock_advanced', {
+              clock: c.label, filled: want, size: c.size, struck: true,
+            }, { campaignId: campaign.id })
+            : null);
+        },
+      }));
+    }
+    row.append(segs);
+
+    row.append(el('span', { class: 'mono muted', style: 'font-size:11px' },
+      `${c.filled}/${c.size}`));
+    row.append(el('button', {
+      class: `act small${c.public ? '' : ' ghost'}`,
+      title: c.public ? 'The players can see this one'
+        : 'Hidden: the server strips it from what players receive',
+      onClick: () => save(clocks.map((x) => (x.id === c.id
+        ? { ...x, public: !x.public } : x))),
+    }, c.public ? 'shown' : 'secret'));
+    row.append(el('button', {
+      class: `act small${c.advanceOnDay ? '' : ' ghost'}`,
+      title: 'Fill one segment every time the day advances',
+      onClick: () => save(clocks.map((x) => (x.id === c.id
+        ? { ...x, advanceOnDay: !x.advanceOnDay } : x))),
+    }, c.advanceOnDay ? 'ticks daily' : 'manual'));
+    row.append(el('button', {
+      class: 'act ghost small',
+      'aria-label': `Remove ${c.label}`,
+      onClick: () => save(clocks.filter((x) => x.id !== c.id)),
+    }, '×'));
+    panel.append(row);
+  }
+
+  const add = el('div', { class: 'btnrow', style: 'margin-top:8px' });
+  const label = el('input', {
+    type: 'text', placeholder: 'The ritual completes',
+    'aria-label': 'Clock name', style: 'max-width:220px',
+  });
+  add.append(label);
+  add.append(el('button', {
+    class: 'act',
+    onClick: () => {
+      const name = label.value.trim();
+      if (!name) return;
+      save([...clocks, newClock(name)]);
+    },
+  }, 'Start a clock'));
+  panel.append(add);
+  return panel;
 }
 
 function bookNudge() {
@@ -228,10 +331,23 @@ function dialsPanel() {
     title: 'End the day. Tomorrow has its own sky.',
     onClick: async () => {
       campaign.day += 1;
+      // The day carries the clocks with it: pressure that only moves when
+      // somebody remembers is not pressure.
+      const ticked = advanceDayClocks(campaign.clocks || []);
+      campaign.clocks = ticked.clocks;
       await saveCampaign(campaign);
       await log('day_advanced', { day: campaign.day },
         { campaignId: campaign.id });
-      toast(`Day ${campaign.day} dawns`, 'ok');
+      for (const struck of ticked.struck) {
+        // eslint-disable-next-line no-await-in-loop
+        await log('clock_advanced', {
+          clock: struck.label, filled: struck.filled, size: struck.size,
+          struck: true, day: campaign.day,
+        }, { campaignId: campaign.id });
+      }
+      toast(ticked.struck.length
+        ? `Day ${campaign.day}: ${ticked.struck.map((s) => s.label).join(', ')}`
+        : `Day ${campaign.day} dawns`, ticked.struck.length ? 'warn' : 'ok');
       draw();
     },
   }, 'Advance the day'));

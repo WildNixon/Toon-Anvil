@@ -1980,6 +1980,62 @@ export const SUITES = [
     ],
   },
   {
+    id: 'clocks',
+    title: 'Clocks: pressure that advances with the day',
+    why: 'A clock is a promise with a countdown. If it can overfill, tick '
+       + 'twice, or strike again once struck, the DM is holding a lie about '
+       + 'when the ritual completes - and the players are watching a '
+       + 'progress bar that means nothing.',
+    scenarios: [
+      {
+        id: 'clock_ticks_are_bounded_and_strike_once',
+        title: 'Segments clamp, and the strike happens exactly once',
+        async run(c, { campaign, events }) {
+          c.feature('clocks', 'world');
+          const clock = campaign.newClock('The ritual completes', 6);
+          c.eq(clock.filled, 0, 'a new clock starts empty');
+          c.eq(clock.size, 6, 'with the size it was given');
+          c.ok(!clock.public && !clock.advanceOnDay,
+            'and is secret and manual until the DM says otherwise');
+          c.eq(campaign.newClock('x', 99).size, 12,
+            'an absurd size is clamped to something drawable');
+
+          c.eq(campaign.tickClock(clock, 2).filled, 2, 'ticking fills');
+          c.eq(campaign.tickClock(clock, -5).filled, 0,
+            'winding back stops at empty, never negative');
+          c.eq(campaign.tickClock(clock, 99).filled, 6,
+            'and forward stops at full');
+
+          // The day carries only the clocks tied to it.
+          const daily = { ...campaign.newClock('Siege', 3), advanceOnDay: true };
+          const manual = campaign.newClock('Debt', 3);
+          let list = [daily, manual];
+          let out = campaign.advanceDayClocks(list);
+          c.eq(out.clocks[0].filled, 1, 'a daily clock ticks with the day');
+          c.eq(out.clocks[1].filled, 0, 'a manual one does not');
+          c.eq(out.struck.length, 0, 'and nothing struck yet');
+
+          out = campaign.advanceDayClocks(out.clocks);
+          out = campaign.advanceDayClocks(out.clocks);
+          c.eq(out.struck.length, 1, 'the last segment strikes');
+          c.eq(out.struck[0].label, 'Siege', 'naming the clock that landed');
+          const again = campaign.advanceDayClocks(out.clocks);
+          c.eq(again.struck.length, 0, 'a full clock never strikes twice');
+          c.eq(again.clocks[0].filled, 3, 'and never overfills');
+
+          // A record from before clocks existed advances without inventing.
+          list = campaign.advanceDayClocks(undefined);
+          c.eq(list.clocks.length, 0, 'a campaign with no clocks is fine');
+
+          c.ok(!!events.EVENT_TYPES.clock_advanced,
+            'the strike has an event type');
+          c.ok(events.EVENT_TYPES.clock_advanced.notable,
+            'and it is notable - the Chronicle wants the moment');
+        },
+      },
+    ],
+  },
+  {
     id: 'dicefeed',
     title: 'The shared dice feed',
     why: 'Roll events reach every seat at the table. The allowlist at the '
@@ -4005,7 +4061,9 @@ export const BARS = {
   // pregen forge.
   // And again (50 -> 52) with the RPG-feel epic: roll cards, the phone
   // pass, the dice feed, death saves, seat colours.
-  minFeaturesCovered: 52,
+  // And again (52 -> 55) with the strategy-DM epic: prepared encounters,
+  // the battle board, the cockpit, clocks.
+  minFeaturesCovered: 55,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.
@@ -4463,6 +4521,12 @@ export const MUTATIONS = [
           if (res) delete res.concentrationDc;
           return res;
         } } } }),
+  },
+  {
+    id: 'clocks_ignore_the_day',
+    what: 'the day stops carrying the clocks that tick with it',
+    patch: (ctx) => ({ campaign: { ...ctx.campaign,
+      advanceDayClocks: (clocks = []) => ({ clocks, struck: [] }) } }),
   },
   {
     id: 'board_tokens_unclamped',

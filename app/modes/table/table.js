@@ -147,6 +147,10 @@ function worldStrip() {
         title: 'How they currently regard the party',
       }, `${f.name} ${f.standing >= 0 ? '+' : ''}${f.standing}`));
     }
+    // A campaign fresh off a book has clocks before it has regions - the
+    // pressure is world state either way, so both branches show it.
+    const early = clockStrip();
+    if (early) strip.append(early);
     return strip;
   }
   const sky = weatherFor(dmTables,
@@ -166,7 +170,34 @@ function worldStrip() {
       title: 'How they currently regard the party',
     }, `${f.name} ${f.standing >= 0 ? '+' : ''}${f.standing}`));
   }
+  const clocks = clockStrip();
+  if (clocks) strip.append(clocks);
   return strip;
+}
+
+/**
+ * The pressure the DM has chosen to show. Read-only, and only ever the
+ * public ones - the server stripped the rest before this client saw the
+ * record, so there is nothing here to filter.
+ */
+function clockStrip() {
+  const shown = (campaign?.clocks || []).filter((c) => c.public);
+  if (!shown.length) return null;
+  const wrap = el('span', { class: 'clock-strip' });
+  for (const c of shown) {
+    wrap.append(el('span', { class: 'mono', style: 'font-size:11px' }, c.label));
+    const segs = el('span', {
+      class: 'clock-segs',
+      'aria-label': `${c.label} — ${c.filled} of ${c.size} filled`,
+    });
+    for (let i = 0; i < c.size; i += 1) {
+      segs.append(el('span', {
+        class: `clock-seg${i < c.filled ? ' on' : ''}`, 'aria-hidden': 'true',
+      }));
+    }
+    wrap.append(segs);
+  }
+  return wrap;
 }
 
 function mapPanel() {

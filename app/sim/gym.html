@@ -89,7 +89,9 @@ import * as providers from '../core/providers.js';
 import * as session from '../core/session.js';
 import * as theme from '../ui/theme.js';
 import { weatherFor, forecastFor } from '../core/weather.js';
-import { newCampaign, newRegion, stampDay } from '../core/campaign.js';
+import {
+  newCampaign, newRegion, stampDay, newClock, tickClock, advanceDayClocks,
+} from '../core/campaign.js';
 import { unitPrice, sellBack } from '../modes/shop/pricing.js';
 import {
   parseStartingEquipment, pointBuySpend, arrayAssignment,
@@ -133,7 +135,7 @@ async function buildCtx() {
     session,
     theme,
     campaign: { weatherFor, forecastFor, newCampaign, newRegion, stampDay,
-      unitPrice, sellBack },
+      unitPrice, sellBack, newClock, tickClock, advanceDayClocks },
     rules: { parseStartingEquipment, pointBuySpend, arrayAssignment,
       spellBudget, spellbookProblems },
     vec,

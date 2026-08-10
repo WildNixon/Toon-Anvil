@@ -137,6 +137,13 @@ reports each one where it matters.
    Inferred groups carry that provenance, the library's combine tool is the
    correction — a guess you can correct beats a guess you can't — and
    saving the source page as HTML still beats a PDF.
+6. **The battle board is tokens on a picture, not a VTT.** No grid, no fog,
+   no measurement, and no line of sight: the DM drags circles onto the
+   campaign map and the players watch them move. That is the couch sweet
+   spot, and going further is not planned.
+7. **Concentration is asked for, not adjudicated.** The fight names the DC
+   the moment damage lands; whoever is holding the spell rolls it and the
+   DM applies the answer. The app does not decide whether the spell drops.
 
 **Not planned:** anything that reads D&D Beyond, and any bulk crawl of a
 homebrew site.
@@ -191,8 +198,8 @@ working with no network.
 
 | Screen | What it shows |
 |---|---|
-| **Stage** | The live now: the fight (one initiative list, party and monsters together, resistances applied by the engine), who is at the table with their claims, party vitals — and the DM's levers: the forge, per-character and party-wide level-up grants, assigning characters. |
-| **Deck** | The campaign as a control panel. The in-game **day** and its **weather** (computed from the campaign's seed — deterministic, so every screen derives the same sky and any day is recomputable), the **interactive map** (drop the setting's image; pan, zoom, pin locations, factions, quests and the party; reveal pins one by one), **factions** with standing sliders, public toggles and SECRET agendas plus a standing-over-days chart, and the **economy**: a price dial per region that the players' Market actually charges — turn it and their open screens re-price, live. Also ingests a setting document: split by headings, file each section as a region, faction, NPC or lore with one click. |
+| **Stage** | The cockpit: the fight holds the middle (one initiative list, party and monsters together, resistances applied by the engine, **ally/foe sides**, concentration that actually asks for the save), and one foldable rail beside it carries the **battle board** (tokens on the campaign map, dragged by the DM and watched by the players), party vitals, the **dice rail**, the **prepared-encounter drawer**, and one-tap ambience. Plus the DM's levers: the forge, per-character and party-wide level-up grants, assigning characters. |
+| **Deck** | The campaign as a control panel. The in-game **day** and its **weather** (computed from the campaign's seed — deterministic, so every screen derives the same sky and any day is recomputable), **clocks** (pressure that fills a segment at a time — tie one to the calendar and every day advances it; public ones show on the players' strip, secret ones are stripped by the server), the **interactive map** (drop the setting's image; pan, zoom, pin locations, factions, quests and the party; reveal pins one by one), **factions** with standing sliders, public toggles and SECRET agendas plus a standing-over-days chart, and the **economy**: a price dial per region that the players' Market actually charges — turn it and their open screens re-price, live. Also ingests a setting document: split by headings, file each section as a region, faction, NPC or lore with one click. |
 | **World** | The prep: bestiary, encounter builder, treasure hoards, improv generators, rules reference — behind sub-tabs, each with its own search. Nothing here redraws off the live feed, so a half-typed search survives a player's die roll. |
 | **Story** | The whole party's event log as it happens — every roll, purchase and promise with the character's name on it — plus the open threads: promises unkept, secrets unused, NPCs met once. Read-only: the story is what the table did. |
 | **Setup** | Before the campaign: open the table (the code shows big — with a join link and QR — and only to the DM's seat: the server's own machine, or any device holding the DM token), forge a **quick party** of ready SRD heroes for the join gate, the forge toggle, and the homebrew workshop — homebrew is added and accepted by the DM here, before the start, and stays a DM-only tool after. |
@@ -285,6 +292,17 @@ name appears in). Your claimed character's turn puts a banner on your screen
 and buzzes your phone. At 0 HP the sheet becomes death-save pips; a level-up
 gets its moment; and the DM's Stage carries six one-tap ambience beds that
 play on the DM's speakers only.
+
+**And it runs like a strategy game for the DM.** The Stage is one cockpit:
+the fight in the middle with **ally/foe sides** and concentration that
+actually asks for the save when damage lands, and a foldable rail beside it
+holding the **battle board** (drag the fight's tokens onto the campaign map;
+the players watch it move on their own map tab), the **prepared-encounter
+drawer** (save tonight's roster, deploy it with freshly rolled hit points
+when the party opens the wrong door), party vitals, the dice rail and
+ambience. **Clocks** on the Deck give the world a countdown — tie one to the
+calendar and every day fills a segment; the ones you mark public appear on
+the players' strip, and the secret ones never leave the server.
 
 | | DM | Player |
 |---|---|---|
