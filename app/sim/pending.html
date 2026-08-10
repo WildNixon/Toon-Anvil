@@ -25,6 +25,8 @@ the bug is gone — promote it into <code>appgym.js</code> and delete it from
 <p>This is deliberately <em>not</em> part of the graded gym. A suite with a
 permanent red in it stops being a gate.</p>
 
+<p id="guard" class="note" hidden></p>
+
 <p><button id="run" class="act">Run the reproductions</button>
    <span id="summary" class="muted"></span></p>
 
@@ -36,9 +38,46 @@ import { Check } from './appgym.js';
 
 const log = document.getElementById('log');
 const summary = document.getElementById('summary');
+const runBtn = document.getElementById('run');
+const guard = document.getElementById('guard');
 const say = (s = '') => { log.textContent += `${s}\n`; };
 
-document.getElementById('run').addEventListener('click', async () => {
+// Some of these reproductions OPEN AND CLOSE A TABLE - LEAK-1 needs a real
+// player token, RAIL-1 needs a real createdAt. Run them against the server
+// you are actually playing on and they will shut your table mid-session.
+// So: name the instance before anything runs, and make a real one take a
+// second, deliberate click. Same rule tools/fuzz.py enforces, for the same
+// reason - the cost of a false warning is one extra tap.
+const DISPOSABLE = /soak|fuzz|scratch|tmp|temp|test/i;
+let armed = false;
+
+(async () => {
+  let dir = '';
+  try {
+    dir = (await fetch('/api/health').then((r) => r.json())).dataDir || '';
+  } catch { dir = '(no server answered)'; }
+  if (DISPOSABLE.test(dir)) {
+    guard.hidden = false;
+    guard.textContent = `Throwaway instance (${dir}) — safe to run.`;
+    armed = true;
+    return;
+  }
+  guard.hidden = false;
+  guard.innerHTML = `<strong>This looks like a real instance</strong>`
+    + ` (${dir}). Some reproductions open and close a table, so running`
+    + ` them here will END any session in progress. Click the button once`
+    + ` to confirm, then again to run.`;
+  runBtn.textContent = 'I understand — arm the run';
+  runBtn.addEventListener('click', function arm() {
+    armed = true;
+    runBtn.textContent = 'Run the reproductions';
+    guard.textContent = `Armed against ${dir}. Click again to run.`;
+    runBtn.removeEventListener('click', arm);
+  }, { once: true });
+})();
+
+runBtn.addEventListener('click', async () => {
+  if (!armed) return;
   log.textContent = '';
   summary.textContent = 'running…';
   let still = 0; let fixed = 0;
