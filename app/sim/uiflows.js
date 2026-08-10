@@ -1087,6 +1087,57 @@ export const FLOWS = [
   },
 
   {
+    id: 'command_stage',
+    title: 'The Stage is one cockpit: the fight centre, the rail beside it',
+    async run(c, { doc }) {
+      c.feature('ui', 'dm', 'stage', 'cockpit');
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'Stage', 'Encounter'), 'the Stage opens');
+
+      const mainCol = doc.querySelector('main .cockpit-main');
+      const rail = doc.querySelector('main .cockpit-rail');
+      c.ok(!!doc.querySelector('main .cockpit'), 'the cockpit lays it out');
+      c.ok(!!mainCol && !!rail, 'a fight column and a rail beside it');
+      if (!mainCol || !rail) return;
+
+      // DOM order is a contract, not a detail: every flow (and every DM's
+      // muscle memory) reaches for the damage field as the FIRST number
+      // input on the screen. 4 = DOCUMENT_POSITION_FOLLOWING.
+      // eslint-disable-next-line no-bitwise
+      c.ok((mainCol.compareDocumentPosition(rail) & 4) !== 0,
+        'the fight comes first in the document, the rail after');
+      const firstNumber = doc.querySelector('main input[type=number]');
+      c.ok(!!firstNumber && mainCol.contains(firstNumber),
+        "so the screen's first number input is still the runner's");
+
+      const titles = [...rail.querySelectorAll(':scope > .rail-fold > summary')]
+        .map((s) => s.textContent.trim());
+      c.ok(titles.includes('The party'),
+        'the party vitals moved into the rail', titles.join(', '));
+      c.ok(titles.includes('Ambience'), 'and so did the ambience chips');
+      c.ok(titles.length >= 2, 'the rail carries the glanceable panels',
+        titles.join(', '));
+
+      // Folding one away is a fold, not a teardown.
+      const first = rail.querySelector(':scope > .rail-fold');
+      const wasOpen = first.open;
+      first.querySelector('summary')?.click();
+      await waitUntilSettled(doc);
+      c.ok(first.open !== wasOpen, 'a rail panel folds away');
+      c.eq(rail.querySelectorAll(':scope > .rail-fold').length, titles.length,
+        'without taking its neighbours with it');
+      first.querySelector('summary')?.click();
+
+      // And the fight still runs inside the new layout.
+      const before = mainText(doc);
+      button(doc, 'Next turn')?.click();
+      await waitUntilSettled(doc);
+      c.ok(mainText(doc) !== before,
+        'the runner still takes its turns in the cockpit');
+    },
+  },
+
+  {
     id: 'dm_party_dashboard',
     title: 'The party dashboard shows the numbers a DM looks up',
     async run(c, { doc }) {
@@ -1335,6 +1386,65 @@ export const FLOWS = [
       const landed = await waitFor(() => (readNumberAfter(doc, 'Day') === 40
         ? true : null), { timeout: 6000 });
       c.ok(!!landed, 'day 40 dawns on demand', String(readNumberAfter(doc, 'Day')));
+    },
+  },
+
+  {
+    id: 'deck_clocks',
+    title: 'A clock fills by tap, and the day carries the ones tied to it',
+    async run(c, { doc }) {
+      c.feature('ui', 'deck', 'clocks', 'world');
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'Deck', 'Pressure'), 'the Deck carries clocks');
+
+      const name = doc.querySelector('main input[aria-label="Clock name"]');
+      c.ok(!!name, 'a clock can be started by name');
+      if (!name) return;
+      setField(name, 'Gym Ritual');
+      button(doc, 'Start a clock')?.click();
+      const row = await waitFor(() => [...doc.querySelectorAll('main .clock-row')]
+        .find((r) => r.textContent.includes('Gym Ritual')) || null,
+      { timeout: 8000 });
+      c.ok(!!row, 'the clock appears with its segments');
+      if (!row) return;
+      const segs = row.querySelectorAll('.clock-seg');
+      c.eq(segs.length, 6, 'six segments by default');
+      c.eq(row.querySelectorAll('.clock-seg.on').length, 0, 'all empty');
+
+      // Tapping the third segment fills up to it.
+      segs[2].click();
+      const filled = await waitFor(() => {
+        const r = [...doc.querySelectorAll('main .clock-row')]
+          .find((x) => x.textContent.includes('Gym Ritual'));
+        return r && r.querySelectorAll('.clock-seg.on').length === 3 ? r : null;
+      }, { timeout: 6000 });
+      c.ok(!!filled, 'tapping a segment fills up to it');
+
+      // Tie it to the calendar, then let a day pass.
+      const daily = [...filled.querySelectorAll('button')]
+        .find((b) => b.textContent.trim() === 'manual');
+      c.ok(!!daily, 'a clock can be tied to the day');
+      daily?.click();
+      const tied = await waitFor(() => [...doc.querySelectorAll('main .clock-row')]
+        .find((r) => r.textContent.includes('Gym Ritual')
+          && r.textContent.includes('ticks daily')) || null, { timeout: 6000 });
+      c.ok(!!tied, 'and says so');
+
+      button(doc, 'Advance the day')?.click();
+      const ticked = await waitFor(() => {
+        const r = [...doc.querySelectorAll('main .clock-row')]
+          .find((x) => x.textContent.includes('Gym Ritual'));
+        return r && r.querySelectorAll('.clock-seg.on').length === 4 ? true : null;
+      }, { timeout: 8000 });
+      c.ok(!!ticked, 'the day carries the clock forward one segment');
+
+      // Clean up: the flows after this one do not need a gym clock.
+      const gone = [...doc.querySelectorAll('main .clock-row')]
+        .find((r) => r.textContent.includes('Gym Ritual'))
+        ?.querySelector('button[aria-label="Remove Gym Ritual"]');
+      gone?.click();
+      await waitUntilSettled(doc);
+      c.ok(!/Gym Ritual/.test(mainText(doc)), 'a clock can be removed');
     },
   },
 
@@ -2618,6 +2728,12 @@ export async function runPlayerView(CheckClass) {
           agenda: 'SECRETAGENDA', public: true }],
         encounterTemplates: [{ id: 'tpl-1', name: 'AMBUSHPLAN',
           monsters: [{ monsterId: 'goblin-warrior', count: 3 }] }],
+        clocks: [
+          { id: 'clk-open', label: 'The siege tightens', size: 4, filled: 2,
+            public: true, advanceOnDay: false },
+          { id: 'clk-secret', label: 'SECRETCLOCK', size: 6, filled: 5,
+            public: false, advanceOnDay: true },
+        ],
         mapId: 'gym-pv-map', lore: [] }),
     });
     await api('/api/maps/gym-pv-map', {
@@ -2768,6 +2884,18 @@ export async function runPlayerView(CheckClass) {
     }).then((r) => r.text());
     check.ok(campAsDm.includes('AMBUSHPLAN'),
       'while the DM keeps the drawer');
+
+    // Clocks: a public one is pressure the table can watch; a secret one
+    // is a spoiler in its LABEL, so it never leaves the server.
+    check.ok(!campWire.includes('SECRETCLOCK')
+      && !campList.includes('SECRETCLOCK'),
+    'a secret clock reaches the player on neither route');
+    check.ok(campWire.includes('The siege tightens'),
+      'while the public one does');
+    check.ok(campAsDm.includes('SECRETCLOCK'), 'and the DM keeps both');
+    check.ok(/The siege tightens/.test(worldText),
+      'the public clock shows on the players\' world strip', worldText.slice(0, 120));
+    check.ok(!/SECRETCLOCK/.test(worldText), 'and the secret one does not');
 
     const mapWire = await fetch('/api/maps/gym-pv-map', {
       headers: { 'X-Toon-Token': joined.body.token },

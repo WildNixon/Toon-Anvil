@@ -707,6 +707,51 @@ th {
 }
 .action-sheet .btnrow .sheet-act { display: inline-block; width: auto; }
 
+/* ---------- the command Stage: one lens, whole fight ------------------- */
+/* The runner holds the middle; everything a DM glances at mid-session sits
+   in one rail beside it. Grid places the rail on the right - the runner is
+   FIRST in the document on purpose, and nothing here may reorder that. */
+
+.cockpit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+  gap: 14px; align-items: start;
+}
+.cockpit-main, .cockpit-rail { min-width: 0; }
+.cockpit-rail { display: flex; flex-direction: column; gap: 10px; }
+
+.rail-fold > summary {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--muted);
+  cursor: pointer; padding: 2px 0 4px; list-style: none;
+}
+.rail-fold > summary::-webkit-details-marker { display: none; }
+.rail-fold > summary::before { content: '▾ '; }
+.rail-fold:not([open]) > summary::before { content: '▸ '; }
+.rail-fold > .panel { margin: 0; }
+
+@media (max-width: 980px) {
+  /* One column: the rail falls under the fight rather than squeezing it. */
+  .cockpit { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------- clocks: pressure that fills --------------------------------- */
+
+.clock-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 5px 0; border-bottom: 1px dotted var(--etch);
+}
+.clock-label { flex: 1; min-width: 120px; font-weight: 600; }
+.clock-segs { display: inline-flex; gap: 3px; }
+.clock-seg {
+  width: 16px; height: 16px; padding: 0; border-radius: 50%;
+  border: 2px solid var(--muted); background: transparent; cursor: pointer;
+}
+.clock-seg.on { background: var(--accent); border-color: var(--accent); }
+/* The players' read-only face: same shape, no taps. */
+.clock-strip { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.clock-strip .clock-segs .clock-seg { cursor: default; width: 12px; height: 12px; }
+
 /* ---------- seat colour swatches --------------------------------------- */
 
 .swatch-row { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }

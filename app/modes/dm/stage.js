@@ -36,6 +36,19 @@ export function render(root, context, activeCamp = null) {
   draw();
 }
 
+/**
+ * A rail panel the DM can fold away. <details> rather than a button pair:
+ * it is the accessible, keyboard-native disclosure, and it adds no new
+ * button strings for the UI tests to trip over. Open by default - the
+ * cockpit's job is to show everything at once.
+ */
+function fold(title, panel) {
+  const wrap = el('details', { class: 'rail-fold', open: true });
+  wrap.append(el('summary', {}, title));
+  wrap.append(panel);
+  return wrap;
+}
+
 function draw() {
   box.innerHTML = '';
 
@@ -46,22 +59,37 @@ function draw() {
   // write that would change nothing, and does nothing at all with no table
   // open - a solo DM never touches the network.
   publish();
-  box.append(runnerPanel({
+
+  // The cockpit: the fight holds the middle, everything a DM glances at
+  // sits in one rail beside it. DOM ORDER IS LOAD-BEARING - the runner
+  // comes first so the flows (and muscle memory) still find the damage
+  // field as the first number input on the screen; the rail is placed to
+  // the right by grid, not by document order.
+  const cockpit = el('div', { class: 'cockpit' });
+  const main = el('div', { class: 'cockpit-main' });
+  const rail = el('div', { class: 'cockpit-rail' });
+
+  main.append(runnerPanel({
     characters: getState().characters || [],
     sources: ctx.sources(), monsters: ctx.monsters, redraw: draw,
   }));
 
-  if (campaign) box.append(preparedPanel());
-  if (campaign?.mapId && fight.combatants.length) box.append(boardPanel());
-
-  box.append(partyPanel(getState().characters || [], ctx.sources()));
-
+  if (campaign?.mapId && fight.combatants.length) {
+    rail.append(fold('Board', boardPanel()));
+  }
+  rail.append(fold('The party',
+    partyPanel(getState().characters || [], ctx.sources())));
   // The players' rolls, as they land - the DM sees the nat 20 without
   // anyone shouting the number across the couch. Only at a table: solo,
   // there is nobody else rolling.
-  if (session.isOpen()) box.append(diceRail(getState().characters || []));
+  if (session.isOpen()) {
+    rail.append(fold('Dice', diceRail(getState().characters || [])));
+  }
+  if (campaign) rail.append(fold('Prepared', preparedPanel()));
+  rail.append(fold('Ambience', ambiencePanel()));
 
-  box.append(ambiencePanel());
+  cockpit.append(main, rail);
+  box.append(cockpit);
 }
 
 /**
