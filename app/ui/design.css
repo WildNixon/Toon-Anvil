@@ -691,6 +691,33 @@ th {
 }
 .action-sheet .btnrow .sheet-act { display: inline-block; width: auto; }
 
+/* ---------- dice rail + your-turn banner ------------------------------- */
+
+.dice-rail { display: flex; flex-direction: column; gap: 2px; }
+.dice-row {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 3px 4px; font-size: 13px;
+  border-bottom: 1px dotted var(--etch);
+}
+.dice-row:last-child { border-bottom: 0; }
+.dice-who { font-weight: 600; }
+.dice-label { flex: 1; color: var(--muted); }
+.dice-total { font-size: 15px; font-weight: 700; }
+.dice-row.crit .dice-total, .dice-row.crit .dice-flag { color: var(--gold); }
+.dice-row.fumble .dice-total, .dice-row.fumble .dice-flag { color: var(--bad-text); }
+.dice-flag {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.your-turn {
+  background: var(--accent); color: var(--zinc);
+  font-family: var(--display); font-size: 17px; letter-spacing: .12em;
+  text-align: center; padding: 9px 12px; margin-bottom: 12px;
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  animation: rollcard-in .18s ease-out;
+}
+
 #rollcards {
   position: fixed; right: 14px; bottom: 72px; z-index: 190;
   display: flex; flex-direction: column; gap: 8px;

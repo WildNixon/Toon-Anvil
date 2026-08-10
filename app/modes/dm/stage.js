@@ -17,6 +17,7 @@ import { getState, el, toast } from '../../core/store.js';
 import * as session from '../../core/session.js';
 import { runnerPanel, publish } from './runner.js';
 import { partyPanel } from './party.js';
+import { diceRail } from '../../ui/components/dicerail.js';
 
 let box = null;
 let ctx = null;
@@ -45,6 +46,11 @@ function draw() {
   }));
 
   box.append(partyPanel(getState().characters || [], ctx.sources()));
+
+  // The players' rolls, as they land - the DM sees the nat 20 without
+  // anyone shouting the number across the couch. Only at a table: solo,
+  // there is nobody else rolling.
+  if (session.isOpen()) box.append(diceRail(getState().characters || []));
 }
 
 /* ------------------------------------------------------------------ */

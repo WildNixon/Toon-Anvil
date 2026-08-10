@@ -1980,6 +1980,58 @@ export const SUITES = [
     ],
   },
   {
+    id: 'dicefeed',
+    title: 'The shared dice feed',
+    why: 'Roll events reach every seat at the table. The allowlist at the '
+       + 'source is the wall between "Pip rolled a 19" and whatever a screen '
+       + 'was trusted to keep quiet - and the rail must read the stream '
+       + 'without inventing rows.',
+    scenarios: [
+      {
+        id: 'roll_events_are_typed_and_clean',
+        title: 'A roll event carries the die and nothing else',
+        async run(c, { events, dicerail }) {
+          c.feature('dicefeed', 'events');
+          c.ok(!!events.EVENT_TYPES.roll, 'the roll type exists');
+          c.ok(!events.EVENT_TYPES.roll.notable,
+            'and is not notable - the Chronicle tells the story, not the '
+            + 'arithmetic');
+
+          const dirty = { kind: 'check', label: 'Stealth', faces: [14],
+            nat: 14, total: 19, advantage: false, disadvantage: false,
+            crit: false, fumble: false,
+            targetAc: 15, secretNote: 'the lich is the mayor' };
+          const clean = dicerail.safeRollPayload(dirty);
+          c.ok(!('targetAc' in clean) && !('secretNote' in clean),
+            'unexpected keys are dropped at the source');
+          c.eq(Object.keys(clean).length, 9,
+            'exactly the allow-listed nine survive');
+
+          const seen = [];
+          const un = events.subscribe((ev) => seen.push(ev));
+          await events.log('roll', clean);
+          un();
+          c.eq(seen.length, 1, 'the event lands');
+          c.eq(seen[0].type, 'roll', 'typed roll');
+          c.eq(seen[0].cat, 'combat', 'filed under combat');
+
+          const rows = dicerail.rollRows([
+            { id: 'a', type: 'roll', characterId: 'ch1',
+              payload: { label: 'Stealth', total: 19 } },
+            { id: 'b', type: 'journal', characterId: 'ch1', payload: {} },
+            { id: 'x', type: 'roll', characterId: 'zz',
+              payload: { label: 'WIS save', total: 7, fumble: true } },
+          ], [{ id: 'ch1', name: 'Pip' }]);
+          c.eq(rows.length, 2, 'only roll events reach the rail');
+          c.eq(rows[0].label, 'WIS save', 'newest first');
+          c.eq(rows[0].who, 'Someone', 'an unknown roller stays anonymous');
+          c.eq(rows[1].who, 'Pip', 'a known roller is named');
+          c.ok(rows[0].fumble && !rows[0].crit, 'the flags ride along');
+        },
+      },
+    ],
+  },
+  {
     id: 'rollcard',
     title: 'Roll cards',
     why: 'The card is the table\'s shared read of a die. If it marks the '

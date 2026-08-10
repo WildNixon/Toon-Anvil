@@ -2866,6 +2866,58 @@ export async function runQuickParty(CheckClass) {
     const vals = Object.values(mine?.abilities || {}).sort((a, b) => a - b);
     check.eq(vals.join(','), '8,10,12,13,14,15',
       'and the claimed hero has real rolled shoulders, not a flat 10 line');
+
+    // --- the shared dice feed --------------------------------------------
+    // The claimed hero rolls once; the ledger gets a typed, allow-listed
+    // event; the DM's Stage rail shows it. Frames stay one-at-a-time.
+    check.ok(await goToMode(doc, 'Play', 'Abilities'),
+      "the claimed hero's sheet opens");
+    const strCell = [...doc.querySelectorAll('.stat.clickable')]
+      .find((s) => s.textContent.trim().startsWith('STR'));
+    check.ok(!!strCell, 'the sheet offers the STR check');
+    strCell?.click();
+    const rolled = await waitFor(async () => {
+      const evs = await fetch('/api/events?limit=80').then((r) => r.json())
+        .catch(() => []);
+      return (Array.isArray(evs) ? evs : [])
+        .filter((e) => e.type === 'roll').slice(-1)[0] || null;
+    }, { timeout: 8000 });
+    check.ok(!!rolled, 'the roll reached the shared ledger');
+    if (rolled) {
+      const allowed = new Set(['kind', 'label', 'faces', 'nat', 'total',
+        'advantage', 'disadvantage', 'crit', 'fumble']);
+      check.ok(Object.keys(rolled.payload || {}).every((k) => allowed.has(k)),
+        'and carries only the allow-listed die facts',
+        Object.keys(rolled.payload || {}).join(','));
+    }
+    frame.remove();
+
+    const dmView = document.createElement('iframe');
+    dmView.src = '/index.html';
+    dmView.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;'
+      + 'height:1000px;border:0';
+    document.body.append(dmView);
+    frames.push(dmView);
+    await new Promise((r) => { dmView.onload = r; setTimeout(r, 15000); });
+    dmView.contentWindow.localStorage.setItem('toonanvil.token', dmToken);
+    dmView.contentWindow.location.reload();
+    await new Promise((r) => { dmView.onload = r; setTimeout(r, 15000); });
+    const dmDoc2 = dmView.contentDocument;
+    await waitFor(() => (dmDoc2.querySelector('main')
+      && button(dmDoc2, 'Stage') ? true : null), { timeout: 15000 });
+    const toStage = () => goToMode(dmDoc2, 'Stage',
+      (d = dmDoc2) => /Pass\. Perc/.test(mainText(d)));
+    let onStage = await toStage();
+    if (!onStage) onStage = await toStage();
+    check.ok(onStage, "the DM's Stage opens");
+    const railRow = await waitFor(() => [...dmDoc2.querySelectorAll('.dice-row')]
+      .find((r) => /Strength check/.test(r.textContent)) || null,
+    { timeout: 10000 });
+    check.ok(!!railRow, "the DM's dice rail shows the player's roll",
+      [...dmDoc2.querySelectorAll('.dice-row')]
+        .map((r) => r.textContent.trim()).join(' | ').slice(0, 160) || '(no rows)');
+    check.ok(!!railRow && railRow.textContent.includes(heroName),
+      'named for who rolled it', railRow?.textContent?.slice(0, 60));
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {

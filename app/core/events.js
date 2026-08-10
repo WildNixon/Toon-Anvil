@@ -35,6 +35,10 @@ export const EVENT_TYPES = {
   encounter_start:    { cat: 'combat', label: 'Encounter began' },
   encounter_end:      { cat: 'combat', label: 'Encounter ended' },
   initiative:         { cat: 'combat', label: 'Rolled initiative' },
+  // Deliberately NOT notable: twenty of these land per session, and the
+  // Chronicle's job is the story, not the arithmetic. The dice rail is the
+  // reader of this type.
+  roll:               { cat: 'combat', label: 'Rolled the dice' },
   attack:             { cat: 'combat', label: 'Attacked' },
   crit:               { cat: 'combat', label: 'Critical hit', notable: true },
   fumble:             { cat: 'combat', label: 'Natural 1' },

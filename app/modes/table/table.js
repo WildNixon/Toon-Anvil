@@ -19,6 +19,7 @@ import * as live from '../../core/live.js';
 import { runnerPanel, adopt, pull } from '../dm/runner.js';
 import { tabs } from '../../ui/kit.js';
 import { partyPanel } from '../dm/party.js';
+import { diceRail } from '../../ui/components/dicerail.js';
 import { activeCampaign, currentRegion } from '../../core/campaign.js';
 import { weatherFor } from '../../core/weather.js';
 import { mapView } from '../../ui/map.js';
@@ -32,6 +33,9 @@ let unsubscribe = null;
 let campaign = null;      // the REDACTED campaign - the server stripped it
 let mapRecord = null;     // likewise: revealed pins only, no notes
 let dmTables = null;
+let record = null;        // the redacted encounter, kept for the turn nudge
+// Nudge on the TRANSITION into your turn, not on every redraw of it.
+let wasMyTurn = false;
 
 /** Sources for derive(), assembled the same way the shell does it. */
 function sources() {
@@ -54,7 +58,8 @@ export async function render(root) {
   // updates - so the previous one is dropped first.
   if (unsubscribe) unsubscribe();
   unsubscribe = live.subscribe(
-    ['encounters', 'table', 'characters', 'campaigns', 'maps'], async () => {
+    ['encounters', 'table', 'characters', 'campaigns', 'maps', 'events'],
+    async () => {
     // Only redraw if this screen still OWNS the view. The container is #view
     // itself, which is always connected - the honest check is the mode stamp,
     // or a stale listener paints the Party screen over whatever replaced it.
@@ -67,7 +72,7 @@ export async function render(root) {
 }
 
 async function refresh() {
-  const record = await pull();
+  record = await pull();
   // A cleared encounter comes back as null. Adopting an empty snapshot rather
   // than leaving the last one on screen is the honest answer: the fight ended.
   adopt(record || { combatants: [], round: 0, turn: 0, started: false });
@@ -89,16 +94,37 @@ function draw() {
   if (world) container.append(world);
   container.append(tabsPanel());
   if (tab === 'fight') {
+    const myTurn = isMyTurn();
+    if (myTurn) {
+      container.append(el('div', { class: 'your-turn', role: 'status' },
+        'Your turn!'));
+    }
+    // A buzz on the TRANSITION into your turn - the phone in a pocket
+    // learns what the screen already knows. Feature-detected: desktops
+    // simply do not have the API.
+    if (myTurn && !wasMyTurn) {
+      try { navigator.vibrate?.(160); } catch { /* not on this device */ }
+    }
+    wasMyTurn = myTurn;
     container.append(runnerPanel({
       readOnly: true,
       mine: session.ownedCharacterIds(),
       redraw: draw,
     }));
+    container.append(diceRail(getState().characters || []));
   } else if (tab === 'map') {
     container.append(mapPanel());
   } else {
     container.append(partyPanel(getState().characters || [], sources()));
   }
+}
+
+/** Is the active combatant one of THIS seat's claimed characters? */
+function isMyTurn() {
+  if (!record?.started || !Array.isArray(record.combatants)) return false;
+  const current = record.combatants[record.turn || 0];
+  const mine = session.ownedCharacterIds();
+  return !!(current && mine && mine.has?.(current.characterId || current.id));
 }
 
 /**

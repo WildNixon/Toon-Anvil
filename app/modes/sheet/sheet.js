@@ -21,6 +21,7 @@ import { saveCharacter, adjustHp as shellAdjustHp, go } from '../../app.js';
 import * as session from '../../core/session.js';
 import { tabs } from '../../ui/kit.js';
 import { cardModel, pushRollCard } from '../../ui/components/rollcard.js';
+import { safeRollPayload } from '../../ui/components/dicerail.js';
 
 export const title = 'Play';
 
@@ -50,6 +51,26 @@ function takeRollMode() {
   rollMode = null;
   syncRollModeBar();
   return { advantage: armed === 'adv', disadvantage: armed === 'dis' };
+}
+
+/**
+ * One roll, three audiences: the card for this screen, the journal line for
+ * the Chronicle, and a `roll` event for the shared dice rail - allow-listed,
+ * because the event stream reaches every seat at the table.
+ */
+function tellTable(kind, label, r, extra = null) {
+  pushRollCard(cardModel({ label, roll: r, extra }));
+  log('roll', safeRollPayload({
+    kind,
+    label,
+    faces: r.faces,
+    nat: r.nat,
+    total: r.total,
+    advantage: r.advantage,
+    disadvantage: r.disadvantage,
+    crit: r.isCrit,
+    fumble: r.isFumble,
+  }));
 }
 
 function rollModeBar() {
@@ -168,7 +189,7 @@ function vitalsPanel(d) {
   add('Initiative', sign(d.initiative), 'click to roll', () => {
     const r = d20({ mod: d.initiative, ...takeRollMode() });
     log('initiative', { total: r.total, nat: r.nat });
-    pushRollCard(cardModel({ label: 'Initiative', roll: r }));
+    tellTable('initiative', 'Initiative', r);
   });
   add('Speed', `${d.speeds.walk}`, 'feet');
   add('Prof', sign(d.proficiencyBonus));
@@ -309,7 +330,7 @@ function abilitiesPanel(d) {
     cell.addEventListener('click', () => {
       const r = d20({ mod: d.mods[ab], ...takeRollMode() });
       log('journal', { text: `${ABILITY_NAMES[ab]} check: ${fmt(r)}` });
-      pushRollCard(cardModel({ label: `${ABILITY_NAMES[ab]} check`, roll: r }));
+      tellTable('check', `${ABILITY_NAMES[ab]} check`, r);
     });
     cell.append(el('div', { class: 'k' }, ab.toUpperCase()));
     cell.append(el('div', { class: 'v' }, String(d.abilities[ab])));
@@ -332,7 +353,7 @@ function abilitiesPanel(d) {
       onClick: () => {
         const r = d20({ mod: d.saves[ab].mod, ...takeRollMode() });
         log('journal', { text: `${ABILITY_NAMES[ab]} save: ${fmt(r)}` });
-        pushRollCard(cardModel({ label: `${ab.toUpperCase()} save`, roll: r }));
+        tellTable('save', `${ab.toUpperCase()} save`, r);
       },
     }, `${ab.toUpperCase()} ${sign(d.saves[ab].mod)}`));
   }
@@ -357,7 +378,7 @@ function skillsPanel(d) {
       onClick: () => {
         const r = d20({ mod: info.mod, ...takeRollMode() });
         log('journal', { text: `${cap(skill)}: ${fmt(r)}` });
-        pushRollCard(cardModel({ label: cap(skill), roll: r }));
+        tellTable('skill', cap(skill), r);
       },
     });
     row.append(el('span', {
@@ -411,11 +432,7 @@ function attacksPanel(d) {
 async function rollAttack(atk, d) {
   const res = resolveAttack(atk, { attackerName: d.name, ...takeRollMode() });
   for (const ev of res.events) await log(ev.type, ev.payload);
-  pushRollCard(cardModel({
-    label: `${atk.name} to hit`,
-    roll: res.roll,
-    extra: `${res.total} damage`,
-  }));
+  tellTable('attack', `${atk.name} to hit`, res.roll, `${res.total} damage`);
   if (res.fumble) await fireNatTriggers(d, res.roll.nat);
 }
 

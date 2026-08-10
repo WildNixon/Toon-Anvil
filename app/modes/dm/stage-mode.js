@@ -34,7 +34,8 @@ export async function render(root) {
   draw();
 
   if (unsubscribe) unsubscribe();
-  unsubscribe = live.subscribe(['table', 'characters', 'campaigns'], async () => {
+  unsubscribe = live.subscribe(['table', 'characters', 'campaigns', 'events'],
+    async () => {
     // The container IS #view, which is always connected - the real question
     // is whether Stage is still the mode on it. Painting into a view another
     // mode owns is how a player's sheet grew grant buttons once.
