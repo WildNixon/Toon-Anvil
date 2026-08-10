@@ -459,6 +459,11 @@ async function watchTheTable() {
  * somebody browses solo invites them in live, and a table closing takes the
  * gate away again.
  */
+// A join code carried in from a ?code= link, held until the join gate mounts
+// and consumed by the first mount. Module state, not store state: it is a
+// boot-time fact about how this tab was opened, not something to render.
+let deepLinkCode = null;
+
 async function mountGates() {
   const { ephemeral } = getState();
   const gate = await import('./ui/joingate.js');
@@ -467,6 +472,7 @@ async function mountGates() {
   if (!ephemeral && session.isOpen() && session.needsJoin()) {
     welcome.unmount();
     gate.mount({
+      prefillCode: deepLinkCode,
       onDone: async (picked) => {
         await session.refresh();
         await refreshChrome();
@@ -475,6 +481,7 @@ async function mountGates() {
         await renderMode();
       },
     });
+    deepLinkCode = null;
     return;
   }
   // Only a CLOSED table removes a mounted gate. Joining flips needsJoin
@@ -733,6 +740,19 @@ async function boot() {
   // real chronicle. It is per-load and never stored as a preference.
   const params = new URLSearchParams(location.search);
   const prefer = params.get('storage') === 'memory' ? 'memory' : undefined;
+
+  // ?code= arrives from the join link/QR on the DM's Setup screen. Remember
+  // it for the join gate, then scrub it from the address bar straight away
+  // so a reload or a bookmark does not carry a stale code. Only the CODE
+  // ever rides in a URL - never a token.
+  if (params.has('code')) {
+    deepLinkCode = (params.get('code') || '').trim();
+    params.delete('code');
+    const qs = params.toString();
+    history.replaceState({}, '',
+      location.pathname + (qs ? `?${qs}` : '') + location.hash);
+  }
+
   const adapter = await initDb({ prefer });
   setState({ dataSource: adapter.mode, ephemeral: prefer === 'memory' });
 

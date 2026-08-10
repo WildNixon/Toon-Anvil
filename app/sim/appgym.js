@@ -1848,6 +1848,57 @@ export const SUITES = [
 
   /* ---------------- the table -------------------------------------- */
   {
+    id: 'qr',
+    title: 'The join QR',
+    why: 'A QR that does not scan strands the whole couch at the join gate. '
+       + 'The encoder is vendored, but OUR wrapper picks the error level, '
+       + 'builds the matrix, and writes the SVG - so the anchors a camera '
+       + 'locks onto are checked against the spec, not against a screenshot.',
+    scenarios: [
+      {
+        id: 'qr_anchors_are_to_spec',
+        title: 'A join URL becomes a code a camera can lock onto',
+        async run(c, { qr }) {
+          c.feature('qr', 'table');
+          const m = qr.qrMatrix('http://192.168.1.23:7801/?code=ANVIL-4471');
+          // Every legal QR is square with size 4v+17 (v = 1..40).
+          c.ok(m.length >= 21 && (m.length - 17) % 4 === 0,
+            'a legal QR size', String(m.length));
+          c.ok(m.every((row) => row.length === m.length), 'and square');
+          // The three finder anchors: dark border, light ring, dark core.
+          // Function patterns are never masked, so these cells are absolute.
+          const finder = (ox, oy) => m[oy][ox] && !m[oy + 1][ox + 1]
+            && m[oy + 2][ox + 2] && m[oy + 3][ox + 3];
+          c.ok(finder(0, 0), 'finder at top-left');
+          c.ok(finder(m.length - 7, 0), 'finder at top-right');
+          c.ok(finder(0, m.length - 7), 'finder at bottom-left');
+          const timing = [];
+          for (let x = 8; x < m.length - 8; x += 1) timing.push(m[6][x]);
+          c.ok(timing.every((v, i) => v === (i % 2 === 0)),
+            'the timing track alternates between the finders');
+        },
+      },
+      {
+        id: 'qr_svg_is_pure_path',
+        title: 'Same URL, same pixels - and the URL never enters the markup',
+        async run(c, { qr }) {
+          c.feature('qr');
+          const url = 'http://10.0.0.5:7802/?code=ANVIL-TT77';
+          const a = qr.qrSvg(url);
+          c.ok(a === qr.qrSvg(url), 'byte-identical across calls');
+          c.ok(a !== qr.qrSvg('http://10.0.0.5:7802/?code=ANVIL-TT79'),
+            'one different letter draws a different code');
+          c.ok(a.startsWith('<svg ') && a.includes('viewBox="0 0 '),
+            'an SVG with a viewBox');
+          const d = (a.match(/ d="([^"]*)"/) || [])[1] || '';
+          c.ok(d.length > 0 && /^[Mhvz0-9 -]+$/.test(d),
+            'path data is only moves and lines - nothing to escape, nothing '
+            + 'to inject', d.slice(0, 40));
+        },
+      },
+    ],
+  },
+  {
     id: 'table',
     title: 'Profiles and permissions',
     why: 'A player\'s browser can ask the server for anything. Hiding a button '

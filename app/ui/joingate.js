@@ -19,14 +19,14 @@ let overlay = null;
 
 export function mounted() { return Boolean(overlay); }
 
-export function mount({ onDone }) {
+export function mount({ onDone, prefillCode = null }) {
   if (overlay) return;
   overlay = el('div', {
     class: 'welcome', role: 'dialog', 'aria-modal': 'true',
     'aria-label': 'Join the table',
   });
   document.body.append(overlay);
-  drawJoin(onDone);
+  drawJoin(onDone, prefillCode);
 }
 
 export function unmount() {
@@ -43,14 +43,17 @@ function card() {
   return c;
 }
 
-function drawJoin(onDone) {
+function drawJoin(onDone, prefillCode = null) {
   const c = card();
   c.append(el('h2', {}, 'A table is open.'));
   c.append(el('p', {},
-    'The DM has a short code - ask for it and take your seat.'));
+    prefillCode
+      ? 'The link brought the code with it - just say who you are.'
+      : 'The DM has a short code - ask for it and take your seat.'));
 
   const code = el('input', {
     type: 'text', placeholder: 'ANVIL-....', 'aria-label': 'Join code',
+    value: prefillCode || false,
     style: 'text-align:center;font-family:var(--mono);letter-spacing:.14em',
   });
   const name = el('input', {
@@ -85,7 +88,9 @@ function drawJoin(onDone) {
   c.append(el('p', { class: 'welcome-fine', style: 'margin-top:10px' },
     'You can watch without joining. Joining is what lets you write - and '
     + 'the server holds everyone to their seat.'));
-  code.focus();
+  // A deep link already answered the code question - the name is all
+  // that is left to type.
+  (prefillCode ? name : code).focus();
 }
 
 function drawClaim(onDone) {

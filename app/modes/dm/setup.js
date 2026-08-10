@@ -14,6 +14,7 @@
 import { el, toast } from '../../core/store.js';
 import * as session from '../../core/session.js';
 import { refreshChrome } from '../../app.js';
+import { qrSvg } from '../../ui/qr.js';
 
 let box = null;
 let ctx = null;
@@ -76,6 +77,46 @@ function tablePanel() {
       style: 'font-size:clamp(26px,6vw,40px);font-weight:700;letter-spacing:.12em;'
         + 'color:var(--accent-text);margin:4px 0 10px',
     }, status.code));
+
+    // The server reports where it is actually reachable, computed from the
+    // socket it bound - port drift and all. The link carries the CODE, which
+    // is shoutable by design; the join TOKEN never rides in a URL.
+    const lanAddr = (status.addresses || [])
+      .find((a) => !a.includes('127.0.0.1'));
+    if (status.lanHint && lanAddr) {
+      const joinUrl = `${lanAddr}/?code=${status.code}`;
+      panel.append(el('p', { class: 'muted', style: 'font-size:13px;margin:8px 0 2px' },
+        'Or hand them this link - a phone camera reads the square:'));
+      const urlBox = el('input', {
+        type: 'text', readonly: true, value: joinUrl, class: 'mono',
+        'aria-label': 'Join link',
+        style: 'width:100%;max-width:420px;font-size:13px;margin:2px 0 6px',
+        onFocus: (e) => e.target.select(),
+      });
+      panel.append(urlBox);
+      if (navigator.clipboard && window.isSecureContext) {
+        // Clipboard API needs a secure context (localhost qualifies; plain
+        // http over the LAN does not) - elsewhere the selectable box above
+        // IS the copy story.
+        panel.append(el('div', { class: 'btnrow' }, el('button', {
+          class: 'act ghost small',
+          onClick: async () => {
+            try {
+              await navigator.clipboard.writeText(joinUrl);
+              toast('Link copied', 'ok');
+            } catch { urlBox.focus(); }
+          },
+        }, 'Copy link')));
+      }
+      panel.append(el('div', {
+        class: 'qr', html: qrSvg(joinUrl),
+        style: 'width:min(46vw,190px);margin:10px 0 2px;line-height:0',
+      }));
+    } else if (status.lanHint === false) {
+      panel.append(el('p', { class: 'muted', style: 'font-size:12px' },
+        'Only this machine can reach the table right now. Restart with '
+        + 'python run.py --lan to invite phones.'));
+    }
   } else {
     panel.append(el('p', { class: 'muted', style: 'font-size:13px' },
       "The code shows only to the DM's seat."));

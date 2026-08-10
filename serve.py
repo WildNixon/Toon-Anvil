@@ -1246,6 +1246,19 @@ class Handler(SimpleHTTPRequestHandler):
             me = out.get("me") or {}
             if out["open"] and (self._is_local() or me.get("role") == "dm"):
                 out["code"] = mod.read().get("code")
+                # Where players can actually reach this table, computed from
+                # the socket the server bound - not from what run.py intended.
+                # If 7801 was busy and we drifted to 7802, this says 7802.
+                bhost, bport = self.server.server_address[:2]
+                if bhost in ("0.0.0.0", ""):
+                    lan = _lan_ip()
+                    out["addresses"] = ([f"http://127.0.0.1:{bport}"]
+                                        + ([f"http://{lan}:{bport}"] if lan
+                                           else []))
+                    out["lanHint"] = True
+                else:
+                    out["addresses"] = [f"http://{bhost}:{bport}"]
+                    out["lanHint"] = False
             return self._send_json(out)
 
         if parts == ["api", "providers"]:
@@ -1457,6 +1470,24 @@ class Handler(SimpleHTTPRequestHandler):
         return self._send_json({"error": "unknown endpoint"}, 404)
 
 
+def _lan_ip() -> str | None:
+    """This machine's address on the local network, or None if unknowable.
+
+    The UDP connect sends nothing; it asks the routing table which interface
+    faces the network - the only reliable way to get the address a player
+    should type. (Deliberately duplicated from run.py rather than imported:
+    serve must stay runnable on its own.)
+    """
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect(("10.255.255.255", 1))
+        ip = probe.getsockname()[0]
+        probe.close()
+        return ip
+    except OSError:
+        return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Toon Anvil server")
     ap.add_argument("--port", type=int, default=7801)
@@ -1506,17 +1537,8 @@ def main() -> int:
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
     if args.host in ("0.0.0.0", ""):
         # 0.0.0.0 is a bind address, not a place a browser can go - print
-        # the two URLs people actually type. The UDP connect sends nothing;
-        # it asks the routing table which interface faces the network.
-        # (Deliberately duplicated from run.py rather than imported: serve
-        # must stay runnable on its own.)
-        try:
-            probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            probe.connect(("10.255.255.255", 1))
-            lan_ip = probe.getsockname()[0]
-            probe.close()
-        except OSError:
-            lan_ip = "your-ip-address"
+        # the two URLs people actually type.
+        lan_ip = _lan_ip() or "your-ip-address"
         print(f"\n  Toon Anvil (you)      ->  http://127.0.0.1:{args.port}")
         print(f"  Toon Anvil (players)  ->  http://{lan_ip}:{args.port}")
     else:

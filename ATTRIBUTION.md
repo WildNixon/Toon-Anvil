@@ -9,6 +9,7 @@ the authoritative statement of what is covered by what:
 | Source code | everything except the rows below | MIT |
 | Rules content | `app/data/compendium/` | CC-BY-4.0 (SRD 5.2.1) |
 | Typefaces | `app/data/fonts/` | SIL Open Font License 1.1 |
+| QR encoder | `app/ui/vendor/qrcodegen.js` | MIT (Project Nayuki) |
 | Comparison index | `library/_vectors.json` | measurements only — see below |
 
 Homebrew you create or import remains yours. Toon Anvil stores it locally and
@@ -108,3 +109,12 @@ Cinzel (Natanael Gama), Alegreya (Juan Pablo del Peral / Huerta Tipográfica)
 and IBM Plex Mono (IBM) are bundled locally as woff2 under the
 **SIL Open Font License 1.1**. They are self-hosted rather than loaded from a
 CDN so the app works fully offline.
+
+## Vendored code
+
+`app/ui/vendor/qrcodegen.js` is the **QR Code generator library** by Project
+Nayuki (<https://www.nayuki.io/page/qr-code-generator-library>), MIT licensed,
+vendored verbatim (compiled build) with its licence header intact plus a
+marked ES-module export shim at the end. It renders the join-a-table QR code
+on the DM's Setup screen. Vendored rather than fetched so the app stays fully
+offline.

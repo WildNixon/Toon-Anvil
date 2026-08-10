@@ -2555,6 +2555,101 @@ export async function runPlayerView(CheckClass) {
   };
 }
 
+/**
+ * The QR deep link: a phone follows ?code= and only has a name left to type.
+ * The URL carries the shoutable CODE, never a token - and the app scrubs it
+ * from the address bar at boot so reloads and bookmarks stay clean.
+ */
+export async function runJoinDeeplink(CheckClass) {
+  const check = new CheckClass('join_deeplink');
+  const t0 = performance.now();
+  let error = null;
+  let frame = null;
+  let dmToken = null;
+  try {
+    check.feature('ui', 'table', 'join', 'qr');
+
+    const reachable = await api('/api/changes?since=0');
+    check.ok(reachable.status === 200, 'the shared server is reachable',
+      `HTTP ${reachable.status}`);
+    if (reachable.status !== 200) throw new Error('no server: no link to follow');
+
+    await api('/api/table/close', { method: 'POST' });
+    const opened = await api('/api/table/open', {
+      method: 'POST', body: JSON.stringify({ name: 'Gym DM' }),
+    });
+    dmToken = opened.body.token;
+    const code = opened.body.code;
+    check.ok(!!code, 'the DM opened a table', code);
+
+    // The server tells the DM's Setup screen where the table is reachable,
+    // computed from the socket it actually bound.
+    const st = await fetch('/api/table').then((r) => r.json());
+    check.ok(Array.isArray(st.addresses) && st.addresses.length > 0
+      && st.addresses[0].includes('://127.0.0.1:'),
+      'status carries the bound address(es)', JSON.stringify(st.addresses));
+    check.ok(typeof st.lanHint === 'boolean',
+      'and says whether phones can reach it', String(st.lanHint));
+    check.ok(!JSON.stringify(st).includes(dmToken),
+      'no token rides in the payload');
+
+    // A phone follows the link. No token seeded: a stranger at the door.
+    frame = document.createElement('iframe');
+    frame.src = `/index.html?code=${encodeURIComponent(code)}`;
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;'
+      + 'height:1000px;border:0';
+    document.body.append(frame);
+    frame.contentWindow?.localStorage?.removeItem('toonanvil.token');
+    await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
+    const doc = frame.contentDocument;
+
+    const gate = await waitFor(() => doc.querySelector('.welcome') || null,
+      { timeout: 10000 });
+    check.ok(!!gate, 'the join gate greeted the visitor');
+    if (!gate) throw new Error('no join gate');
+
+    const codeInput = gate.querySelector('input[aria-label="Join code"]');
+    const nameInput = gate.querySelector('input[aria-label="Your name"]');
+    check.eq(codeInput?.value, code,
+      'the code arrived already filled in from the link');
+    check.ok(/brought the code with it/.test(gate.textContent),
+      'and the gate says so instead of sending them to ask the DM');
+    check.ok(!frame.contentWindow.location.search.includes('code='),
+      'the address bar was scrubbed straight away',
+      frame.contentWindow.location.search || '(empty)');
+    const active = doc.activeElement;
+    check.ok(active === nameInput,
+      'the name field holds focus - typing a name is all that is left',
+      `focus on ${active?.getAttribute?.('aria-label') || active?.tagName || 'nothing'}`);
+
+    setField(nameInput, 'Couch Kid');
+    button(doc, 'Join', { within: gate })?.click();
+    const seated = await waitFor(() => (/Welcome, Couch Kid/
+      .test(doc.querySelector('.welcome')?.textContent || '') ? true : null),
+    { timeout: 8000 });
+    check.ok(!!seated, 'one name and one tap later, the table greets them');
+  } catch (err) {
+    error = `${err.name}: ${err.message}`;
+  } finally {
+    frame?.remove();
+    try {
+      await api('/api/table/close', { method: 'POST' });
+    } catch { /* the server went away */ }
+  }
+  return {
+    id: 'join_deeplink',
+    title: 'A QR deep link leaves only a name to type',
+    passed: check.passed,
+    total: check.total,
+    failures: check.failures,
+    features: [...check.touched],
+    error,
+    empty: !error && check.total === 0,
+    ok: !error && check.total > 0 && check.failures.length === 0,
+    ms: +(performance.now() - t0).toFixed(0),
+  };
+}
+
 export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
   const frame = document.createElement('iframe');
   // Ephemeral: no real character is created, no real chronicle is appended to.
@@ -2629,5 +2724,7 @@ export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
   onProgress({ flow: 'two_clients_stay_in_step' });
   results.push(await runPlayerView(CheckClass));
   onProgress({ flow: 'player_sees_a_players_table' });
+  results.push(await runJoinDeeplink(CheckClass));
+  onProgress({ flow: 'join_deeplink' });
   return results;
 }
