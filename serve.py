@@ -319,6 +319,27 @@ class Handler(SimpleHTTPRequestHandler):
         """Which browser tab sent this. Absent for curl, which is fine."""
         return (self.headers.get("X-Toon-Client") or "").strip()[:40] or None
 
+    # A browser that has not joined, while a table IS open. whoami() answers
+    # None for two very different situations - "no table, nobody to hide
+    # from" (solo play) and "a table is open and you are not seated" - and
+    # the redactors, which see only a profile, cannot tell them apart. They
+    # read None as the first, so an unjoined device on the wifi was handed
+    # monster hit points, faction agendas, lore, prepared encounters and
+    # secret clocks: everything the DM had decided not to show. The seat is
+    # what earns the player view; no seat earns strictly less, never more.
+    UNSEATED = {"id": None, "role": "unseated", "characterIds": []}
+
+    def _viewer(self):
+        """The profile the redactors should judge this reader by."""
+        mod = self._table()
+        if mod is None:
+            return None
+        who = mod.whoami(self._token())
+        if who is not None:
+            return who
+        # Open table + no valid token: least privilege, not most.
+        return dict(self.UNSEATED) if mod.read().get("open") else None
+
     def _token(self) -> str | None:
         auth = self.headers.get("Authorization") or ""
         if auth.lower().startswith("bearer "):
@@ -1453,7 +1474,7 @@ class Handler(SimpleHTTPRequestHandler):
                           "campaigns": mod.redact_campaign,
                           "maps": mod.redact_map}.get(parts[1])
                     if fn:
-                        me = mod.whoami(self._token())
+                        me = self._viewer()
                         records = [fn(r, me) for r in records]
                 return self._send_json(records)
             rid = safe_id(parts[2])
@@ -1472,7 +1493,7 @@ class Handler(SimpleHTTPRequestHandler):
                       "campaigns": mod.redact_campaign,
                       "maps": mod.redact_map}.get(parts[1])
                 if fn:
-                    record = fn(record, mod.whoami(self._token()))
+                    record = fn(record, self._viewer())
             return self._send_json(record)
 
         return self._send_json({"error": "unknown endpoint"}, 404)

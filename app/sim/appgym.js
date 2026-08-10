@@ -2083,6 +2083,23 @@ export const SUITES = [
           c.eq(rows[0].who, 'Someone', 'an unknown roller stays anonymous');
           c.eq(rows[1].who, 'Pip', 'a known roller is named');
           c.ok(rows[0].fumble && !rows[0].crit, 'the flags ride along');
+
+          // The rail is THIS table's dice, not the log's. Found at a real
+          // table: the append-only log outlives a session, so the rail
+          // opened showing last session's rolls - and rolls by characters
+          // who no longer existed, all reading "Someone".
+          const dated = [
+            { id: 'old', type: 'roll', ts: '2026-08-09T20:00:00.000Z',
+              characterId: 'ghost', payload: { label: 'Last session', total: 3 } },
+            { id: 'new', type: 'roll', ts: '2026-08-10T21:00:00.000Z',
+              characterId: 'ch1', payload: { label: 'Tonight', total: 17 } },
+          ];
+          const scoped = dicerail.rollRows(dated, [{ id: 'ch1', name: 'Pip' }],
+            20, '2026-08-10T20:00:00.000Z');
+          c.eq(scoped.length, 1, 'rolls from before this table opened are gone');
+          c.eq(scoped[0].label, 'Tonight', 'and tonight\'s roll stays');
+          c.eq(dicerail.rollRows(dated, [], 20, null).length, 2,
+            'with no table time given, nothing is filtered');
         },
       },
     ],
@@ -3838,6 +3855,85 @@ export const SUITES = [
 
           await table.del('encounters', 'current', dm.token);
           await table.close();
+        },
+      },
+      {
+        id: 'not_joined_is_not_privileged',
+        title: 'A browser that never joined sees a player\'s view, not the DM\'s',
+        why: 'Found at a real table: whoami() answers None BOTH for "no table, '
+           + 'nobody to hide from" and for "a table is open and you are not '
+           + 'seated". The redactors see only a profile and read None as the '
+           + 'first, so any unjoined device on the wifi was handed monster hit '
+           + 'points, agendas, lore, prepared encounters and secret clocks.',
+        async run(c, { table }) {
+          c.feature('shared', 'security', 'permissions');
+          await table.close();
+
+          const fight = {
+            id: 'current', round: 1, turn: 0, started: true,
+            showMonsterHp: false,
+            combatants: [{ id: 'c1', kind: 'monster', name: 'Ogre',
+              ac: 11, hp: 13, hpMax: 59 }],
+          };
+          const camp = { id: 'gym-unseated-camp', name: 'Unseated Vale',
+            day: 3, seed: 11, regions: [], lore: ['LOREONLYTHEDMSEES'],
+            factions: [{ id: 'f1', name: 'The Hand', standing: 0,
+              public: true, agenda: 'AGENDAONLYTHEDMSEES' }],
+            encounterTemplates: [{ id: 't1', name: 'TEMPLATEONLYTHEDMSEES',
+              monsters: [] }],
+            clocks: [{ id: 'k1', label: 'CLOCKONLYTHEDMSEES', size: 4,
+              filled: 1, public: false }] };
+
+          // Solo first: with NO table open, a tokenless read is the whole
+          // record. This half is the reason the bug existed - it must stay
+          // true, or the fix has broken playing alone.
+          await table.put('encounters', 'current', fight, null);
+          await table.put('campaigns', camp.id, camp, null);
+          const soloEnc = await table.get('encounters', 'current', null);
+          const soloCamp = await table.get('campaigns', camp.id, null);
+          c.eq(soloEnc.combatants[0].hp, 13,
+            'no table open: the record is whole, solo play untouched');
+          c.ok(JSON.stringify(soloCamp).includes('AGENDAONLYTHEDMSEES'),
+            'and the campaign keeps its secrets for its only reader');
+
+          // Now open a table and ask again with no token at all.
+          const dm = await table.open('Gym DM');
+          const anonEnc = await table.get('encounters', 'current', null);
+          const ogre = anonEnc.combatants[0];
+          c.eq(ogre.hp, undefined,
+            'table open + no seat: monster hit points are withheld');
+          c.eq(ogre.band, 'bloodied', 'a band goes over the wire instead');
+
+          const anonCamp = JSON.stringify(
+            await table.get('campaigns', camp.id, null));
+          c.ok(!anonCamp.includes('AGENDAONLYTHEDMSEES'),
+            'faction agendas are withheld too');
+          c.ok(!anonCamp.includes('LOREONLYTHEDMSEES'), 'and the lore');
+          c.ok(!anonCamp.includes('TEMPLATEONLYTHEDMSEES'),
+            'and the prepared encounters');
+          c.ok(!anonCamp.includes('CLOCKONLYTHEDMSEES'),
+            'and the secret clocks');
+
+          // The list route reads the same files; it was missed once before.
+          const anonList = JSON.stringify(
+            (await table.get('campaigns', '', null)) || '');
+          const listRaw = await fetch('/api/campaigns').then((r) => r.text());
+          c.ok(!listRaw.includes('AGENDAONLYTHEDMSEES')
+            && !listRaw.includes('CLOCKONLYTHEDMSEES'),
+          'on the list route as well as the single one',
+          anonList.slice(0, 40));
+
+          // And the DM still sees everything - least privilege for the
+          // unseated must not become least privilege for everyone.
+          const asDm = JSON.stringify(
+            await table.get('campaigns', camp.id, dm.token));
+          c.ok(asDm.includes('AGENDAONLYTHEDMSEES')
+            && asDm.includes('CLOCKONLYTHEDMSEES'),
+          'while the DM still sees the whole record');
+
+          await table.close();
+          await table.del('encounters', 'current', null);
+          await table.del('campaigns', camp.id, null);
         },
       },
       {

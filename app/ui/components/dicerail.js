@@ -10,7 +10,7 @@
 
 import { el } from '../../core/store.js';
 import { db } from '../../core/db.js';
-import { colourOf } from '../../core/session.js';
+import { colourOf, current } from '../../core/session.js';
 
 /** The only keys a roll event may carry. Everything else is dropped. */
 export const SAFE_ROLL_KEYS = [
@@ -24,11 +24,21 @@ export function safeRollPayload(raw) {
   return out;
 }
 
-/** Newest-first display rows from a raw event list. Pure. */
-export function rollRows(events, characters = [], limit = 20) {
+/**
+ * Newest-first display rows from a raw event list. Pure.
+ *
+ * `since` is the moment THIS table opened. The log is append-only and
+ * outlives any one session, so without a boundary the rail opens showing
+ * the last session's dice - and, at a real table, rolls from characters
+ * who no longer exist, attributed to "Someone". A table that just opened
+ * has not rolled anything yet, and should say so.
+ */
+export function rollRows(events, characters = [], limit = 20, since = null) {
   const names = new Map((characters || []).map((c) => [c.id, c.name]));
+  const from = since ? Date.parse(since) : null;
   return (events || [])
     .filter((e) => e.type === 'roll')
+    .filter((e) => !from || Date.parse(e.ts) >= from)
     .slice(-limit)
     .reverse()
     .map((e) => ({
@@ -54,8 +64,10 @@ export function diceRail(characters = []) {
   panel.append(el('span', { class: 'lvl' }, 'Dice'));
   const list = el('div', { class: 'dice-rail', 'aria-label': 'Recent rolls' });
   panel.append(list);
+  // Scoped to this table's own session - see rollRows().
+  const since = current()?.createdAt || null;
   db.queryEvents({ limit: 400 }).then((events) => {
-    const rows = rollRows(events, characters);
+    const rows = rollRows(events, characters, 20, since);
     if (!rows.length) {
       list.append(el('p', { class: 'muted', style: 'font-size:13px;margin:0' },
         'No rolls yet. The first d20 lands here.'));

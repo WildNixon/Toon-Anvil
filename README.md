@@ -344,6 +344,14 @@ merely not drawn. Hiding it in the UI would leave it in the payload for anyone
 who opens the network tab. Player characters keep their numbers, because
 everyone at a real table can see their own sheet.
 
+**A seat earns the player view; no seat earns less, never more.** A device on
+your wifi that has not joined is treated as the least-privileged reader:
+monster hit points, agendas, lore, prepared encounters and secret clocks are
+all withheld from it exactly as they are from a player. (Only the DM's own
+token opens them.) With **no table open** nothing is hidden from anyone,
+because there is nobody to hide from — that is solo play, and it stays
+untouched.
+
 A player's menu is about playing: Play, Party, Roleplay, Market, Chronicle —
 no DM screen, no homebrew analyser, no solo Combat tracker (the DM's runner
 IS the fight), and Build only when the forge or a grant opens it. The DM at a
