@@ -558,6 +558,125 @@ def redact_map(record: dict, profile: dict | None) -> dict:
     return out
 
 
+# Events the DM authors about the WORLD, which is where the prep lives. The
+# rest of the log is the players' own play - their rolls, their purchases,
+# their promises - and redacting that would take the Chronicle away from the
+# people whose story it is.
+_WORLD_ONLY = {"section_filed"}
+_WORLD_GATED = {"clock_advanced": "clocks", "faction_standing": "factions"}
+
+# What the DM alone may author. Named HERE rather than read from the event's
+# own `cat` field, because that field arrives in the request body and is
+# therefore worth nothing - trusting it would be the profileId mistake with
+# a different spelling.
+WORLD_TYPES = {
+    "day_advanced", "clock_advanced", "faction_standing", "region_moved",
+    "campaign_founded", "section_filed", "price_changed",
+}
+
+
+def _campaign_subject_is_public(campaign_id, kind, payload, cache) -> bool:
+    """Is the clock/faction this event is about one the players may see?
+
+    FAILS CLOSED. An event we cannot resolve - no campaignId, a deleted
+    campaign, a label that matches nothing - is treated as secret. The cost
+    of a false negative is a missing line in a log; the cost of a false
+    positive is the DM's ambush on the players' screens.
+
+    `cache` is one dict per request. Without it a party arguing in a busy
+    session re-reads the same campaign file once per event.
+    """
+    if not campaign_id or not isinstance(payload, dict):
+        return False
+    if campaign_id in cache:
+        record = cache[campaign_id]
+    else:
+        path = ROOT / "data" / "campaigns" / f"{campaign_id}.json"
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            record = None
+        cache[campaign_id] = record
+    if not isinstance(record, dict):
+        return False
+
+    # Prefer the id. Older events carry only the LABEL, which is exactly the
+    # thing that must not travel - matching on it here is how those events
+    # get judged at all, and it never puts the label back on the wire.
+    want_id = payload.get("clockId") if kind == "clocks" else payload.get("factionId")
+    want_name = payload.get("clock") if kind == "clocks" else payload.get("name")
+    for item in (record.get(kind) or []):
+        if not isinstance(item, dict):
+            continue
+        if want_id and item.get("id") == want_id:
+            return bool(item.get("public"))
+        if not want_id and want_name and item.get("label", item.get("name")) == want_name:
+            return bool(item.get("public"))
+    return False
+
+
+def redact_events(events: list, profile: dict | None) -> list:
+    """Strip the DM's prep out of the shared event log.
+
+    The kind routes have been redacted since the beginning; this one never
+    was, and it sits above them in the dispatch so it was never going to be.
+    A secret clock's LABEL ("the ritual completes") is the whole spoiler, and
+    deck.js wrote it into a log every seat can read - while the toggle beside
+    it promised "the server strips it from what players receive". The same
+    hole carried non-public faction names, lore titles, and the names of
+    prepared encounters that redact_campaign pops precisely to hide.
+
+    A secret clock STRIKING is itself the tell, so those events are absent
+    rather than blanked - the same rule redact_campaign already applies to
+    the clock it belongs to.
+
+    `summary` is scrubbed alongside the payload, always. It is rendered from
+    payload fields by describe(), so a fix that only cleans the payload
+    leaves "The Veiled Hand: standing -3" sitting in the next field along.
+    """
+    if not isinstance(events, list):
+        return events
+    if profile is None or profile.get("role") == "dm":
+        return events
+
+    out = []
+    cache: dict = {}
+    for ev in events:
+        if not isinstance(ev, dict):
+            out.append(ev)
+            continue
+        kind = ev.get("type")
+
+        if kind in _WORLD_ONLY:
+            continue
+        if kind in _WORLD_GATED:
+            if not _campaign_subject_is_public(
+                    ev.get("campaignId"), _WORLD_GATED[kind],
+                    ev.get("payload"), cache):
+                continue
+            out.append(ev)
+            continue
+
+        # The solo tracker names the encounter and every monster in it. The
+        # shared runner already logs a bare count, which is the shape both
+        # should have had.
+        if kind in ("encounter_start", "encounter_end"):
+            payload = ev.get("payload")
+            if isinstance(payload, dict) and (
+                    "name" in payload or "combatants" in payload):
+                clean = {k: v for k, v in payload.items()
+                         if k not in ("name", "combatants")}
+                if isinstance(payload.get("combatants"), list):
+                    clean["combatants"] = len(payload["combatants"])
+                ev = dict(ev, payload=clean)
+                ev.pop("summary", None)
+            out.append(ev)
+            continue
+
+        out.append(ev)
+    return out
+
+
 def may_read(profile: dict | None, kind: str) -> tuple[bool, str]:
     """Reads are open to anyone at the table.
 

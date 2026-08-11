@@ -1,6 +1,6 @@
 # Toon Anvil — soak run findings
 
-Generated 2026-08-10T23:24:11+00:00 from `soak/findings.jsonl` (25 findings, 4 already fixed).
+Generated 2026-08-11T01:04:09+00:00 from `soak/findings.jsonl` (25 findings, 5 already fixed).
 
 Every item below was **confirmed against a running server**, not inferred from reading. Anything I could not reproduce is not here.
 
@@ -48,15 +48,15 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 
 **Proposed fix.** Promoted into the graded gym as `a_fight_survives_its_own_roster_changing`, which asserts the late arrival rolls, lands in order, and does not move whose turn it is.
 
-### LEAK-1-clock-events — A secret clock's label reaches every player through the unredacted event log
+### LEAK-1-clock-events — The event log leaked the DM's prep to every player - FIXED
 
-**HIGH** · area: redaction / event log · effort: M · status: confirmed
+**HIGH** · area: redaction / event log · effort: M · status: fixed
 
-**Evidence.** deck.js:200-202 and deck.js:343-346 both log clock_advanced with `clock: c.label` and no check of c.public. events.js:89 marks clock_advanced notable, so it lands in the Chronicle - which is a PLAYER mode (app.js:42). GET /api/events (serve.py:1453-1477) applies no redaction at all: no _viewer(), no filtering, it streams the raw log to anyone. tools/table.py:490 strips non-public clocks from the campaign record with the comment 'its label alone (the ritual completes) is the spoiler' - so the intent is explicit and the event log walks straight around it. README:304 claims 'the secret ones never leave the server'.
+**Evidence.** GET /api/events applied no redaction at all - no _viewer(), no token, no may_read - and it sits ABOVE the KINDS block in the dispatch, so it was never going to inherit any. Four leaks, not one: secret clock labels (deck.js:200, :343), non-public faction names and standings (deck.js:548, which redact_campaign removes entirely so even their existence leaked), lore titles and unmet NPC names (deck.js:1074), and prepared-encounter names with full monster rosters (combat.js:100, :125). The dice rail made it land: it asks for 400 events with NO character filter, so world events reached every player's browser regardless. describe() (events.js:179) also bakes payload text into `summary`, so scrubbing the payload alone would have left 'The Veiled Hand: standing -3' in the next field.
 
-**Reproduction.** On the isolated instance: DM opens a table, a player joins. POST /api/events with the exact payload deck.js:343 sends for a struck secret clock ({type: clock_advanced, payload: {clock: THE-RITUAL-COMPLETES, struck: true}}). The player token then reads GET /api/campaigns/soak-camp and correctly sees only ['Public festival'] - the redactor works. The SAME player token reads GET /api/events?limit=50 and gets back THE-RITUAL-COMPLETES.
+**Reproduction.** FIXED, and proved by A/B against an instance running the pre-fix server: STILL BROKEN there, FIXED here. Measured on the isolated instance with a campaign holding one secret clock and one public one. A player now receives only the public clock's strike - the secret one is ABSENT, not blanked, because a secret clock striking is itself the tell - the secret faction shift and the lore filing are gone, and an encounter's roster becomes {combatants: 2}. The DM still sees every one of them.
 
-**Proposed fix.** Two halves, and both are needed. (1) Server: GET /api/events must redact through _viewer() the way the kind routes do - at minimum drop notable world events whose payload names a non-public clock. (2) Client: deck.js should not put a secret label in a shared log at all; log the clock id and let each reader resolve it against the record they are allowed to see. The server half is the one that counts, since a player's browser can ask for anything.
+**Proposed fix.** Three parts. Server: redact_events() in tools/table.py dispatched through _viewer(), failing closed - an event whose subject cannot be resolved is treated as secret, since the cost of a false negative is a missing log line and the cost of a false positive is the DM's ambush on screen. Client: deck.js logs clockId/factionId rather than the DM's prose, so the secret is never written into a shared log at all; the DM's Story resolves ids back against the campaign it may see. Write side: POST /api/events refuses world-category types from anything but a DM token, judged on the TYPE against a server-side list rather than the client-supplied `cat`. Gym: promoted as `the_log_is_redacted_like_everything_else` and `only_the_dm_authors_the_world`, with an `events_carry_the_dms_prep` mutation.
 
 ### SEC-2-samples-parent — /api/samples serves the project's PARENT directory with no auth and no local gate
 

@@ -974,6 +974,26 @@ class Handler(SimpleHTTPRequestHandler):
         if payload is None:
             return self._send_json({"error": "bad json body"}, 400)
         events = payload if isinstance(payload, list) else [payload]
+
+        # The log is ungated ON PURPOSE - a seated player's roleplay beat has
+        # to land even though the npcs KIND is the DM's (see rp.js). That is
+        # a deliberate dependency and it stays. What does not stay is anyone
+        # being able to forge the WORLD: a player POSTing a clock strike or a
+        # faction shift writes DM prep into every seat's Chronicle, and the
+        # redactor on the way out cannot tell a forged event from a real one.
+        # The DM authors the world; everybody authors their own play.
+        mod = self._table()
+        if mod is not None and mod.read().get("open"):
+            who = mod.whoami(self._token())
+            if not who or who.get("role") != "dm":
+                world = getattr(mod, "WORLD_TYPES", set())
+                forged = [e for e in events if isinstance(e, dict)
+                          and e.get("type") in world]
+                if forged:
+                    return self._send_json(
+                        {"error": "only the DM writes what the world does",
+                         "refused": [e.get("type") for e in forged]}, 403)
+
         DATA.mkdir(parents=True, exist_ok=True)
         with _write_lock:
             if EVENT_LOG.exists() and EVENT_LOG.stat().st_size > MAX_LOG_BYTES:
@@ -1496,7 +1516,21 @@ class Handler(SimpleHTTPRequestHandler):
                     if want_campaign and ev.get("campaignId") != want_campaign:
                         continue
                     out.append(ev)
-            return self._send_json(out[-limit:])
+            out = out[-limit:]
+            # The kind routes have redacted since the beginning. This one
+            # never did, and it sits ABOVE them in the dispatch, so it was
+            # never going to inherit it - which is how a secret clock's
+            # label reached every player's Chronicle.
+            #
+            # Redaction runs AFTER the limit so the work is bounded by what
+            # was asked for rather than by the size of the log. A player can
+            # therefore receive slightly fewer than `limit` events, which is
+            # the correct trade: the alternative is resolving every clock in
+            # a hundred-thousand-line log to fill a quota.
+            mod = self._table()
+            if mod and hasattr(mod, "redact_events"):
+                out = mod.redact_events(out, self._viewer())
+            return self._send_json(out)
 
         if len(parts) >= 2 and parts[0] == "api" and parts[1] in KINDS:
             d = kind_dir(parts[1])

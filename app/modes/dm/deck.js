@@ -197,8 +197,14 @@ function clocksPanel() {
           save(clocks.map((x) => (x.id === c.id
             ? tickClock(x, want - x.filled) : x)),
           want >= c.size && c.filled < c.size
+            // The id, not the label. The event log is read by every seat,
+            // and "the ritual completes" is the whole spoiler - the server
+            // redacts it now, but a secret should not be written into a
+            // shared log and then removed on the way out. Same rule as
+            // safeRollPayload: allow-list at the source.
             ? () => log('clock_advanced', {
-              clock: c.label, filled: want, size: c.size, struck: true,
+              clockId: c.id, public: !!c.public,
+              filled: want, size: c.size, struck: true,
             }, { campaignId: campaign.id })
             : null);
         },
@@ -341,7 +347,8 @@ function dialsPanel() {
       for (const struck of ticked.struck) {
         // eslint-disable-next-line no-await-in-loop
         await log('clock_advanced', {
-          clock: struck.label, filled: struck.filled, size: struck.size,
+          clockId: struck.id, public: !!struck.public,
+          filled: struck.filled, size: struck.size,
           struck: true, day: campaign.day,
         }, { campaignId: campaign.id });
       }
@@ -545,8 +552,13 @@ function factionsPanel() {
       onCommit: async (v) => {
         f.standing = v;
         await saveCampaign(campaign);
+        // The id carries the standing; the NAME does not travel. A faction
+        // the DM has not made public is absent from redact_campaign
+        // entirely, so writing its name here published the one thing that
+        // redaction exists to hide - that it exists at all.
         await log('faction_standing',
-          { factionId: f.id, name: f.name, value: f.standing, day: campaign.day },
+          { factionId: f.id, public: !!f.public, value: f.standing,
+            day: campaign.day },
           { campaignId: campaign.id });
         draw();
       },

@@ -15,8 +15,10 @@ import { getState, el } from '../../core/store.js';
 import {
   query, openThreads, summarise, CATEGORIES, EVENT_TYPES,
 } from '../../core/events.js';
+import { activeCampaign } from '../../core/campaign.js';
 
 let box = null;
+let campaign = null;
 const filter = { cat: null, notableOnly: false };
 
 export async function render(root) {
@@ -27,10 +29,34 @@ export async function render(root) {
 async function draw() {
   if (!box) return;
   const events = await query({ limit: 1000 });
+  campaign = await activeCampaign();
   box.innerHTML = '';
   box.append(headlinePanel(events));
   box.append(threadsPanel(events));
   box.append(feedPanel(events));
+}
+
+/**
+ * The line to show for one event.
+ *
+ * World events carry ids rather than names now, because the log is read by
+ * every seat and a secret clock's label is the whole spoiler. The DM is
+ * allowed to know, so this resolves the id back against the campaign record
+ * the DM can already see - the name lives where it is safe, and only the
+ * screen that may show it does the lookup.
+ */
+function storyLine(ev) {
+  const p = ev.payload || {};
+  const find = (list, id) => (campaign?.[list] || []).find((x) => x.id === id);
+  if (ev.type === 'clock_advanced' && p.clockId) {
+    const c = find('clocks', p.clockId);
+    if (c) return `${c.label} struck (${p.filled}/${p.size})`;
+  }
+  if (ev.type === 'faction_standing' && p.factionId) {
+    const f = find('factions', p.factionId);
+    if (f) return `${f.name}: standing ${p.value}`;
+  }
+  return ev.summary || EVENT_TYPES[ev.type]?.label || ev.type;
 }
 
 /* ------------------------------------------------------------------ */
@@ -134,8 +160,7 @@ function feedPanel(events) {
       class: 'mono', style: 'font-size:11px;min-width:80px',
     }, ev.characterId ? (who.get(ev.characterId) || '—') : '—'));
     row.append(el('span', { class: 'chip' }, ev.cat || '?'));
-    row.append(el('span', { style: 'flex:1' },
-      ev.summary || EVENT_TYPES[ev.type]?.label || ev.type));
+    row.append(el('span', { style: 'flex:1' }, storyLine(ev)));
     panel.append(row);
   }
   return panel;

@@ -62,38 +62,6 @@ export const PENDING = [
     },
   },
   {
-    id: 'LEAK-1-clock-events',
-    title: 'A secret clock does not leak through the event log',
-    why: 'deck.js logs clock_advanced with the label whatever c.public says, '
-       + 'and GET /api/events applies no redaction, so the Chronicle - a '
-       + 'player mode - can read it.',
-    async run(c) {
-      const t = await freshTable();
-      const dm = t.token;
-      const joined = await api('/api/table/join', {
-        method: 'POST',
-        body: JSON.stringify({ code: t.code, name: 'Pending Player' }),
-      });
-      const player = joined.body.token;
-
-      await api('/api/events', {
-        method: 'POST',
-        body: JSON.stringify([{
-          id: `ev-pending-${Date.now()}`, type: 'clock_advanced',
-          ts: new Date().toISOString(), campaignId: 'pending-camp',
-          payload: { clock: 'PENDING-SECRET-LABEL', filled: 6, size: 6,
-            struck: true },
-        }]),
-      }, dm);
-
-      const seen = await api('/api/events?limit=100', {}, player);
-      const leaked = (seen.body || []).some((e) => e?.type === 'clock_advanced'
-        && String(e?.payload?.clock || '').includes('PENDING-SECRET-LABEL'));
-      c.ok(!leaked, 'a player cannot read a secret clock label from the log');
-      await api('/api/table/close', { method: 'POST' });
-    },
-  },
-  {
     id: 'API-1-nondict-body-drops',
     title: 'A JSON body that is not an object is refused, not dropped',
     why: '_read_json only rejects null, so a list or a number reaches code '

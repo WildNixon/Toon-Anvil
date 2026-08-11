@@ -171,6 +171,11 @@ async function buildCtx() {
         // which is the one thing an attacker will not do - these two send
         // whatever the scenario wants, because the question is what the
         // server accepts, not what the client happens to offer.
+        // The shared log, raw. It is the one read route that never redacted,
+        // so it needs testing over HTTP like every other server refusal.
+        logEvents: (list, token) => call('/api/events',
+          { method: 'POST', body: JSON.stringify(list) }, token),
+        events: (qs, token) => call(`/api/events?${qs}`, {}, token),
         joinRaw: (body) => call('/api/table/join',
           { method: 'POST', body: JSON.stringify(body) }),
         claimRaw: (body, token) => call('/api/table/claim',

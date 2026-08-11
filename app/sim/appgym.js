@@ -4139,6 +4139,116 @@ export const SUITES = [
         },
       },
       {
+        id: 'the_log_is_redacted_like_everything_else',
+        title: 'The DM\'s prep does not travel in the shared event log',
+        async run(c, { table }) {
+          c.feature('shared', 'events', 'permissions');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          // One secret clock and one public one, one secret faction.
+          await table.put('campaigns', 'gym-leak', {
+            id: 'gym-leak', name: 'Leak', day: 1,
+            clocks: [
+              { id: 'k-secret', label: 'CLOCKONLYTHEDMSEES', size: 6, filled: 5, public: false },
+              { id: 'k-open', label: 'Harvest festival', size: 4, filled: 1, public: true },
+            ],
+            factions: [
+              { id: 'g-secret', name: 'FACTIONONLYTHEDMSEES', standing: -3, public: false },
+            ],
+          }, dm.token);
+
+          const stamp = `gym-leak-${Date.now()}`;
+          await table.logEvents([
+            // summary is where describe() bakes payload text, and a fix that
+            // only cleans the payload leaves the secret in the next field.
+            { id: `${stamp}-1`, type: 'clock_advanced', cat: 'world',
+              campaignId: 'gym-leak', summary: 'CLOCKONLYTHEDMSEES struck',
+              payload: { clockId: 'k-secret', filled: 6, size: 6, struck: true } },
+            { id: `${stamp}-2`, type: 'clock_advanced', cat: 'world',
+              campaignId: 'gym-leak', summary: 'A clock struck',
+              payload: { clockId: 'k-open', filled: 4, size: 4, struck: true } },
+            { id: `${stamp}-3`, type: 'faction_standing', cat: 'world',
+              campaignId: 'gym-leak', summary: 'FACTIONONLYTHEDMSEES: standing -3',
+              payload: { factionId: 'g-secret', value: -3 } },
+            { id: `${stamp}-4`, type: 'section_filed', cat: 'world',
+              campaignId: 'gym-leak', summary: 'LOREONLYTHEDMSEES filed as lore',
+              payload: { title: 'LOREONLYTHEDMSEES', as: 'lore' } },
+            { id: `${stamp}-5`, type: 'encounter_start', cat: 'combat',
+              campaignId: 'gym-leak', summary: 'A fight began',
+              payload: { name: 'AMBUSHONLYTHEDMSEES', combatants: ['Lich', 'Goblin'] } },
+          ], dm.token);
+
+          const mine = await table.events('limit=2000&campaign=gym-leak', kim.token);
+          const seen = JSON.stringify(mine.body);
+          for (const secret of ['CLOCKONLYTHEDMSEES', 'FACTIONONLYTHEDMSEES',
+            'LOREONLYTHEDMSEES', 'AMBUSHONLYTHEDMSEES', 'Lich']) {
+            c.ok(!seen.includes(secret), `${secret} never reaches a player`);
+          }
+          // Scope the COUNTS to this run. The log is append-only and
+          // outlives the run that wrote it, so a second pass over the same
+          // instance sees both sets and "expected 1, got 2" - the same trap
+          // that made the dice rail open on last session's dice.
+          const ours = (mine.body || [])
+            .filter((e) => String(e.id || '').startsWith(stamp));
+          const kinds = ours.map((e) => e.type);
+          c.eq(kinds.filter((k) => k === 'clock_advanced').length, 1,
+            'the public clock survives and the secret one is absent, '
+            + 'not merely blanked', kinds.join(','));
+          const fight = ours.find((e) => e.type === 'encounter_start');
+          c.eq(fight?.payload?.combatants, 2,
+            'a roster becomes a count', JSON.stringify(fight?.payload));
+
+          // The DM is the one person allowed to know.
+          const theirs = await table.events('limit=2000&campaign=gym-leak', dm.token);
+          const dmSaw = JSON.stringify(theirs.body);
+          c.ok(dmSaw.includes('FACTIONONLYTHEDMSEES')
+            && dmSaw.includes('LOREONLYTHEDMSEES')
+            && dmSaw.includes('AMBUSHONLYTHEDMSEES'),
+          'while the DM still sees all of it');
+
+          await table.del('campaigns', 'gym-leak', dm.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'only_the_dm_authors_the_world',
+        title: 'A player cannot forge what the world did',
+        async run(c, { table }) {
+          c.feature('shared', 'events', 'permissions');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          // `cat` arrives in the request body, so it is worth nothing - the
+          // server judges the TYPE against its own list.
+          const forged = await table.logEvents([{
+            id: `gym-forge-${Date.now()}`, type: 'clock_advanced',
+            cat: 'journal', payload: { clockId: 'k-secret' },
+          }], kim.token);
+          c.eq(forged.status, 403,
+            'a player forging a clock strike is refused, whatever cat says',
+            JSON.stringify(forged.body).slice(0, 90));
+
+          // Their own play still lands - rp.js depends on exactly this.
+          const beat = await table.logEvents([{
+            id: `gym-beat-${Date.now()}`, type: 'npc_met', cat: 'rp',
+            payload: { name: 'Harbourmaster' },
+          }], kim.token);
+          c.eq(beat.status, 200, 'but their own roleplay beat still lands');
+
+          const world = await table.logEvents([{
+            id: `gym-dm-${Date.now()}`, type: 'day_advanced', cat: 'world',
+            payload: { day: 2 },
+          }], dm.token);
+          c.eq(world.status, 200, 'and the DM still authors the world');
+          await table.close();
+        },
+      },
+      {
         id: 'bands_agree_across_the_wire',
         title: 'The server and the client draw the same line at bloodied',
         async run(c, { table, dm }) {
@@ -4545,6 +4655,21 @@ export const MUTATIONS = [
     // The Deck dial would turn and every Market would shrug.
     patch: (ctx) => ({ campaign: { ...ctx.campaign,
       unitPrice: (base, att) => ctx.campaign.unitPrice(base, att, 1) } }),
+  },
+  {
+    id: 'events_carry_the_dms_prep',
+    what: 'the event log hands a player the secret it was redacted of',
+    // The shape the leak actually had: the kind routes redact, this one
+    // does not, and the label rides along in a field nobody looked at.
+    patch: (ctx) => ({ table: { ...ctx.table,
+      events: async (qs, token) => {
+        const r = await ctx.table.events(qs, token);
+        if (Array.isArray(r?.body)) {
+          r.body = r.body.map((e) => (e?.type === 'clock_advanced'
+            ? { ...e, summary: 'CLOCKONLYTHEDMSEES struck' } : e));
+        }
+        return r;
+      } } }),
   },
   {
     id: 'campaign_redaction_skipped',
