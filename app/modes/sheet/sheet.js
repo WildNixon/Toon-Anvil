@@ -63,8 +63,8 @@ function takeRollMode() {
  * the Chronicle, and a `roll` event for the shared dice rail - allow-listed,
  * because the event stream reaches every seat at the table.
  */
-function tellTable(kind, label, r, extra = null) {
-  const card = pushRollCard(cardModel({ label, roll: r, extra }));
+function tellTable(kind, label, r, extra = null, why = null) {
+  const card = pushRollCard(cardModel({ label, roll: r, extra, why }));
   const seat = session.colourOf(getState().characterId);
   if (seat) {
     card.dataset.colour = seat;
@@ -236,14 +236,15 @@ function draw() {
     main.append(inventoryPanel(derived));
   }
 
-  // The table, when there is one. Solo play gets no rail at all rather than
-  // an empty one - a fold labelled "The fight" with nothing behind it is
-  // worse than no fold.
-  if (session.isOpen() && !session.isDm()) {
-    for (const panel of railPanels(draw)) rail.append(panel);
-    // On a narrow screen the rail paints above the character while the turn
-    // is yours - see .cockpit.turn-first. Still after it in the document.
-    if (isMyTurn()) cockpit.classList.add('turn-first');
+  // The rail. Which panels exist is railPanels' business - it omits the
+  // table ones when there is no table, so solo play gets the rail for its
+  // own roll history rather than nothing. It returns an empty list when it
+  // has nothing to say, and an empty rail is a zero-height grid column.
+  for (const panel of railPanels(draw)) rail.append(panel);
+  // On a narrow screen the rail paints above the character while the turn
+  // is yours - see .cockpit.turn-first. Still after it in the document.
+  if (session.isOpen() && !session.isDm() && isMyTurn()) {
+    cockpit.classList.add('turn-first');
   }
 }
 
@@ -546,7 +547,10 @@ function abilitiesPanel(d) {
         mod: d.mods[ab] + (d.d20Penalty || 0), ...takeRollMode(),
       });
       log('journal', { text: `${ABILITY_NAMES[ab]} check: ${fmt(r)}` });
-      tellTable('check', `${ABILITY_NAMES[ab]} check`, r);
+      tellTable('check', `${ABILITY_NAMES[ab]} check`, r, null, breakdown([
+        { n: d.mods[ab], what: ab.toUpperCase() },
+        { n: d.d20Penalty, what: 'exhausted' },
+      ]));
     });
     cell.append(el('div', { class: 'k' }, ab.toUpperCase()));
     cell.append(el('div', { class: 'v' }, String(d.abilities[ab])));
@@ -576,7 +580,11 @@ function abilitiesPanel(d) {
       onClick: () => {
         const r = d20({ mod: d.saves[ab].mod, ...takeRollMode() });
         log('journal', { text: `${ABILITY_NAMES[ab]} save: ${fmt(r)}` });
-        tellTable('save', `${ab.toUpperCase()} save`, r);
+        tellTable('save', `${ab.toUpperCase()} save`, r, null, breakdown([
+          { n: d.mods[ab], what: ab.toUpperCase() },
+          { n: d.saves[ab].proficient ? d.proficiencyBonus : 0, what: 'prof' },
+          { n: d.d20Penalty, what: 'exhausted' },
+        ]));
       },
     }, `${ab.toUpperCase()} ${sign(d.saves[ab].mod)}`));
   }
@@ -596,21 +604,10 @@ function skillsPanel(d) {
   panel.append(el('span', { class: 'lvl' }, 'Skills'));
   const list = el('div', { style: 'max-height:340px;overflow-y:auto' });
   for (const [skill, info] of Object.entries(d.skills)) {
-    const row = el('div', {
-      style: 'display:flex;gap:8px;align-items:center;padding:3px 4px;cursor:pointer',
-      onClick: () => {
-        const r = d20({ mod: info.mod, ...takeRollMode() });
-        log('journal', { text: `${cap(skill)}: ${fmt(r)}` });
-        tellTable('skill', cap(skill), r);
-      },
-    });
-    row.append(el('span', {
-      class: `chip${info.expertise ? ' expert' : info.proficient ? ' prof' : ''}`,
-    }, info.expertise ? 'E' : info.proficient ? 'P' : '-'));
-    const name = el('span', { style: 'flex:1;font-size:14px' });
-    name.append(el('span', {}, cap(skill)));
     // The sum, spelled out. An opaque +9 becomes something a player can
-    // check against the DM's number without asking anyone.
+    // check against the DM's number without asking anyone. Computed before
+    // the row because the roll card wants the same sentence the row shows -
+    // one source, so the card can never disagree with the sheet.
     const why = breakdown([
       { n: d.mods[info.ability], what: (info.ability || '').toUpperCase() },
       { n: info.expertise ? d.proficiencyBonus * 2
@@ -618,6 +615,19 @@ function skillsPanel(d) {
       what: info.expertise ? 'expertise' : 'prof' },
       { n: d.d20Penalty, what: 'exhausted' },
     ]);
+    const row = el('div', {
+      style: 'display:flex;gap:8px;align-items:center;padding:3px 4px;cursor:pointer',
+      onClick: () => {
+        const r = d20({ mod: info.mod, ...takeRollMode() });
+        log('journal', { text: `${cap(skill)}: ${fmt(r)}` });
+        tellTable('skill', cap(skill), r, null, why);
+      },
+    });
+    row.append(el('span', {
+      class: `chip${info.expertise ? ' expert' : info.proficient ? ' prof' : ''}`,
+    }, info.expertise ? 'E' : info.proficient ? 'P' : '-'));
+    const name = el('span', { style: 'flex:1;font-size:14px' });
+    name.append(el('span', {}, cap(skill)));
     if (why) {
       name.append(el('span', {
         class: 'muted', style: 'font-size:11px;margin-left:8px',
@@ -846,8 +856,38 @@ async function rollAttack(atk, d) {
     attackerName: d.name, critRange: d.critRange || 20, ...takeRollMode(),
   });
   for (const ev of res.events) await log(ev.type, ev.payload);
-  tellTable('attack', `${atk.name} to hit`, res.roll, `${res.total} damage`);
+  // The damage itemisation only earns its space when something other than
+  // the weapon contributed - otherwise "9 damage" and "9 slashing" are the
+  // same sentence twice.
+  const parts = res.damageParts || [];
+  const why = [
+    attackWhy(atk, d),
+    parts.length > 1
+      ? parts.map((p) => `${p.amount} ${p.type} (${p.source})`).join(' + ')
+      : '',
+  ].filter(Boolean).join(' · ');
+  tellTable('attack', `${atk.name} to hit`, res.roll, `${res.total} damage`, why);
   if (res.fumble) await fireNatTriggers(d, res.roll.nat);
+}
+
+/**
+ * What an attack bonus is made of - when we can prove it.
+ *
+ * derive() computes `attackBonus` through modFor(), which honours
+ * substitutions ("WIS replaces STR for attacks"). Rebuilding the sum from
+ * `mods[ability]` would then produce a confident sentence that disagrees
+ * with the number beside it, so the reconstruction is CHECKED against the
+ * real bonus and dropped when it does not add up. A missing breakdown is a
+ * gap; a wrong one is a thing a player argues with the DM about.
+ */
+function attackWhy(atk, d) {
+  const parts = [
+    { n: d.mods[atk.ability], what: (atk.ability || '').toUpperCase() },
+    { n: d.proficiencyBonus, what: 'prof' },
+    { n: d.d20Penalty, what: 'exhausted' },
+  ];
+  const sum = parts.reduce((n, p) => n + (p.n || 0), 0);
+  return sum === atk.attackBonus ? breakdown(parts) : '';
 }
 
 /**

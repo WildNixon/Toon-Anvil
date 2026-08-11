@@ -21,8 +21,28 @@ import { el, sign } from '../../core/store.js';
 const MAX_CARDS = 4;
 const CARD_MS = 9000;
 
+/**
+ * The last few rolls, kept because the cards do not keep themselves.
+ *
+ * A card lives CARD_MS and then leaves, which is right for a notification
+ * and wrong for a record - "what did I actually roll for that" is asked
+ * about thirty seconds later, by which time the card is gone. This is the
+ * short memory the rail reads.
+ */
+const HISTORY_MAX = 10;
+const history = [];
+const listeners = new Set();
+
+export function rollHistory() { return history.slice(); }
+
+/** Subscribe to pushes. Returns an unsubscribe. */
+export function onRoll(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
 /** Pure display model for one d20-style roll. */
-export function cardModel({ label, roll, extra = null }) {
+export function cardModel({ label, roll, extra = null, why = null }) {
   let marked = false;
   const faces = (roll.faces || []).map((v) => {
     const used = !marked && v === roll.nat;
@@ -39,6 +59,9 @@ export function cardModel({ label, roll, extra = null }) {
     crit: !!roll.isCrit,
     fumble: !!roll.isFumble,
     extra,
+    // Where the modifier came from, in words. The faces already say what
+    // the dice did; this says what the sheet added and why.
+    why: why || null,
   };
 }
 
@@ -85,10 +108,17 @@ export function pushRollCard(model, doc = document) {
   // The state a glance must read even with animation off.
   if (model.crit) card.append(el('div', { class: 'rc-flag' }, 'Critical!'));
   if (model.fumble) card.append(el('div', { class: 'rc-flag' }, 'Fumble'));
+  if (model.why) card.append(el('div', { class: 'rc-why' }, model.why));
   if (model.extra) card.append(el('div', { class: 'rc-extra' }, model.extra));
 
   host.append(card);
   while (host.children.length > MAX_CARDS) host.firstElementChild.remove();
   setTimeout(() => card.remove(), CARD_MS);
+
+  history.push(model);
+  while (history.length > HISTORY_MAX) history.shift();
+  for (const fn of listeners) {
+    try { fn(model); } catch { /* a stale listener must not stop a roll */ }
+  }
   return card;
 }

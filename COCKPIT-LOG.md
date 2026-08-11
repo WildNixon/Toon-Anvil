@@ -124,6 +124,74 @@ this project does not fake adjudication it has not modelled — the honest
 move is to tell the player the rider exists and let them apply it. See the
 open questions.
 
+## B4 — Post-roll: what the total was made of
+
+B3 put the arithmetic on the sheet *before* you roll. This puts it on the
+result *after*, and keeps it around once the card has gone.
+
+**The card grew a `why` line.** A skill tap now produces a card reading
+`22 · +4 DEX +8 expertise`, and it is **the same string the row shows** —
+computed once and handed to both, so the card can never disagree with the
+sheet it came from. Wired at four call sites: skills, ability checks, saving
+throws, attacks.
+
+**"Your rolls" — a rail fold that outlives the cards.** Cards expire after
+9 seconds, which is right for a notification and wrong for a record: "wait,
+what did I roll for that" gets asked about thirty seconds later. The fold
+holds the last eight with their breakdowns, newest first. It repaints on a
+**push**, not on a redraw — a skill tap changes nothing about the character,
+so a panel that waited for `draw()` would show the roll before last. The
+listener cancels itself once its node is off the page, because a listener
+held by a detached node is a leak with opinions.
+
+**Consequence needed no new code.** Your card is the cause; the rail's fight
+panel — already live-synced — shows the target's HP band move. That is what
+putting them on one screen was for.
+
+### Two judgement calls worth your attention
+
+**Attack breakdowns are checked before they are shown.** `derive()` computes
+`attackBonus` through `modFor()`, which honours substitutions — a Hexblade's
+`WIS replaces STR for attacks`. Rebuilding the sum from `mods[ability]` would
+then print a confident sentence that disagrees with the number beside it. So
+the reconstruction is **summed and compared to the real bonus, and dropped
+when it does not match**. A missing breakdown is a gap; a wrong one is a
+thing a player argues with their DM about. Verified with a deliberately
+unreconstructable attack (`attackBonus: 99`): no breakdown, no guess.
+
+**Damage itemisation only appears when a rider fired.** With one damage part,
+`9 damage` and `9 piercing (Rapier)` are the same sentence twice.
+
+### The thing I changed my mind about
+
+I first gated the fold open **during** a fight and left solo play with no
+rail at all (B1's rule). Both were wrong, and the panel made it obvious once
+I could see it:
+
+- **Open during a fight** is the worst time on a phone — the rail already
+  carries two open folds and your card is on screen *right now* anyway. It
+  now opens when there is **no** fight, which is when the rail is nearly
+  empty and when a forgotten skill check is what you are hunting for.
+- **Solo play got nothing.** The roll history needs no server and no table,
+  and solo is the commonest way this app is used — so the gate would have
+  made the majority case the one that loses the feature. `railPanels()` now
+  owns the decision and omits only the *table* panels when there is no
+  table. A fold labelled "The fight" with nothing behind it is still worse
+  than no fold; that part of B1's rule stands.
+
+**Measured** at 390×844 with the widest realistic card on screen (advantage,
+two damage parts, a long rider name): no sideways scroll on `main` or the
+document (390 ≤ 391), first input still exactly 16px, card 280px wide ending
+at x=376, and the breakdown **wrapping to two lines rather than truncating**
+— a breakdown you cannot read is not a breakdown. Frozen strings re-checked
+after the rail changed: `Adjust HP` present, first `main input[type=number]`
+still `hp-amount`, `HP 44 of 44` still adjacent, tab labels unchanged, rail
+still the second child and last in the document.
+
+Also verified directly: history caps at 10 and hands out a defensive copy, a
+listener that throws does not stop the roll, unsubscribe works, and a card
+with no breakdown grows no empty element.
+
 ---
 
 ## Open questions — for us to decide

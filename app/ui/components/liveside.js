@@ -16,7 +16,8 @@
  * whatever a screen offers, and these panels do not offer it.
  */
 
-import { getState, el } from '../../core/store.js';
+import { getState, el, sign } from '../../core/store.js';
+import { rollHistory, onRoll } from './rollcard.js';
 import * as session from '../../core/session.js';
 import { runnerPanel, adopt, pull } from '../../modes/dm/runner.js';
 import { diceRail } from './dicerail.js';
@@ -178,16 +179,75 @@ export function clockStrip() {
  */
 export function railPanels(redraw) {
   const out = [];
-  const banner = turnBanner();
-  if (banner) out.push(banner);
-
-  const world = worldStrip();
-  if (world) out.push(fold('The world', world, false));
-  if (fightIsOn()) {
-    out.push(fold('The fight', fightPanel(redraw), true));
-    out.push(fold('Dice', dicePanel(), true));
+  // The table panels exist only when there is a table. Solo play still gets
+  // the rail for its own roll history: that panel needs no server, and the
+  // commonest way this app is used should not be the one that loses the
+  // feature. A fold labelled "The fight" with nothing behind it, though, is
+  // worse than no fold - hence the gate here rather than empty furniture.
+  const atTable = session.isOpen() && !session.isDm();
+  if (atTable) {
+    const banner = turnBanner();
+    if (banner) out.push(banner);
+    const world = worldStrip();
+    if (world) out.push(fold('The world', world, false));
+    if (fightIsOn()) {
+      out.push(fold('The fight', fightPanel(redraw), true));
+      out.push(fold('Dice', dicePanel(), true));
+    }
   }
+  // Open when there is room. In a fight the rail already carries two open
+  // folds and your card is on screen right now anyway; out of a fight the
+  // rail is nearly empty and history is the thing you want, because "what
+  // did I roll for that" gets asked about thirty seconds later - by which
+  // time the card has gone.
+  out.push(fold('Your rolls', myRollsPanel(), !(atTable && fightIsOn())));
   return out;
+}
+
+/**
+ * This seat's own recent rolls, with what each total was made of.
+ *
+ * The dice rail beside it is the TABLE's rolls - everyone's, newest first,
+ * totals only. This is yours, with the arithmetic, because the question it
+ * answers is different: not "what did Kim get" but "wait, why was mine +7".
+ *
+ * It updates itself on a push rather than waiting for a redraw. A skill tap
+ * does not redraw the sheet - nothing about the character changed - so a
+ * panel that only repainted on draw() would show the roll before last.
+ */
+function myRollsPanel() {
+  const box = el('div', { class: 'panel rivets' });
+  const list = el('div', {});
+  box.append(list);
+
+  const paint = () => {
+    list.innerHTML = '';
+    const rolls = rollHistory().slice(-8).reverse();
+    if (!rolls.length) {
+      list.append(el('p', { class: 'muted', style: 'font-size:13px;margin:0' },
+        'Your rolls land here, with the sums.'));
+      return;
+    }
+    for (const r of rolls) {
+      const row = el('div', {
+        class: `dice-row${r.crit ? ' crit' : ''}${r.fumble ? ' fumble' : ''}`,
+      });
+      row.append(el('span', { class: 'dice-who' }, r.label));
+      row.append(el('span', { class: 'dice-label' },
+        r.why || (r.mod ? sign(r.mod) : '')));
+      row.append(el('span', { class: 'dice-total mono' }, String(r.total)));
+      list.append(row);
+    }
+  };
+  paint();
+
+  // Self-cancelling: once this panel is off the page a redraw has replaced
+  // it, and a listener held by a detached node is a leak with opinions.
+  const off = onRoll(() => {
+    if (!list.isConnected) { off(); return; }
+    paint();
+  });
+  return box;
 }
 
 /** A rail section that remembers nothing and folds away when ignored. */
