@@ -12,6 +12,7 @@ import {
   resolveAttack, fireTriggers, applyDamage as engineApplyDamage,
   shortRest as engineShortRest, longRest as engineLongRest,
   useSlot as engineUseSlot, deathSave as engineDeathSave, rollOnTable,
+  slotForSpell,
 } from '../../core/engine.js';
 import {
   ABILITIES, ABILITY_NAMES, SKILLS, fromCopper, CONDITIONS,
@@ -24,7 +25,7 @@ import { cardModel, pushRollCard } from '../../ui/components/rollcard.js';
 import { safeRollPayload } from '../../ui/components/dicerail.js';
 import * as live from '../../core/live.js';
 import {
-  LIVE_KINDS, refreshLive, railPanels, isMyTurn,
+  LIVE_KINDS, refreshLive, railPanels, isMyTurn, liveRecord,
 } from '../../ui/components/liveside.js';
 
 export const title = 'Play';
@@ -240,7 +241,12 @@ function draw() {
   // table ones when there is no table, so solo play gets the rail for its
   // own roll history rather than nothing. It returns an empty list when it
   // has nothing to say, and an empty rail is a zero-height grid column.
-  for (const panel of railPanels(draw)) rail.append(panel);
+  // The act bar is built HERE because attacks and spells are the sheet's
+  // business, and placed by railPanels because where it sits relative to the
+  // fight is the rail's. liveside.js must not import this module - it is
+  // imported BY it, and a cycle between them is how a rail ends up rendering
+  // a half-initialised sheet.
+  for (const panel of railPanels(draw, { act: actBar })) rail.append(panel);
   // On a narrow screen the rail paints above the character while the turn
   // is yours - see .cockpit.turn-first. Still after it in the document.
   if (session.isOpen() && !session.isDm() && isMyTurn()) {
@@ -843,6 +849,91 @@ function attacksPanel(d) {
 }
 
 /**
+ * Your turn, and the things you can spend it on.
+ *
+ * The fight is beside you now, but until this bar the rail was read-only:
+ * you could watch the initiative order and then had to scroll back up into
+ * the sheet to actually do anything. On a phone that is the whole screen
+ * twice, mid-turn, with four people waiting.
+ *
+ * Everything here is a shortcut to a control that already exists - the same
+ * rollAttack and castSpell the sheet calls - so there is one implementation
+ * of an attack and one of a cast, and this cannot drift from them.
+ *
+ * End turn does NOT advance the initiative order. The server refuses a
+ * player's write to the shared encounter and this stage does not touch that;
+ * it logs an event instead, which is the honest shape of what a player does
+ * at a real table: they say they are done, and the DM moves the fight on.
+ */
+function actBar() {
+  const { derived: d, character } = getState();
+  if (!d) return null;
+
+  const box = el('div', { class: 'panel accent rivets' });
+  box.append(el('span', { class: 'lvl accent' }, 'Your turn'));
+
+  const row = (label) => {
+    const wrap = el('div', { class: 'btnrow', style: 'gap:6px;margin-top:6px' });
+    box.append(el('div', { class: 'eyebrow', style: 'margin-top:8px' }, label));
+    box.append(wrap);
+    return wrap;
+  };
+
+  // Attacks, with the bonus on the button - the number you are about to
+  // roll should be readable before you commit to rolling it.
+  const atks = (d.attacks || []).slice(0, 6);
+  if (atks.length) {
+    const wrap = row(d.attacksPerAction > 1
+      ? `Attacks (${d.attacksPerAction} per action)` : 'Attacks');
+    for (const atk of atks) {
+      wrap.append(el('button', {
+        class: 'act small', onClick: () => rollAttack(atk, d),
+      }, `${atk.name} ${sign(atk.attackBonus)}`));
+    }
+  }
+
+  // Spells you could actually cast right now. Cantrips are always here;
+  // a levelled spell only appears while a slot IT COULD USE remains - the
+  // same upcast rule castSpell applies, asked per spell rather than as a
+  // blanket "any slot free". Offering Fireball with only a level 1 slot
+  // left would be a button whose whole job is to answer "no".
+  const sc = d.spellcasting;
+  if (sc) {
+    const byId = new Map((getState().compendium?.spells || []).map((s) => [s.id, s]));
+    const castable = [...sc.known, ...sc.prepared]
+      .map((id) => byId.get(id)).filter(Boolean)
+      .filter((s) => s.level === 0 || slotForSpell(sc, s.level) !== null)
+      .slice(0, 8);
+    if (castable.length) {
+      const wrap = row('Spells');
+      for (const s of castable) {
+        wrap.append(el('button', {
+          class: 'act ghost small',
+          title: s.concentration ? 'Concentration' : null,
+          onClick: () => castSpell(s),
+        }, s.level === 0 ? s.name : `${s.name} L${s.level}`));
+      }
+    }
+  }
+
+  box.append(el('div', { class: 'rule' }));
+  box.append(el('button', {
+    class: 'act', style: 'width:100%',
+    onClick: async () => {
+      const rec = liveRecord();
+      await log('turn_done', {
+        who: character?.name || d.name || 'A player',
+        round: rec?.round || null,
+      });
+      toast('The table has been told', 'ok');
+    },
+  }, 'End turn'));
+  box.append(el('p', { class: 'muted', style: 'font-size:11px;margin:6px 0 0' },
+    'Tells the DM you are done. They move the fight on.'));
+  return box;
+}
+
+/**
  * Both play surfaces resolve attacks through core/engine.js. They used to have
  * private copies that had drifted apart - this one picked roll-table entries
  * with Math.random() over the entry count instead of rolling the die.
@@ -1084,10 +1175,7 @@ async function castSpell(spell) {
     draw();
     return;
   }
-  let lvl = null;
-  for (let i = spell.level; i <= sc.slots.length; i += 1) {
-    if ((sc.slots[i - 1] || 0) - (sc.slotState[i] || 0) > 0) { lvl = i; break; }
-  }
+  const lvl = slotForSpell(sc, spell.level);
   if (lvl === null) {
     toast(sc.pact
       ? 'Pact Magic is not modelled yet - spend it narratively'

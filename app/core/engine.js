@@ -467,6 +467,30 @@ export function useSlot(character, derived, level) {
   };
 }
 
+/**
+ * The lowest slot a spell of this level could be cast with, or null.
+ *
+ * This is the upcast rule: a level 1 spell with no level 1 slots left is
+ * cast from a level 2 slot. It lives here because two callers need it and
+ * they need the SAME answer - the sheet asks "may I offer this spell" when
+ * drawing the act bar, and casting asks "which slot do I spend". Written
+ * twice they drift, and the shape of that drift is a button whose only job
+ * is to answer "no slot high enough is left".
+ *
+ * Reads slotState off `spellcasting` rather than the character, because the
+ * act bar has a derived object and the cast path has both; derive() keeps
+ * the two in step.
+ */
+export function slotForSpell(spellcasting, level) {
+  if (!spellcasting || !level) return null;
+  const slots = spellcasting.slots || [];
+  const used = spellcasting.slotState || {};
+  for (let i = level; i <= slots.length; i += 1) {
+    if ((slots[i - 1] || 0) - (used[i] || 0) > 0) return i;
+  }
+  return null;
+}
+
 /** The highest slot level with a slot still available, or null. */
 export function highestAvailableSlot(character, derived) {
   const slots = derived.spellcasting?.slots || [];

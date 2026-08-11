@@ -54,6 +54,10 @@ export const EVENT_TYPES = {
   condition_cleared:  { cat: 'combat', label: 'Lost a condition' },
   concentration_broken: { cat: 'combat', label: 'Lost concentration' },
   homebrew_trigger:   { cat: 'combat', label: 'Homebrew feature fired', notable: true },
+  // A player saying "I'm done" out loud, in a form the DM's screen can see.
+  // The server refuses player writes to the shared encounter and that is
+  // deliberate, so this does NOT advance the turn - it tells the table.
+  turn_done:          { cat: 'combat', label: 'Ended their turn' },
 
   // --- shop / wealth
   purchase:           { cat: 'shop', label: 'Bought something' },
@@ -210,6 +214,7 @@ export function describe(type, p = {}) {
     case 'location_visited': return `Visited ${p.name}`;
     case 'quest_step':  return `${p.quest}: ${p.step}`;
     case 'homebrew_trigger': return `${p.feature} triggered${p.result ? ` - ${p.result}` : ''}`;
+    case 'turn_done':   return `${p.who || 'Someone'} is done${p.round ? ` (round ${p.round})` : ''}`;
     case 'rest_short':  return 'Took a short rest';
     case 'rest_long':   return 'Took a long rest';
     case 'journal':     return p.text ? String(p.text).slice(0, 120) : 'Journal entry';

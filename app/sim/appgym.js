@@ -897,6 +897,42 @@ export const SUITES = [
        + 'balance number this project reports.',
     scenarios: [
       {
+        id: 'castable_now',
+        title: 'A spell is offered only when a slot could actually cast it',
+        run(c, { engine }) {
+          c.feature('combat', 'spells', 'slots');
+          // The upcast rule, which the act bar asks BEFORE drawing a button
+          // and castSpell asks when spending one. They were two copies of
+          // this loop; a spell offered with no slot it can use is a button
+          // whose only job is to answer "no slot high enough is left".
+          const sc = (slotState) => ({ slots: [4, 3, 2], slotState });
+
+          // Level 1 spent: a level 1 spell upcasts into the level 2 slot.
+          c.eq(engine.slotForSpell(sc({ 1: 4, 2: 0, 3: 0 }), 1), 2,
+            'a level 1 spell upcasts when its own slots are gone');
+          c.eq(engine.slotForSpell(sc({ 1: 4, 2: 0, 3: 0 }), 3), 3,
+            'and a level 3 spell still has its own');
+
+          // Only level 1 left: nothing above it can be cast at all.
+          c.eq(engine.slotForSpell(sc({ 1: 3, 2: 3, 3: 2 }), 1), 1,
+            'a level 1 spell uses the level 1 slot it has');
+          c.eq(engine.slotForSpell(sc({ 1: 3, 2: 3, 3: 2 }), 3), null,
+            'a level 3 spell with only a level 1 slot left is NOT castable');
+
+          // Nothing left: every levelled spell is out.
+          const dry = sc({ 1: 4, 2: 3, 3: 2 });
+          c.eq(engine.slotForSpell(dry, 1), null, 'no slots left, level 1 out');
+          c.eq(engine.slotForSpell(dry, 3), null, 'no slots left, level 3 out');
+
+          // Cantrips never consult this, and neither does a caster without
+          // slots - both must answer null rather than throw.
+          c.eq(engine.slotForSpell(sc({}), 0), null, 'level 0 is not a slot question');
+          c.eq(engine.slotForSpell(null, 1), null, 'a non-caster does not crash');
+          c.eq(engine.slotForSpell({ slots: [], slotState: {} }, 1), null,
+            'a caster with no slot table is not offered levelled spells');
+        },
+      },
+      {
         id: 'attack_resolution',
         title: 'Attack rolls hit, miss, crit and fumble by the book',
         run(c, { engine }) {

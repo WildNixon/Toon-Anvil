@@ -192,6 +192,86 @@ Also verified directly: history caps at 10 and hands out a defensive copy, a
 listener that throws does not stop the roll, unsubscribe works, and a card
 with no breakdown grows no empty element.
 
+## B5 — Agency at the fight
+
+The rail was read-only. You could watch the initiative order and then had to
+scroll back into the sheet to actually do anything — on a phone that is the
+whole screen twice, mid-turn, with four people waiting.
+
+**The act bar.** On your turn, above every fold and deliberately *not* folded
+— a turn you have to open a disclosure to take is the friction this was built
+to remove. It carries:
+
+- **Your attacks, with the bonus on the button** (`Rapier +8`). The number
+  you are about to roll should be readable before you commit to rolling it.
+- **The spells you could actually cast right now.** Cantrips always; a
+  levelled spell only while a slot *it could use* remains — asked per spell,
+  using the same upcast search `castSpell` performs.
+- **End turn.**
+
+Every button is a shortcut to a control that already exists — the same
+`rollAttack` and `castSpell` the sheet calls — so there is one implementation
+of an attack and one of a cast, and the bar cannot drift from the sheet.
+
+**End turn does not advance the fight, and that is the point.** The server
+refuses a player's write to the shared encounter; this stage does not touch
+that, and the fog-of-war work stays intact. Instead it logs a `turn_done`
+event — which is the honest shape of what happens at a real table: you say
+you are done, and the DM moves the fight on.
+
+**The other half, which makes it worth logging.** A "Called their turn" strip
+shows who has said they are done, mounted on *both* the player's rail and the
+DM's Stage. Without a screen showing it, End turn would be a button that
+writes to a file nobody opens. The round is an **argument** to that strip
+rather than read from module state, because only the player side fetches the
+encounter — the DM's Stage holds the authoritative fight in `runner.js`, and
+a shared component reading one side's private state is one that silently
+shows nothing on the other.
+
+It is scoped to the **current round** on purpose. The event log is
+append-only and outlives the session, so an unscoped read would show everyone
+as done from the moment round two began — the same trap that had the dice
+rail showing last session's dice.
+
+### One thing I got wrong, twice, and what it turned into
+
+The first slot filter asked "is *any* slot free" rather than "is a slot this
+spell could use free". Measured with a Fireball and only a level 1 slot
+remaining: it was offered, and tapping it would have answered *"no slot high
+enough is left"* — a button whose whole job is to say no. Now per spell:
+with L2+L3 free both Fireball and Magic Missile appear (Magic Missile
+upcasting); with only L1 free, Fireball is gone; with nothing free, the
+cantrip stands alone.
+
+Fixing it left me with the upcast rule written **twice** — once in the act
+bar asking "may I offer this", once in `castSpell` asking "which slot do I
+spend" — which is precisely the drift I had just claimed the bar avoided by
+reusing the sheet's handlers. So it moved into `core/engine.js` as
+`slotForSpell()`, beside `useSlot` and `highestAvailableSlot`, and both call
+sites now ask the same function.
+
+That made it **gradeable for the first time**, so it is now a gym scenario
+(`combat/castable_now`): upcasting when a spell's own slots are gone, refusal
+when only lower slots remain, refusal when nothing is left, and the three
+degenerate inputs — a cantrip, a non-caster, and a caster with no slot table
+— answering `null` rather than throwing. A rule this fiddly living only in a
+render function was going to regress eventually.
+
+**Measured against a real table**, not a stub — module bindings cannot be
+stubbed from outside, and the first attempt proved it by silently doing
+nothing. So: a table opened, a player joined and claimed a character through
+the real join flow, and the DM published a running fight. Then End turn:
+`turn_done` reaches the **server** (not just a local cache), payload
+`{who: "Vex", round: 2}`, summary *"Vex is done (round 2)"*, category
+`combat`. The round-2 strip shows `Vex ✓`; the round-3 strip correctly shows
+nobody. **The permission boundary is unchanged** — the same player forging a
+`clock_advanced` still gets **403**, while `turn_done` gets 200.
+
+At 390×844 on your turn: `turn-first` puts the bar at the top of the screen
+while it stays second in the document, all six buttons clear 32px, End turn
+runs the full width, no sideways scroll, inputs still 16px, `Adjust HP` and
+`hp-amount` untouched.
+
 ---
 
 ## The thing I found that is bigger than any of this

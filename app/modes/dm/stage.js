@@ -22,6 +22,7 @@ import {
 import { mapView } from '../../ui/map.js';
 import { partyPanel } from './party.js';
 import { diceRail } from '../../ui/components/dicerail.js';
+import { doneStrip } from '../../ui/components/liveside.js';
 import { BEDS, playBed, stopBed, nowPlaying } from '../../core/providers.js';
 import { sheetPrompt } from '../../ui/kit.js';
 
@@ -84,6 +85,12 @@ function draw() {
   // there is nobody else rolling.
   if (session.isOpen()) {
     rail.append(fold('Dice', diceRail(getState().characters || [])));
+    // Who has called their turn. A player cannot advance the shared fight -
+    // the server refuses that and it stays - so End turn is an event, and
+    // this is the screen that makes it worth logging. Without it the button
+    // would write to a file nobody opens.
+    const done = doneStrip(fight.round || 0);
+    if (done) rail.append(fold('Called their turn', done, true));
   }
   if (campaign) rail.append(fold('Prepared', preparedPanel()));
   rail.append(fold('Ambience', ambiencePanel()));

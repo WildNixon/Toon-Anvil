@@ -177,7 +177,7 @@ export function clockStrip() {
  * it is your turn, and that reordering is done in CSS with `order`, never
  * by moving these ahead in the document.
  */
-export function railPanels(redraw) {
+export function railPanels(redraw, { act = null } = {}) {
   const out = [];
   // The table panels exist only when there is a table. Solo play still gets
   // the rail for its own roll history: that panel needs no server, and the
@@ -188,11 +188,21 @@ export function railPanels(redraw) {
   if (atTable) {
     const banner = turnBanner();
     if (banner) out.push(banner);
+    // The act bar goes directly under the banner and ABOVE the initiative
+    // order: the banner says it is your turn, so the next thing on the
+    // screen should be how to take it. Not folded - a turn you have to open
+    // a disclosure to take is the friction this was built to remove.
+    if (act && isMyTurn() && fightIsOn()) {
+      const bar = act();
+      if (bar) out.push(bar);
+    }
     const world = worldStrip();
     if (world) out.push(fold('The world', world, false));
     if (fightIsOn()) {
       out.push(fold('The fight', fightPanel(redraw), true));
       out.push(fold('Dice', dicePanel(), true));
+      const done = doneStrip(record?.round || 0);
+      if (done) out.push(done);
     }
   }
   // Open when there is room. In a fight the rail already carries two open
@@ -248,6 +258,61 @@ function myRollsPanel() {
     paint();
   });
   return box;
+}
+
+/**
+ * Who has said they are done, this round.
+ *
+ * The other half of End turn. A player cannot advance the shared encounter -
+ * the server refuses it and that stays - so "I'm done" is an event, and this
+ * is the thing that makes the event worth logging. Without a screen showing
+ * it, End turn would be a button that writes to a file nobody opens.
+ *
+ * Scoped to the CURRENT round on purpose. The event log is append-only and
+ * outlives the session, so an unscoped read would show everyone as done
+ * from the moment round two began - the same trap that had the dice rail
+ * showing last session's dice.
+ *
+ * Mounted by both sides: the player rail, and the DM's Stage. The round is
+ * an ARGUMENT rather than read from this module's `record`, because only the
+ * player side populates that - the DM's Stage holds the authoritative fight
+ * in runner.js. A shared component reading one side's private state is a
+ * component that silently shows nothing on the other.
+ */
+export function doneStrip(round = 0) {
+  if (!round) return null;
+  const strip = el('div', { class: 'strip' });
+  strip.append(el('span', { class: 'mono', style: 'font-size:11px' },
+    `Round ${round}`));
+  const list = el('span', { class: 'grow' });
+  strip.append(list);
+
+  // The timestamp field is `ts` - the same one rollRows() parses. Reading
+  // `at` here would silently disable the session scope and let a previous
+  // session's "done" marks through, which is the exact bug this scoping is
+  // here to avoid.
+  const from = session.current()?.createdAt
+    ? Date.parse(session.current().createdAt) : null;
+  db.queryEvents({ limit: 200 }).then((events) => {
+    const seen = new Set();
+    for (const e of events || []) {
+      if (e.type !== 'turn_done') continue;
+      if (from && Date.parse(e.ts) < from) continue;
+      if ((e.payload?.round || 0) !== round) continue;
+      const who = e.payload?.who;
+      if (who) seen.add(who);
+    }
+    if (!seen.size) {
+      list.append(el('span', { class: 'muted', style: 'font-size:11px' },
+        'Nobody has called their turn yet.'));
+      return;
+    }
+    for (const who of seen) {
+      list.append(el('span', { class: 'chip ok', title: 'Said they are done' },
+        `${who} ✓`));
+    }
+  }).catch(() => { /* the strip simply stays empty */ });
+  return strip;
 }
 
 /** A rail section that remembers nothing and folds away when ignored. */
