@@ -2,6 +2,8 @@
 
 Generated 2026-08-11T01:04:09+00:00 from `soak/findings.jsonl` (25 findings, 5 already fixed).
 
+**Updated 2026-08-10** during the cockpit work: **BOOT-1** added (high) — the root cause of HARNESS-1's residual, and a real bug that locks a returning player out of a table. HARNESS-1's "not root-caused" note is now resolved.
+
 Every item below was **confirmed against a running server**, not inferred from reading. Anything I could not reproduce is not here.
 
 Most of these have a **live reproduction** carrying the same id, in `app/sim/pending.js`. Open `/sim/pending.html` and run them: each one is expected to FAIL, and a failure is the defect still being present. When a fix lands its reproduction turns green — promote it into `appgym.js` and delete it from `pending.js`, so the gym guards it from then on. They are kept out of the graded gym on purpose: a suite with a permanent red in it stops being a gate.
@@ -9,7 +11,7 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 | Severity | Count | Means |
 | --- | --- | --- |
 | critical | 1 | A security hole or data loss. Fix before the next session. |
-| high | 5 | Breaks a shipped feature in normal play. A DM or player hits this. |
+| high | 6 | Breaks a shipped feature in normal play. A DM or player hits this. |
 | medium | 7 | Wrong or confusing, but there is a way round it. |
 | low | 3 | Papercut, polish, or a latent trap that needs an odd setup. |
 | idea | 9 | Not a defect - an expansion or refinement worth discussing. |
@@ -118,7 +120,31 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 
 **Reproduction.** PARTIALLY FIXED, and measured on a fourth, genuinely cold instance (port 7903, empty data dir, fresh browser origin): a warm-up frame is now booted and discarded before the standalone block, the gate budget is 25s, and a miss is reported as 'the join gate never appeared'. Result on cold: THREE failures became ONE. player_sees_a_players_table and join_deeplink now pass cold; join_gate still fails, but with the honest message instead of a TypeError. Logic tier unaffected throughout: 127/127 scenarios, 1586/1586 checks.
 
-**Proposed fix.** The residual is NOT root-caused and I will not pretend otherwise. What is ruled out: a stale localStorage token (clearing it changes nothing), a leaked iframe (every flow removes its frame in a finally), and the app failing to render the gate (a hand-booted frame shows it). What remains to try: waitUntilSettled instead of a bare waitFor, and instrumenting the frame's own console during the wait so the next failure says WHY rather than only that it timed out. Worth finishing before relying on unattended overnight runs, because a suite that is only green on a warm server cannot gate anything.
+**Proposed fix.** ~~The residual is NOT root-caused and I will not pretend otherwise.~~ **ROOT-CAUSED 2026-08-10 — and it was never a timing problem.** The instruction that found it was to instrument the frame rather than the wait, exactly as proposed above: reading the iframe's own body instead of only asking whether `.welcome` had appeared. It had not, and it never would have — the frame was showing a **"Boot failure" panel**. So the 25s budget was being spent waiting for an element the app had already decided not to render. See BOOT-1 below; the harness needs no further work beyond asserting on the frame's content when the gate is missing, so that the next failure of this shape names itself.
+
+### BOOT-1-refused-migration-kills-the-join-gate — A returning player arriving at an open table gets a dead "Boot failure" screen instead of the join gate
+
+**HIGH** · area: boot / join · effort: S · status: confirmed, NOT fixed — needs your call on the semantics
+
+**Why this matters.** This is the couch scenario the whole LAN epic exists for. Your friend played solo last week, so their browser holds a character. You open a table. They open the app — and instead of "A table is open, here's the join code field", they get *Toon Anvil could not start*. There is no way forward from that screen. They cannot join, because the thing that would let them join is what failed to render.
+
+**Root cause, exactly.** `boot()` (app/app.js:805) calls `selectCharacter(last)` → `migrateHp()` (app/app.js:192), which normalises an old HP shape and, **if it changed anything**, writes it back: `await db.put('characters', next)`. Against a real server that is a `PUT /api/characters/<id>`, and with a table open and no join code the server correctly answers **401**. Nothing catches it. The rejection propagates out of `boot()`, the `boot().catch()` at app/app.js:864 paints the Boot failure panel, and `renderNav()` / the join gate never run. So a **read-only visitor is killed by a write they never asked for**, performed during boot, for a cosmetic data migration.
+
+Note the ordering trap: `session.refresh()` — which is what learns "I am unseated at an open table" — happens at app.js:812, *after* `selectCharacter` at :806. The app decides to write before it has worked out who it is.
+
+**Reproduction.** Direct probe on the isolated instance (:7903), no gym harness involved: close the table, boot and discard a warm-up frame, `POST /api/table/open`, PUT a character as the DM, then boot `/index.html` in an iframe with `localStorage.toonanvil.token` cleared. Result: `.welcome` never appears within 25s; the frame's body is 882 chars reading `Boot failure — Toon Anvil could not start — PUT /api/characters/gym-gate-probe -> 401 - a table is open, so this needs a join code. Ask the DM for it.`
+
+**Proved pre-existing, not a regression from the cockpit work.** Same probe, same instance, seconds apart, with `sheet.js` / `rollcard.js` / `liveside.js` / `design.css` reverted to `HEAD` via `git show` and then restored: byte-identical failure — same 882-char body, same message, 25036ms vs 25042ms.
+
+**This is the whole of HARNESS-1's residual.** One defect, wearing a flake's clothes for four runs. It looked warm/cold-dependent because whether `reconcileHp` finds anything to migrate depends on what previous flows left in the data dir.
+
+**Proposed fix — three options, and I want your call rather than my guess.** The mechanical part is agreed: a refused *migration* write must never be fatal. What differs is what happens to the migration:
+
+1. **Swallow it** — `try { await db.put(...) } catch {}` in `migrateHp`. One line. The record stays un-migrated in this browser until they join; `reconcileHp` is idempotent so it retries on the next boot. Smallest change, and the un-migrated record is only ever read through `reconcileHp` anyway.
+2. **Defer it** — hold the migration and replay it after a successful join. Correct, but it needs a queue that does not exist yet, and a queue of writes made before you knew who you were is a fog-of-war question, not just a plumbing one.
+3. **Do not write during boot at all** — move `migrateHp` behind the first save, and treat `reconcileHp` as a pure read-time normalisation. Cleanest model; touches the most call sites.
+
+Whichever we take, `boot()` should also distinguish *refused* from *broken*: a 401/403 during boot means "you need to join", and the gate already knows how to say that. A dead panel is the wrong voice for a door that is merely locked.
 
 ### PWA-1-stale-service-worker — The service worker is still v9 and caches none of the LAN modules, so an installed PWA breaks offline
 

@@ -194,6 +194,47 @@ with no breakdown grows no empty element.
 
 ---
 
+## The thing I found that is bigger than any of this
+
+**BOOT-1 — a returning player arriving at your table gets a dead screen
+instead of the join gate.** Written up in full in `SOAK-REPORT.md`; the short
+version is that it is the couch scenario this whole epic exists for, and it
+is broken.
+
+Your friend played solo last week, so their browser holds a character. You
+open a table. They open the app and get *"Toon Anvil could not start"*, with
+no way forward — the thing that would let them join is the thing that failed
+to render.
+
+`boot()` calls `selectCharacter()` → `migrateHp()`, which quietly **writes**
+a normalised HP record back to the server. With a table open and no join
+code the server correctly answers 401, nothing catches it, and the boot
+handler paints a failure panel. A read-only visitor is killed by a write
+they never asked for, for a cosmetic migration. The app decides to write at
+`app.js:806`, six lines *before* `session.refresh()` at `:812` tells it who
+it is.
+
+This is also the entire residual of **HARNESS-1** — the gym failure I have
+been calling a cold-instance flake for four runs. It was never a timing
+problem: the 25s budget was spent waiting for an element the app had already
+decided not to render. It looked warm/cold-dependent because whether
+`reconcileHp` finds anything to migrate depends on what earlier flows left
+in the data dir. One defect, wearing a flake's clothes.
+
+Proved pre-existing, not something the cockpit work introduced: same probe,
+same instance, seconds apart, with the four changed files reverted to `HEAD`
+and restored — byte-identical failure, 25036ms vs 25042ms.
+
+**I have not fixed it, deliberately.** The mechanical part is obvious (a
+refused migration must not be fatal) but *what happens to the migration* is
+a real decision — swallow it, defer and replay it after joining, or stop
+writing during boot at all. The three options with their trade-offs are in
+`SOAK-REPORT.md`. The deferred-replay option in particular is a fog-of-war
+question, not plumbing: a queue of writes made before you knew who you were.
+It is the first thing I would do next.
+
+---
+
 ## Open questions — for us to decide
 
 1. **Where should Defences live?** It is on Overview now, which is the
