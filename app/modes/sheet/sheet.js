@@ -11,7 +11,7 @@ import { d20, fmt } from '../../core/dice.js';
 import {
   resolveAttack, fireTriggers, applyDamage as engineApplyDamage,
   shortRest as engineShortRest, longRest as engineLongRest,
-  useSlot as engineUseSlot, deathSave as engineDeathSave,
+  useSlot as engineUseSlot, deathSave as engineDeathSave, rollOnTable,
 } from '../../core/engine.js';
 import {
   ABILITIES, ABILITY_NAMES, SKILLS, fromCopper, CONDITIONS,
@@ -82,6 +82,19 @@ function tellTable(kind, label, r, extra = null) {
     crit: r.isCrit,
     fumble: r.isFumble,
   }));
+}
+
+/**
+ * Where a modifier came from, in words.
+ *
+ * "+7" tells a player nothing they can check. "+7 = +3 DEX +2 prof x2"
+ * tells them what to argue with when the DM says a different number, and
+ * it costs no taps - which matters on a phone, where a tooltip is not a
+ * thing and an extra tap mid-fight is an extra tap mid-fight.
+ */
+function breakdown(parts) {
+  const bits = parts.filter((p) => p && p.n).map((p) => `${sign(p.n)} ${p.what}`);
+  return bits.length > 1 ? bits.join(' ') : '';
 }
 
 function rollModeBar() {
@@ -196,6 +209,11 @@ function draw() {
     main.append(el('div', { class: 'grid two' },
       abilitiesPanel(derived), skillsPanel(derived)));
     main.append(attacksPanel(derived));
+    // After the vitals on purpose: nothing with a number input may come
+    // before the damage field. Defences carry none, but the rule is the
+    // rule and the next panel added here might.
+    const defences = defencesPanel(derived);
+    if (defences) main.append(defences);
   } else if (tab === 'spells') {
     if (derived.resources.length || derived.toggles.length) {
       main.append(resourcesPanel(derived));
@@ -206,6 +224,13 @@ function draw() {
         'No spells or limited-use features yet.'));
     }
   } else if (tab === 'features') {
+    // What you can DO goes above what you can read. Features was the
+    // thinnest tab in the app - prose and nothing else - while the things
+    // that prose describes were derived and never rendered.
+    const kit = kitPanel(derived);
+    if (kit) main.append(kit);
+    const ready = readinessPanel(derived);
+    if (ready) main.append(ready);
     main.append(featuresPanel(derived));
   } else {
     main.append(inventoryPanel(derived));
@@ -512,13 +537,27 @@ function abilitiesPanel(d) {
     const save = d.saves[ab];
     const cell = el('div', { class: 'stat clickable' });
     cell.addEventListener('click', () => {
-      const r = d20({ mod: d.mods[ab], ...takeRollMode() });
+      // d20Penalty is folded into saves, skills, attacks and initiative by
+      // derive(), and NOT into `mods` - so a raw ability check was the one
+      // roll exhaustion never touched. Added here rather than in derive
+      // because `mods` is the plain ability modifier that everything else
+      // is built from, and moving the penalty into it would count it twice.
+      const r = d20({
+        mod: d.mods[ab] + (d.d20Penalty || 0), ...takeRollMode(),
+      });
       log('journal', { text: `${ABILITY_NAMES[ab]} check: ${fmt(r)}` });
       tellTable('check', `${ABILITY_NAMES[ab]} check`, r);
     });
     cell.append(el('div', { class: 'k' }, ab.toUpperCase()));
     cell.append(el('div', { class: 'v' }, String(d.abilities[ab])));
     cell.append(el('div', { class: 'sub' }, `${sign(d.mods[ab])} / save ${sign(save.mod)}`));
+    // What the save is made of, when it is made of more than one thing.
+    const why = breakdown([
+      { n: d.mods[ab], what: ab.toUpperCase() },
+      { n: save.proficient ? d.proficiencyBonus : 0, what: 'prof' },
+      { n: d.d20Penalty, what: 'exhausted' },
+    ]);
+    if (why) cell.append(el('div', { class: 'sub muted' }, `save ${why}`));
     grid.append(cell);
   }
   panel.append(grid);
@@ -568,7 +607,23 @@ function skillsPanel(d) {
     row.append(el('span', {
       class: `chip${info.expertise ? ' expert' : info.proficient ? ' prof' : ''}`,
     }, info.expertise ? 'E' : info.proficient ? 'P' : '-'));
-    row.append(el('span', { style: 'flex:1;font-size:14px' }, cap(skill)));
+    const name = el('span', { style: 'flex:1;font-size:14px' });
+    name.append(el('span', {}, cap(skill)));
+    // The sum, spelled out. An opaque +9 becomes something a player can
+    // check against the DM's number without asking anyone.
+    const why = breakdown([
+      { n: d.mods[info.ability], what: (info.ability || '').toUpperCase() },
+      { n: info.expertise ? d.proficiencyBonus * 2
+        : info.proficient ? d.proficiencyBonus : 0,
+      what: info.expertise ? 'expertise' : 'prof' },
+      { n: d.d20Penalty, what: 'exhausted' },
+    ]);
+    if (why) {
+      name.append(el('span', {
+        class: 'muted', style: 'font-size:11px;margin-left:8px',
+      }, why));
+    }
+    row.append(name);
     row.append(el('span', { class: 'mono' }, sign(info.mod)));
     list.append(row);
   }
@@ -578,10 +633,179 @@ function skillsPanel(d) {
 
 /* ------------------------------------------------------------------ */
 
+/**
+ * What this character shrugs off.
+ *
+ * derive() has computed resistances, immunities and condition immunities
+ * since the beginning, and not one of them has ever been rendered on this
+ * sheet - a player literally could not find out what their own character
+ * resists. Which is a strange thing to discover right after teaching the
+ * DM's fight to honour exactly these fields.
+ *
+ * Hit dice ride along because they are the other number a player hunts for
+ * between fights and the sheet has never shown them either.
+ */
+function defencesPanel(d) {
+  const res = d.resistances || [];
+  const imm = d.immunities || [];
+  const cimm = d.conditionImmunities || [];
+  const dice = d.hitDice || {};
+  const hasDice = Number.isFinite(dice.remaining) || dice.die;
+  if (!res.length && !imm.length && !cimm.length && !hasDice) return null;
+
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Defences'));
+
+  const line = (label, list, kind) => {
+    if (!list.length) return;
+    panel.append(el('div', { class: 'eyebrow', style: 'margin:8px 0 4px' }, label));
+    const row = el('div', { class: 'btnrow' });
+    for (const t of list) row.append(el('span', { class: `chip ${kind}` }, t));
+    panel.append(row);
+  };
+  line('Resistant to', res, 'ok');
+  line('Immune to', imm, 'accent');
+  line('Cannot be', cimm, 'warn');
+
+  if (hasDice) {
+    const spent = Number.isFinite(dice.remaining) && Number.isFinite(dice.max)
+      ? `${dice.remaining} of ${dice.max}` : String(dice.remaining ?? '—');
+    panel.append(el('p', { class: 'muted', style: 'font-size:13px;margin:10px 0 0' },
+      `Hit dice ${dice.die || ''} — ${spent} left`.replace(/\s+/g, ' ')));
+  }
+  return panel;
+}
+
+/**
+ * What you can do when it is not your turn, and when the dice tilt.
+ *
+ * Reactions and advantage rules are derived and were shown nowhere. At a
+ * table the whole question between your turns is "can I do anything about
+ * that", and the answer was buried in feature prose.
+ */
+function readinessPanel(d) {
+  const reactions = d.reactions || [];
+  const advantages = d.advantages || [];
+  if (!reactions.length && !advantages.length) return null;
+
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Readiness'));
+  if (reactions.length) {
+    panel.append(el('h3', {}, 'Reactions'));
+    for (const r of reactions) {
+      const row = el('div', { style: 'padding:4px 0;font-size:14px' });
+      row.append(el('span', { class: 'chip warn' }, 'reaction'));
+      row.append(el('span', { style: 'margin-left:8px' },
+        `${r.name || r.trigger || 'Reaction'}${r.from ? ` · ${r.from}` : ''}`));
+      if (r.text) {
+        row.append(el('div', { class: 'muted', style: 'font-size:13px' }, r.text));
+      }
+      panel.append(row);
+    }
+  }
+  if (advantages.length) {
+    panel.append(el('div', { class: 'eyebrow', style: 'margin:10px 0 4px' },
+      'You roll with advantage on'));
+    for (const a of advantages) {
+      panel.append(el('div', { style: 'font-size:14px;padding:2px 0' },
+        `${a.on || a.scope || a.name || 'a roll'}${a.from ? ` · ${a.from}` : ''}`));
+    }
+  }
+  return panel;
+}
+
+/**
+ * Feature actions, stances and homebrew tables - at the table, not just
+ * alone.
+ *
+ * These have always existed in the solo Combat tracker's quickPanel, and
+ * Combat is soloOnly, so sitting down with friends SILENTLY took them away:
+ * a homebrew subclass's whole point stopped being reachable the moment a
+ * table opened. Same handlers, moved to the screen a player actually has.
+ */
+function kitPanel(d) {
+  const actions = d.actions || [];
+  const tables = d.rollTables || [];
+  if (!actions.length && !tables.length) return null;
+
+  const panel = el('div', { class: 'panel rivets accent' });
+  panel.append(el('span', { class: 'lvl accent' }, 'Your kit'));
+
+  if (actions.length) {
+    panel.append(el('div', { class: 'eyebrow', style: 'margin:0 0 6px' },
+      'Feature actions'));
+    const row = el('div', { class: 'btnrow' });
+    for (const a of actions) {
+      const cost = a.cost ? ` (${a.cost.amount} ${a.cost.resource})` : '';
+      row.append(el('button', {
+        class: 'act ghost small', title: a.text || '',
+        onClick: () => useFeatureAction(a, d),
+      }, `${a.name}${cost}`));
+    }
+    panel.append(row);
+  }
+
+  if (tables.length) {
+    panel.append(el('div', { class: 'eyebrow', style: 'margin:12px 0 6px' },
+      'Homebrew tables'));
+    const row = el('div', { class: 'btnrow' });
+    for (const t of tables) {
+      row.append(el('button', {
+        class: 'act ghost small', onClick: () => rollHomebrewTable(t),
+      }, `Roll ${t.name} (${t.die})`));
+    }
+    panel.append(row);
+  }
+  return panel;
+}
+
+async function rollHomebrewTable(table) {
+  const res = rollOnTable(table);
+  for (const ev of res.events) await log(ev.type, ev.payload);
+  toast(`${table.name} (${res.n}): ${res.entry?.text}`, 'ok');
+}
+
+async function useFeatureAction(a, d) {
+  if (a.cost?.resource) {
+    const pool = d.resources.find((r) => r.name === a.cost.resource);
+    if (pool && pool.current < a.cost.amount) {
+      return toast(`Not enough ${a.cost.resource}`, 'bad');
+    }
+    if (pool) {
+      await saveCharacter((c) => {
+        const state = { ...(c.resourceState || {}) };
+        state[pool.name] = (state[pool.name] ?? pool.max) - a.cost.amount;
+        c.resourceState = state;
+        return c;
+      });
+      await log('resource_spent',
+        { resource: a.cost.resource, amount: a.cost.amount });
+    }
+  }
+  await log('homebrew_trigger', { feature: a.name, result: 'used' });
+  toast(`${a.name} used`);
+  draw();
+  return null;
+}
+
 function attacksPanel(d) {
   const panel = el('div', { class: 'panel rivets accent' });
   panel.append(el('span', { class: 'lvl accent' }, 'Attacks'));
   panel.append(el('h3', {}, 'Attacks & strikes'));
+
+  // derive() has always worked these three out and the sheet has never
+  // shown any of them, so a Champion could not see their own crit range
+  // and a Rogue could not see that Sneak Attack exists.
+  const facts = [];
+  if (d.attacksPerAction > 1) facts.push(`${d.attacksPerAction} attacks per action`);
+  if (d.critRange < 20) facts.push(`crits on ${d.critRange}-20`);
+  for (const r of d.damageRiders || []) {
+    facts.push(`${r.dice || ''} ${r.source || 'rider'}`.trim());
+  }
+  if (facts.length) {
+    panel.append(el('p', { class: 'muted', style: 'font-size:13px;margin:0 0 10px' },
+      facts.join(' · ')));
+  }
 
   const wrap = el('div', { class: 'scroll-x' });
   const table = el('table');
@@ -614,7 +838,13 @@ function attacksPanel(d) {
  * with Math.random() over the entry count instead of rolling the die.
  */
 async function rollAttack(atk, d) {
-  const res = resolveAttack(atk, { attackerName: d.name, ...takeRollMode() });
+  // critRange has been an option of resolveAttack from the beginning and
+  // this call never passed it, so it defaulted to 20 and a Champion's
+  // Improved Critical did nothing on the one screen a player rolls from.
+  // derive() has known the number all along.
+  const res = resolveAttack(atk, {
+    attackerName: d.name, critRange: d.critRange || 20, ...takeRollMode(),
+  });
   for (const ev of res.events) await log(ev.type, ev.payload);
   tellTable('attack', `${atk.name} to hit`, res.roll, `${res.total} damage`);
   if (res.fumble) await fireNatTriggers(d, res.roll.nat);
