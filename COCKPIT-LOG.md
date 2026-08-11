@@ -353,4 +353,53 @@ It is the first thing I would do next.
    two visual lines on the narrowest screens. Worth looking at on your actual
    phone before deciding whether it should be behind a toggle.
 
-*(Stages B3–B5 append here as they land.)*
+8. **Should the act bar carry more than attacks and spells?** Dash, Dodge,
+   Disengage, Hide and Help are the other things a turn is spent on, and none
+   of them are on it. They are also the five the app models least — putting
+   them there means either a button that only logs a word, or modelling the
+   conditions they create. Same shape of question as `useFeatureAction` in
+   (2).
+
+9. **Should "Called their turn" clear itself when the DM advances?** Right
+   now it is scoped to the round, so it clears when the round does — which is
+   correct but coarse. If Kim ends her turn and the DM then moves to the
+   goblin and back to Kim in the same round, her ✓ is stale. The fix is to
+   scope to `(round, turn)` rather than `round`, which is small; I left it
+   because I am not certain the tighter scope is what a table wants — the ✓
+   arguably means "Kim has finished acting this round", not "this instant".
+
+10. **Where does `Party` mode go now?** Raised in (4) and now sharper: with
+    the fight, the dice, the world *and* an act bar all in the sheet's rail,
+    `Party` is the map plus the party vitals table plus a third copy of the
+    fight.
+
+---
+
+## Where this leaves things
+
+Five stages, five commits, each independently green:
+
+| | | |
+|---|---|---|
+| B1 | `0062fc1` | The sheet and the table became one screen |
+| B2+B3 | `8079121` | Everything the character is · pre-roll clarity · two roll bugs |
+| B4 | `f4cb9ac` | What the total was made of, and a rail that remembers |
+| — | `03b141f` | **BOOT-1** root-caused (no fix — see above) |
+| B5 | `1c2fe4d` | Agency at the fight |
+
+**Gym at the end: 132/132 scenarios, 1614/1614 checks, 115 features** — up
+from 131/1605/114, which is exactly the one scenario B5 added. The single
+failing flow is `ui/join_gate`, and it is BOOT-1 rather than any of this
+work: proved by reverting the changed files to `HEAD` on the same instance
+and getting a byte-identical failure.
+
+**Live data on :7801 verified untouched at every checkpoint** — 2 characters,
+2 campaigns, 2 maps, 3 homebrew, no profiles, table closed. Everything above
+was built and measured on the throwaway instance on :7903.
+
+One process note worth keeping: I contaminated that throwaway instance
+mid-session by leaving a probe character behind (its `DELETE` had failed
+while the table was open and I did not check the status). The run on top of
+it wedged. The numbers reported here are from a **re-run after cleaning**,
+against an instance verified back to its starting shape — not from the
+contaminated one.
