@@ -16,26 +16,21 @@
 import { getState, el } from '../../core/store.js';
 import * as session from '../../core/session.js';
 import * as live from '../../core/live.js';
-import { runnerPanel, adopt, pull } from '../dm/runner.js';
 import { tabs } from '../../ui/kit.js';
 import { partyPanel } from '../dm/party.js';
-import { diceRail } from '../../ui/components/dicerail.js';
-import { activeCampaign, currentRegion } from '../../core/campaign.js';
-import { weatherFor } from '../../core/weather.js';
 import { mapView } from '../../ui/map.js';
-import { db, dataFile } from '../../core/db.js';
+// The fight, the dice and the world now live in one place, because the
+// sheet carries them too - see components/liveside.js.
+import {
+  LIVE_KINDS, refreshLive, liveMap, liveRecord, turnBanner, fightPanel,
+  dicePanel, worldStrip,
+} from '../../ui/components/liveside.js';
 
 export const title = 'Table';
 
 let container = null;
 let tab = 'fight';
 let unsubscribe = null;
-let campaign = null;      // the REDACTED campaign - the server stripped it
-let mapRecord = null;     // likewise: revealed pins only, no notes
-let dmTables = null;
-let record = null;        // the redacted encounter, kept for the turn nudge
-// Nudge on the TRANSITION into your turn, not on every redraw of it.
-let wasMyTurn = false;
 
 /** Sources for derive(), assembled the same way the shell does it. */
 function sources() {
@@ -57,8 +52,7 @@ export async function render(root) {
   // stack listeners - each mode is re-rendered on mode switches and on live
   // updates - so the previous one is dropped first.
   if (unsubscribe) unsubscribe();
-  unsubscribe = live.subscribe(
-    ['encounters', 'table', 'characters', 'campaigns', 'maps', 'events'],
+  unsubscribe = live.subscribe(LIVE_KINDS,
     async () => {
     // Only redraw if this screen still OWNS the view. The container is #view
     // itself, which is always connected - the honest check is the mode stamp,
@@ -71,21 +65,7 @@ export async function render(root) {
   });
 }
 
-async function refresh() {
-  record = await pull();
-  // A cleared encounter comes back as null. Adopting an empty snapshot rather
-  // than leaving the last one on screen is the honest answer: the fight ended.
-  adopt(record || { combatants: [], round: 0, turn: 0, started: false });
-
-  // The world as the server tells it to a player: the campaign without its
-  // agendas or hidden factions, the map without its hidden pins. Nothing to
-  // filter here - the client never received what it must not show.
-  campaign = await activeCampaign();
-  if (!dmTables) dmTables = await dataFile('dm-tables.json', null);
-  mapRecord = campaign?.mapId
-    ? await db.get('maps', campaign.mapId).catch(() => null)
-    : null;
-}
+const refresh = refreshLive;
 
 function draw() {
   if (!container) return;
@@ -94,24 +74,10 @@ function draw() {
   if (world) container.append(world);
   container.append(tabsPanel());
   if (tab === 'fight') {
-    const myTurn = isMyTurn();
-    if (myTurn) {
-      container.append(el('div', { class: 'your-turn', role: 'status' },
-        'Your turn!'));
-    }
-    // A buzz on the TRANSITION into your turn - the phone in a pocket
-    // learns what the screen already knows. Feature-detected: desktops
-    // simply do not have the API.
-    if (myTurn && !wasMyTurn) {
-      try { navigator.vibrate?.(160); } catch { /* not on this device */ }
-    }
-    wasMyTurn = myTurn;
-    container.append(runnerPanel({
-      readOnly: true,
-      mine: session.ownedCharacterIds(),
-      redraw: draw,
-    }));
-    container.append(diceRail(getState().characters || []));
+    const banner = turnBanner();
+    if (banner) container.append(banner);
+    container.append(fightPanel(draw));
+    container.append(dicePanel());
   } else if (tab === 'map') {
     container.append(mapPanel());
   } else {
@@ -119,90 +85,10 @@ function draw() {
   }
 }
 
-/** Is the active combatant one of THIS seat's claimed characters? */
-function isMyTurn() {
-  if (!record?.started || !Array.isArray(record.combatants)) return false;
-  const current = record.combatants[record.turn || 0];
-  const mine = session.ownedCharacterIds();
-  return !!(current && mine && mine.has?.(current.characterId || current.id));
-}
-
-/**
- * The day and the sky: in-world facts everyone at a real table feels, so
- * they are always shared. Computed client-side from the campaign's seed -
- * the same pure function the DM's Deck runs.
- */
-function worldStrip() {
-  if (!campaign) return null;
-  const region = currentRegion(campaign);
-  const strip = el('div', { class: 'strip' });
-  if (!region) {
-    // A campaign fresh off a book has a name and a day before it has any
-    // region - the players should still see the world exists.
-    strip.append(el('span', { class: 'grow' },
-      `Day ${campaign.day} — ${campaign.name}`));
-    for (const f of campaign.factions || []) {
-      strip.append(el('span', {
-        class: `chip ${f.standing > 2 ? 'ok' : f.standing < -2 ? 'bad' : ''}`,
-        title: 'How they currently regard the party',
-      }, `${f.name} ${f.standing >= 0 ? '+' : ''}${f.standing}`));
-    }
-    // A campaign fresh off a book has clocks before it has regions - the
-    // pressure is world state either way, so both branches show it.
-    const early = clockStrip();
-    if (early) strip.append(early);
-    return strip;
-  }
-  const sky = weatherFor(dmTables,
-    { seed: campaign.seed, day: campaign.day, region });
-  strip.append(el('span', { class: 'grow' },
-    `Day ${campaign.day} — ${region.name}`
-    + (sky ? `: ${sky.summary.toLowerCase()}` : '')));
-  if (sky?.event) {
-    strip.append(el('span', { class: 'mono', style: 'font-size:11px' },
-      sky.event));
-  }
-  // The powers that be - only the factions the DM has made public. Ambient
-  // world state, so it lives on the strip with the day and the sky.
-  for (const f of campaign.factions || []) {
-    strip.append(el('span', {
-      class: `chip ${f.standing > 2 ? 'ok' : f.standing < -2 ? 'bad' : ''}`,
-      title: 'How they currently regard the party',
-    }, `${f.name} ${f.standing >= 0 ? '+' : ''}${f.standing}`));
-  }
-  const clocks = clockStrip();
-  if (clocks) strip.append(clocks);
-  return strip;
-}
-
-/**
- * The pressure the DM has chosen to show. Read-only, and only ever the
- * public ones - the server stripped the rest before this client saw the
- * record, so there is nothing here to filter.
- */
-function clockStrip() {
-  const shown = (campaign?.clocks || []).filter((c) => c.public);
-  if (!shown.length) return null;
-  const wrap = el('span', { class: 'clock-strip' });
-  for (const c of shown) {
-    wrap.append(el('span', { class: 'mono', style: 'font-size:11px' }, c.label));
-    const segs = el('span', {
-      class: 'clock-segs',
-      'aria-label': `${c.label} — ${c.filled} of ${c.size} filled`,
-    });
-    for (let i = 0; i < c.size; i += 1) {
-      segs.append(el('span', {
-        class: `clock-seg${i < c.filled ? ' on' : ''}`, 'aria-hidden': 'true',
-      }));
-    }
-    wrap.append(segs);
-  }
-  return wrap;
-}
-
 function mapPanel() {
   const panel = el('div', { class: 'panel rivets' });
   panel.append(el('span', { class: 'lvl' }, 'The map'));
+  const mapRecord = liveMap();
   if (!mapRecord) {
     panel.append(el('div', { class: 'empty' },
       'The DM has not put a map on the table yet.'));
@@ -214,7 +100,7 @@ function mapPanel() {
   // Battle tokens ride the redacted encounter - only PLACED fighters show
   // (the DM's bench is the DM's mess), and the players watch the same
   // board the DM is dragging on the Stage.
-  const tokens = (record?.combatants || [])
+  const tokens = (liveRecord()?.combatants || [])
     .filter((c) => Number.isFinite(c.x) && Number.isFinite(c.y))
     .map((c) => ({
       id: c.id,
@@ -241,7 +127,7 @@ function tabsPanel() {
     { id: 'fight', label: 'The fight' },
     { id: 'party', label: 'The party' },
   ];
-  if (mapRecord) items.push({ id: 'map', label: 'The map' });
+  if (liveMap()) items.push({ id: 'map', label: 'The map' });
   panel.append(tabs({
     items,
     active: tab,

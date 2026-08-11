@@ -22,10 +22,15 @@ import * as session from '../../core/session.js';
 import { tabs } from '../../ui/kit.js';
 import { cardModel, pushRollCard } from '../../ui/components/rollcard.js';
 import { safeRollPayload } from '../../ui/components/dicerail.js';
+import * as live from '../../core/live.js';
+import {
+  LIVE_KINDS, refreshLive, railPanels, isMyTurn,
+} from '../../ui/components/liveside.js';
 
 export const title = 'Play';
 
 let container = null;
+let unsubscribe = null;
 // Which tab is open. Module-level so switching to Combat and back does not
 // lose your place; a reload starts at Overview, which is also what the UI
 // tests rely on (every frozen string lives there).
@@ -103,9 +108,41 @@ function rollModeBar() {
 
 export async function render(root) {
   container = root;
+  // The rail needs the table before it can draw it. Solo play skips the
+  // fetch entirely - there is nothing to ask the server about.
+  if (session.isOpen() && !session.isDm()) {
+    await refreshLive().catch(() => { /* the rail simply stays empty */ });
+  }
   draw();
+
+  // Redraw when the DM moves the fight on. Drop the previous listener
+  // first: this mode is re-rendered on every mode switch, and stacking
+  // them paints this screen over whatever replaced it.
+  if (unsubscribe) unsubscribe();
+  unsubscribe = live.subscribe(LIVE_KINDS, async () => {
+    if (container?.dataset.rendered !== 'sheet') {
+      unsubscribe?.(); unsubscribe = null; return;
+    }
+    await refreshLive().catch(() => {});
+    draw();
+  });
 }
 
+/**
+ * The sheet, and beside it the table it is being played at.
+ *
+ * The character and the fight used to be two screens, so the cause of a
+ * thing and its effect were never visible together - you rolled here and
+ * walked to Party to find out what it did. The rail fixes that by carrying
+ * the live table alongside, the same shape the DM's Stage already uses.
+ *
+ * The rail is appended AFTER the character, always. The gym reads the first
+ * `main input[type=number]` as the damage field and uses "Adjust HP" to
+ * know this screen is loaded; putting anything with a number input above
+ * the vitals breaks four flows at once. On a phone the fight belongs on top
+ * when it is your turn - that is done with CSS `order`, never by moving it
+ * up the document.
+ */
 function draw() {
   const { character, derived } = getState();
   container.innerHTML = '';
@@ -117,10 +154,19 @@ function draw() {
     return;
   }
 
+  // The cockpit: the character in the middle, the table beside it. At 980px
+  // and below the grid collapses to one column and the rail falls under the
+  // sheet, which is the phone case and the common one.
+  const cockpit = el('div', { class: 'cockpit' });
+  const main = el('div', { class: 'cockpit-main' });
+  const rail = el('div', { class: 'cockpit-rail' });
+  cockpit.append(main, rail);
+  container.append(cockpit);
+
   // One long page became four short ones. Overview keeps everything a turn
   // needs - vitals, abilities, skills, attacks - so mid-fight play never
   // crosses a tab.
-  container.append(tabs({
+  main.append(tabs({
     items: [
       { id: 'overview', label: 'Overview' },
       { id: 'spells', label: 'Spells' },
@@ -143,26 +189,36 @@ function draw() {
       banner.append(el('button', {
         class: 'act', onClick: () => go('build'),
       }, 'To the forge'));
-      container.append(banner);
+      main.append(banner);
     }
-    container.append(rollModeBar());
-    container.append(vitalsPanel(derived));
-    container.append(el('div', { class: 'grid two' },
+    main.append(rollModeBar());
+    main.append(vitalsPanel(derived));
+    main.append(el('div', { class: 'grid two' },
       abilitiesPanel(derived), skillsPanel(derived)));
-    container.append(attacksPanel(derived));
+    main.append(attacksPanel(derived));
   } else if (tab === 'spells') {
     if (derived.resources.length || derived.toggles.length) {
-      container.append(resourcesPanel(derived));
+      main.append(resourcesPanel(derived));
     }
-    if (derived.spellcasting) container.append(spellPanel(derived));
+    if (derived.spellcasting) main.append(spellPanel(derived));
     if (!derived.spellcasting && !derived.resources.length && !derived.toggles.length) {
-      container.append(el('div', { class: 'empty' },
+      main.append(el('div', { class: 'empty' },
         'No spells or limited-use features yet.'));
     }
   } else if (tab === 'features') {
-    container.append(featuresPanel(derived));
+    main.append(featuresPanel(derived));
   } else {
-    container.append(inventoryPanel(derived));
+    main.append(inventoryPanel(derived));
+  }
+
+  // The table, when there is one. Solo play gets no rail at all rather than
+  // an empty one - a fold labelled "The fight" with nothing behind it is
+  // worse than no fold.
+  if (session.isOpen() && !session.isDm()) {
+    for (const panel of railPanels(draw)) rail.append(panel);
+    // On a narrow screen the rail paints above the character while the turn
+    // is yours - see .cockpit.turn-first. Still after it in the document.
+    if (isMyTurn()) cockpit.classList.add('turn-first');
   }
 }
 

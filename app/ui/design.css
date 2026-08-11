@@ -733,6 +733,14 @@ th {
 @media (max-width: 980px) {
   /* One column: the rail falls under the fight rather than squeezing it. */
   .cockpit { grid-template-columns: minmax(0, 1fr); }
+
+  /* ...except when it is your turn. Then the fight is the only thing you
+     want, and on a phone "below the character sheet" means three scrolls
+     away. Moved with `order`, never in the document: the gym reads the
+     first `main input[type=number]` as the damage field and the sheet has
+     to keep it, so the rail stays after the character in the DOM and only
+     paints above it. */
+  .cockpit.turn-first .cockpit-rail { order: -1; }
 }
 
 /* ---------- clocks: pressure that fills --------------------------------- */
