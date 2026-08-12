@@ -51,6 +51,11 @@ DONE = NIGHT / ".done"
 STATE = NIGHT / "state.json"
 ROWS = NIGHT / "reach.jsonl"
 BENCH = NIGHT / "bench.json"
+LOCK = NIGHT / ".lock"
+
+# A run failing EVERY cycle is not measuring anything; it is burning
+# the night writing exclusions. Two full sweeps of nothing is enough.
+MAX_CONSECUTIVE_EXCLUSIONS = 128
 
 
 def _req(base, path, method="GET", body=None, token=None, timeout=30, tries=3):
@@ -86,6 +91,41 @@ def append_rows(path: Path, rows):
 
 
 # ---------------------------------------------------------------- preflight
+
+
+def take_lock():
+    """One orchestrator at a time, enforced rather than hoped for.
+
+    Two runs against the same instance is not a near-miss, it is a silent
+    corruption: the second one's open_bench closes and reopens the table,
+    which revokes the first one's DM token, and from then on the first
+    spins at full speed logging 401s into the SAME state and row files.
+    Measured: 1835 of 1869 cycles excluded before anyone noticed.
+    """
+    if LOCK.exists():
+        try:
+            pid = int(LOCK.read_text(encoding="utf-8").strip())
+        except (ValueError, OSError):
+            pid = None
+        if pid and _pid_alive(pid):
+            raise SystemExit(
+                f"another night run is already going (pid {pid}). "
+                f"Stop it first, or delete {LOCK} if you know it is dead.")
+        print(f"  cleared a stale lock (pid {pid} is gone)")
+    LOCK.write_text(str(os.getpid()), encoding="utf-8")
+
+
+def _pid_alive(pid):
+    if sys.platform == "win32":
+        out = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+            capture_output=True, text=True, check=False).stdout
+        return str(pid) in out
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
 
 
 def clear_stale_stop():
@@ -267,6 +307,7 @@ def sweep_cells():
 def run(args):
     NIGHT.mkdir(exist_ok=True)
     print("preflight")
+    take_lock()
     clear_stale_stop()
     if DONE.exists():
         if not args.fresh and not args.resume:
@@ -310,6 +351,7 @@ def run(args):
     cycle = int(state.get("cycle", 0))
     valid, invalid = list(state.get("valid", [])), list(state.get("invalid", []))
     stopping = {"now": False}
+    since_good = 0
 
     def on_sig(*_):
         stopping["now"] = True
@@ -382,6 +424,7 @@ def run(args):
             bench["ids"] = ids
             atomic_write(BENCH, json.dumps(bench, indent=1))
             valid.append(cycle)
+            since_good = 0
             print(f"  cycle {cycle:3d}  day {cell['day']:3d}  seed {cell['seed']:3d}"
                   f"  {cell['source']:9s}  {size['campaignBytes']:6d}B"
                   f"  {len(rows)} rows  {time.time() - t0:5.1f}s")
@@ -389,6 +432,14 @@ def run(args):
                 TimeoutError, json.JSONDecodeError, OSError) as e:
             invalid.append({"cycle": cycle, "why": f"{type(e).__name__}: {e}"[:180]})
             print(f"  cycle {cycle:3d}  EXCLUDED — {type(e).__name__}: {str(e)[:90]}")
+            since_good += 1
+            if since_good >= MAX_CONSECUTIVE_EXCLUSIONS:
+                print(f"  ABORTING — {since_good} cycles in a row could not "
+                      "be measured. Something is wrong with the bench, not "
+                      "with the app, and spinning would only fill the night "
+                      "with exclusions.")
+                print(f"  last reason: {invalid[-1]['why']}")
+                break
 
         cycle += 1
         atomic_write(STATE, json.dumps({
@@ -415,6 +466,7 @@ def run(args):
     finally:
         if proc:
             proc.terminate()
+        LOCK.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
