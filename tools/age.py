@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import random
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -63,19 +64,33 @@ class Refused(RuntimeError):
     """The server said no. Distinct from a transport failure on purpose."""
 
 
-def _req(base, path, method="GET", body=None, token=None, timeout=30):
+def _req(base, path, method="GET", body=None, token=None, timeout=30, tries=3):
+    """One request, retried on TRANSPORT failure only.
+
+    The stdlib threading server drops a keep-alive socket now and then under
+    a burst of large writes, which surfaces as ConnectionResetError mid-read.
+    That is noise about the harness, not a fact about the app, and letting it
+    exclude a cycle would quietly thin the sweep. An HTTP *refusal* is never
+    retried - that IS a fact about the app.
+    """
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(f"{base}{path}", data=data, method=method)
-    req.add_header("Content-Type", "application/json")
-    if token:
-        req.add_header("X-Toon-Token", token)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            raw = r.read().decode() or "null"
-            return json.loads(raw)
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode()[:200]
-        raise Refused(f"{method} {path} -> {e.code} {detail}") from e
+    last = None
+    for attempt in range(tries):
+        req = urllib.request.Request(f"{base}{path}", data=data, method=method)
+        req.add_header("Content-Type", "application/json")
+        if token:
+            req.add_header("X-Toon-Token", token)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                raw = r.read().decode() or "null"
+                return json.loads(raw)
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode()[:200]
+            raise Refused(f"{method} {path} -> {e.code} {detail}") from e
+        except (OSError, urllib.error.URLError, json.JSONDecodeError) as e:
+            last = e
+            time.sleep(0.2 * (attempt + 1))
+    raise Refused(f"{method} {path} -> transport failed {tries}x: {last}")
 
 
 # ---------------------------------------------------------------- content
