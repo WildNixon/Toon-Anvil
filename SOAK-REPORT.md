@@ -1,10 +1,6 @@
 # Toon Anvil — soak run findings
 
-Generated 2026-08-11T01:04:09+00:00 from `soak/findings.jsonl` (25 findings, 5 already fixed).
-
-**Updated 2026-08-10** during the cockpit work: **BOOT-1** added (high) — the root cause of HARNESS-1's residual, and a real bug that locks a returning player out of a table. HARNESS-1's "not root-caused" note is now resolved.
-
-**Updated 2026-08-12:** **BOOT-1 is FIXED**, and with it HARNESS-1 — `ui/join_gate` passes for the first time, so the gym has no permanently-red flow.
+Generated 2026-08-12T04:13:52+00:00 from `soak/findings.jsonl` (28 findings, 5 already fixed).
 
 Every item below was **confirmed against a running server**, not inferred from reading. Anything I could not reproduce is not here.
 
@@ -13,10 +9,10 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 | Severity | Count | Means |
 | --- | --- | --- |
 | critical | 1 | A security hole or data loss. Fix before the next session. |
-| high | 6 | Breaks a shipped feature in normal play. A DM or player hits this. |
+| high | 7 | Breaks a shipped feature in normal play. A DM or player hits this. |
 | medium | 7 | Wrong or confusing, but there is a way round it. |
 | low | 3 | Papercut, polish, or a latent trap that needs an odd setup. |
-| idea | 9 | Not a defect - an expansion or refinement worth discussing. |
+| idea | 10 | Not a defect - an expansion or refinement worth discussing. |
 
 ## Critical
 
@@ -61,6 +57,26 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 **Reproduction.** FIXED, and proved by A/B against an instance running the pre-fix server: STILL BROKEN there, FIXED here. Measured on the isolated instance with a campaign holding one secret clock and one public one. A player now receives only the public clock's strike - the secret one is ABSENT, not blanked, because a secret clock striking is itself the tell - the secret faction shift and the lore filing are gone, and an encounter's roster becomes {combatants: 2}. The DM still sees every one of them.
 
 **Proposed fix.** Three parts. Server: redact_events() in tools/table.py dispatched through _viewer(), failing closed - an event whose subject cannot be resolved is treated as secret, since the cost of a false negative is a missing log line and the cost of a false positive is the DM's ambush on screen. Client: deck.js logs clockId/factionId rather than the DM's prose, so the secret is never written into a shared log at all; the DM's Story resolves ids back against the campaign it may see. Write side: POST /api/events refuses world-category types from anything but a DM token, judged on the TYPE against a server-side list rather than the client-supplied `cat`. Gym: promoted as `the_log_is_redacted_like_everything_else` and `only_the_dm_authors_the_world`, with an `events_carry_the_dms_prep` mutation.
+
+### NIGHT-1-event-window-truncation — Anything counted from the event log silently becomes a count of the last N events
+
+**HIGH** · area: DM screens / event log · effort: M · status: confirmed
+
+**Evidence.** Measured across 124 cycles on the isolated instance, days 1-120. The payload a DM-facing answer is buried in grows ~15x from day 1 (7,471 bytes) to day 15 (108,692), then plateaus at ~110KB. The plateau is the 400-event window filling - dicerail.js asks for 400, and the ager produces ~26 events/day, so it fills at ~day 15. At that point every 'how often / how much / who last' answer is computed from the most recent slice of the campaign, with nothing on screen saying so. Same arithmetic puts story.js (limit 1000) at ~day 38 and the server clamp (2000) at ~day 77.
+
+**Reproduction.** python tools/night.py --minutes 5 --fresh, then read the 'What it costs to answer' table in NIGHT-REPORT.md. The 400-event case is MEASURED; the 1000 and 2000 cases are inferred from the same rate and should be confirmed before being acted on.
+
+**Proposed fix.** Either say so on screen (a 'from the last N events' note beside any derived count), or count server-side where the whole log is available. The second is the honest fix; the first is the cheap one and is still better than a number that quietly stops being true.
+
+### NIGHT-2-fifteen-questions-have-no-answer — Fifteen questions a DM or player asks have no answer in any payload, at any campaign size
+
+**HIGH** · area: data model · effort: L · status: confirmed
+
+**Evidence.** 60 catalogue questions x 6 seats x 64 campaign sizes, 19,344 rows, 124 valid cycles, all four controls green. 15 questions are unavailable at EVERY size - they are not slow to reach, the data does not exist. Highlights: encounter outcome (the DM's runner never logs encounter_end), encounter difficulty (encounter_start logs a combatant count and nothing else), damage attributable to a player (runner.js:751 logs PC damage as damage_dealt with no characterId), session count and pacing (setContext never sets sessionId), party wealth on any DM screen, NPC disposition for the DM, and whether a player hit (sheet.js passes no target to resolveAttack).
+
+**Reproduction.** python tools/night.py; see the 'Not in any payload, at any size' table. Four of the fifteen are deliberate redaction controls and are correct behaviour, marked as such.
+
+**Proposed fix.** Each needs something WRITTEN before any screen could show it. Cheapest first: log encounter_end from the DM's runner; give encounter_start its XP/CR/party-levels; fix the damage_dealt/damage_taken mis-typing so damage can be attributed; set sessionId in setContext.
 
 ### SEC-2-samples-parent — /api/samples serves the project's PARENT directory with no auth and no local gate
 
@@ -122,43 +138,7 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 
 **Reproduction.** PARTIALLY FIXED, and measured on a fourth, genuinely cold instance (port 7903, empty data dir, fresh browser origin): a warm-up frame is now booted and discarded before the standalone block, the gate budget is 25s, and a miss is reported as 'the join gate never appeared'. Result on cold: THREE failures became ONE. player_sees_a_players_table and join_deeplink now pass cold; join_gate still fails, but with the honest message instead of a TypeError. Logic tier unaffected throughout: 127/127 scenarios, 1586/1586 checks.
 
-**Proposed fix.** ~~The residual is NOT root-caused and I will not pretend otherwise.~~ **ROOT-CAUSED 2026-08-10 — and it was never a timing problem.** The instruction that found it was to instrument the frame rather than the wait, exactly as proposed above: reading the iframe's own body instead of only asking whether `.welcome` had appeared. It had not, and it never would have — the frame was showing a **"Boot failure" panel**. So the 25s budget was being spent waiting for an element the app had already decided not to render. See BOOT-1 below; the harness needs no further work beyond asserting on the frame's content when the gate is missing, so that the next failure of this shape names itself.
-
-### BOOT-1-refused-migration-kills-the-join-gate — A returning player arriving at an open table gets a dead "Boot failure" screen instead of the join gate
-
-**HIGH** · area: boot / join · effort: S · status: **FIXED 2026-08-12**
-
-**Why this matters.** This is the couch scenario the whole LAN epic exists for. Your friend played solo last week, so their browser holds a character. You open a table. They open the app — and instead of "A table is open, here's the join code field", they get *Toon Anvil could not start*. There is no way forward from that screen. They cannot join, because the thing that would let them join is what failed to render.
-
-**Root cause, exactly.** `boot()` (app/app.js:805) calls `selectCharacter(last)` → `migrateHp()` (app/app.js:192), which normalises an old HP shape and, **if it changed anything**, writes it back: `await db.put('characters', next)`. Against a real server that is a `PUT /api/characters/<id>`, and with a table open and no join code the server correctly answers **401**. Nothing catches it. The rejection propagates out of `boot()`, the `boot().catch()` at app/app.js:864 paints the Boot failure panel, and `renderNav()` / the join gate never run. So a **read-only visitor is killed by a write they never asked for**, performed during boot, for a cosmetic data migration.
-
-Note the ordering trap: `session.refresh()` — which is what learns "I am unseated at an open table" — happens at app.js:812, *after* `selectCharacter` at :806. The app decides to write before it has worked out who it is.
-
-**Reproduction.** Direct probe on the isolated instance (:7903), no gym harness involved: close the table, boot and discard a warm-up frame, `POST /api/table/open`, PUT a character as the DM, then boot `/index.html` in an iframe with `localStorage.toonanvil.token` cleared. Result: `.welcome` never appears within 25s; the frame's body is 882 chars reading `Boot failure — Toon Anvil could not start — PUT /api/characters/gym-gate-probe -> 401 - a table is open, so this needs a join code. Ask the DM for it.`
-
-**Proved pre-existing, not a regression from the cockpit work.** Same probe, same instance, seconds apart, with `sheet.js` / `rollcard.js` / `liveside.js` / `design.css` reverted to `HEAD` via `git show` and then restored: byte-identical failure — same 882-char body, same message, 25036ms vs 25042ms.
-
-**This is the whole of HARNESS-1's residual.** One defect, wearing a flake's clothes for four runs. It looked warm/cold-dependent because whether `reconcileHp` finds anything to migrate depends on what previous flows left in the data dir.
-
-**FIXED.** Option 1 (swallow the refusal), plus the ordering fix that was the actual root cause, plus the general case:
-
-1. `migrateHp` (`app/app.js:192`) swallows a **refused** write and only a refused one — `err.refused` is already set by `db.js:216` for 401/403. Any other failure still throws, because a broken server must not be quietly absorbed by a cosmetic migration. `reconcileHp` is idempotent, so the record migrates on the next boot after joining.
-2. **`session.refresh()` now runs BEFORE `selectCharacter()`.** This is the root cause: the app decided to write six lines before it knew whether it was allowed to. Verified safe first — `recompute()` (`app.js:78`) reads only the compendium and homebrew, so selecting a character never needed the seat; the dependency only ever ran the other way.
-3. `boot().catch()` (`app/app.js:892`) distinguishes **refused** from **broken**: a refusal raises the join gate, and only a genuine fault gets the dead panel. Defence in depth, so the next write added to boot cannot resurrect this.
-
-**Measured before and after on the isolated instance, same probe, same server.** Before: the gate never appeared — 25003 ms of budget spent, an 882-byte body reading *"Boot failure — Toon Anvil could not start — PUT /api/characters/gym-gate-probe -> 401"*. After: the gate appears in **199 ms**, carries its code and name fields, says *"A table is open"*, and the app boots whole (14029-byte body, no panel).
-
-**`ui/join_gate` is green for the first time** — the gym went from `FAIL — 131/131 scenarios` with that one flow red to **`PASS — 132/132 scenarios, 1614/1614 checks, 115 features`**. That flow failing-then-passing IS the regression guard; a `runMutations` mutation was considered and rejected, because mutations grade the logic tier only and `boot()` lives in the app shell, which the gym cannot import without booting a second app.
-
-**Not independently reproduced:** change 3's branch. Change 1 removes the only known trigger, so there is no longer a way to reach the general case on demand. Its failure mode if wrong is "you get the dead panel you would have got anyway".
-
-**The options considered, for the record.** The mechanical part is agreed: a refused *migration* write must never be fatal. What differs is what happens to the migration:
-
-1. **Swallow it** — `try { await db.put(...) } catch {}` in `migrateHp`. One line. The record stays un-migrated in this browser until they join; `reconcileHp` is idempotent so it retries on the next boot. Smallest change, and the un-migrated record is only ever read through `reconcileHp` anyway.
-2. **Defer it** — hold the migration and replay it after a successful join. Correct, but it needs a queue that does not exist yet, and a queue of writes made before you knew who you were is a fog-of-war question, not just a plumbing one.
-3. **Do not write during boot at all** — move `migrateHp` behind the first save, and treat `reconcileHp` as a pure read-time normalisation. Cleanest model; touches the most call sites.
-
-Whichever we take, `boot()` should also distinguish *refused* from *broken*: a 401/403 during boot means "you need to join", and the gate already knows how to say that. A dead panel is the wrong voice for a door that is merely locked.
+**Proposed fix.** The residual is NOT root-caused and I will not pretend otherwise. What is ruled out: a stale localStorage token (clearing it changes nothing), a leaked iframe (every flow removes its frame in a finally), and the app failing to render the gate (a hand-booted frame shows it). What remains to try: waitUntilSettled instead of a bare waitFor, and instrumenting the frame's own console during the wait so the next failure says WHY rather than only that it timed out. Worth finishing before relying on unattended overnight runs, because a suite that is only green on a warm server cannot gate anything.
 
 ### PWA-1-stale-service-worker — The service worker is still v9 and caches none of the LAN modules, so an installed PWA breaks offline
 
@@ -297,3 +277,13 @@ Whichever we take, `boot()` should also distinguish *refused* from *broken*: a 4
 **Evidence.** Bounded by design and rightly so - README:141 says tokens on a picture, not a VTT - but inside those bounds there are gaps. There is no way to remove a placed token or send it back to the bench; stage.js:203-210 puts unplaced tokens in a bench row that table.js:217-218 filters out entirely, so players never see it. No dead-token styling either, so a defeated monster sits on the map looking alive.
 
 **Proposed fix.** Drag-off-the-edge to bench (the clamp added in C3 already computes the off-map case - it currently snaps back, and could bench instead), and render downed combatants' tokens differently. Both are small and both are things a DM reaches for in the first fight.
+
+### NIGHT-3-availability-holds-but-cost-was-not-measured — The DATA keeps up as a campaign grows; whether the SCREENS do is still unmeasured
+
+**IDEA** · area: measurement · effort: M · status: confirmed
+
+**Evidence.** Availability is flat at 1.00 for both roles from day 2 to day 120 (day 1 is 0.00 for the DM only because an empty campaign genuinely has no factions, clocks or lore yet). So nothing goes missing as the campaign grows - the question is entirely about what it costs to reach, and browser-tier coverage for this run was 0%.
+
+**Reproduction.** NIGHT-REPORT.md, 'Availability as the campaign grows'.
+
+**Proposed fix.** Finish the cost tier: app/sim/reach.js holds 60 declared routes and app/sim/probe.js the tap primitives; what is missing is the six-seat sequential driver (seats.js) and the fronted page (night.html). The two tiers already merge on question id, and missing browser rows are reported as availability-only rather than dropped.

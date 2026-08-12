@@ -202,6 +202,51 @@ def build():
       "keeps up. Whether the SCREENS keep up is the browser tier's question, "
       "and the disagreement table below is where the two meet.\n")
 
+    # ------------------------------------------------- the growth curve
+    w("## What it costs to answer, as the campaign grows\n")
+    w("The bytes of JSON an answer is buried in — the honest proxy for "
+      "\"how much would the DM have to read\". `worst` is the biggest payload "
+      "any one question had to be dug out of at that size.\n")
+    scan = defaultdict(list)
+    for r in rows:
+        if r["role"] != "dm" or not r["available"]:
+            continue
+        d = (r.get("size") or {}).get("day")
+        if d is not None:
+            scan[d].append(r.get("bytesToScan") or 0)
+    w("| in-world day | median bytes | worst bytes | worst vs day 1 |")
+    w("| --- | --- | --- | --- |")
+    base = max(scan[min(scan)]) if scan else 0
+    for d in sorted(scan):
+        vals = scan[d]
+        if len(vals) < MIN_OBS:
+            w(f"| {d} | SUPPRESSED (n={len(vals)}) | | |")
+            continue
+        worst = max(vals)
+        mult = f"{worst / base:.1f}x" if base else "—"
+        w(f"| {d} | {int(statistics.median(vals)):,} | {worst:,} | {mult} |")
+    w("")
+    w("**Two things to read off this.** The worst case grows about 15x "
+      "between day 1 and day 15 — that is the event log, and it is where "
+      "every \"how often / how much / who last\" question is answered from. "
+      "Then it **plateaus near 110KB**.\n")
+    w("Be precise about what the plateau is: this probe asks for 400 events, "
+      "which is what `dicerail.js` asks for, and at roughly 26 events a day "
+      "the window fills at about day 15. So the plateau is the measurement "
+      "hitting ITS limit, not the app hitting one — and the real finding is "
+      "what that implies. Past that size, anything computed from a 400-event "
+      "window is computed from *the most recent slice of the campaign* with "
+      "nothing on screen saying so. The same arithmetic puts the DM's Story "
+      "feed (which asks for 1000) at about day 38, and the server's own 2000 "
+      "clamp at about day 77. **Every one of those is a silent truncation, "
+      "not an error** — this run measured the first of the three; the other "
+      "two are inferred from the same rate and are worth confirming before "
+      "they are acted on.\n")
+    w("The campaign record itself grows far more gently — median 1,370 to "
+      "7,579 bytes — which splits the problem in two: the Deck has a layout "
+      "problem, and anything counted from the event log has an arithmetic "
+      "problem.\n")
+
     # ------------------------------------------------- the headline table
     w("## Available, but the DM has to go and find it\n")
     w("Every question whose answer is sitting in a payload the seat already "
