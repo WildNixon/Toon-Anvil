@@ -32,6 +32,33 @@ async function shelfHash(bytes) {
     .map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
 }
 
+/**
+ * One flow's result, in one place.
+ *
+ * This literal used to be written out nine times, which is nine chances for
+ * one of them to drift and one screen's result to mean something subtly
+ * different from another's. It is also why `metrics` could be added here
+ * once rather than nine times.
+ *
+ * `empty` is not decoration: a flow that asserted nothing is NOT a pass, and
+ * saying so is the whole reason this shape carries `total` beside `ok`.
+ */
+export function flowResult(check, { id, title, error = null, t0 = 0 }) {
+  return {
+    id,
+    title,
+    passed: check.passed,
+    total: check.total,
+    failures: check.failures,
+    features: [...check.touched],
+    metrics: [...check.metrics.values()],
+    error,
+    empty: !error && check.total === 0,
+    ok: !error && check.total > 0 && check.failures.length === 0,
+    ms: +(performance.now() - t0).toFixed(0),
+  };
+}
+
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Poll until `fn()` is truthy. Returns the value, or null if it never came. */
@@ -2323,18 +2350,9 @@ export async function runRoleGate(CheckClass) {
   } finally {
     frame?.remove();
   }
-  return {
-    id: 'role_gate',
-    title: "The DM's seat is chosen, remembered, and swappable",
-    passed: check.passed,
-    total: check.total,
-    failures: check.failures,
-    features: [...check.touched],
-    error,
-    empty: !error && check.total === 0,
-    ok: !error && check.total > 0 && check.failures.length === 0,
-    ms: +(performance.now() - t0).toFixed(0),
-  };
+  return flowResult(check, {
+    id: 'role_gate', title: "The DM's seat is chosen, remembered, and swappable", error, t0,
+  });
 }
 
 /**
@@ -2450,18 +2468,9 @@ export async function runJoinGate(CheckClass) {
       await api('/api/table/close', { method: 'POST' });
     } catch { /* the server went away */ }
   }
-  return {
-    id: 'join_gate',
-    title: 'A stranger at the door joins, claims, and is seated',
-    passed: check.passed,
-    total: check.total,
-    failures: check.failures,
-    features: [...check.touched],
-    error,
-    empty: !error && check.total === 0,
-    ok: !error && check.total > 0 && check.failures.length === 0,
-    ms: +(performance.now() - t0).toFixed(0),
-  };
+  return flowResult(check, {
+    id: 'join_gate', title: 'A stranger at the door joins, claims, and is seated', error, t0,
+  });
 }
 
 /**
@@ -2598,18 +2607,9 @@ export async function runLevelUpFlow(CheckClass) {
       await api('/api/table/close', { method: 'POST' });
     } catch { /* the server went away */ }
   }
-  return {
-    id: 'level_up_flow',
-    title: 'The level-up ceremony: granted, taken, consumed, sealed again',
-    passed: check.passed,
-    total: check.total,
-    failures: check.failures,
-    features: [...check.touched],
-    error,
-    empty: !error && check.total === 0,
-    ok: !error && check.total > 0 && check.failures.length === 0,
-    ms: +(performance.now() - t0).toFixed(0),
-  };
+  return flowResult(check, {
+    id: 'level_up_flow', title: 'The level-up ceremony: granted, taken, consumed, sealed again', error, t0,
+  });
 }
 
 export async function runTwoClient(CheckClass) {
@@ -2693,18 +2693,9 @@ export async function runTwoClient(CheckClass) {
     try { await api(`/api/characters/${PROBE_ID}`, { method: 'DELETE' }); }
     catch { /* the server went away; nothing more we can do */ }
   }
-  return {
-    id: 'two_clients_stay_in_step',
-    title: 'Two clients stay in step without a reload',
-    passed: check.passed,
-    total: check.total,
-    failures: check.failures,
-    features: [...check.touched],
-    error,
-    empty: !error && check.total === 0,
-    ok: !error && check.total > 0 && check.failures.length === 0,
-    ms: +(performance.now() - t0).toFixed(0),
-  };
+  return flowResult(check, {
+    id: 'two_clients_stay_in_step', title: 'Two clients stay in step without a reload', error, t0,
+  });
 }
 
 /**
@@ -3003,18 +2994,9 @@ export async function runPlayerView(CheckClass) {
       await api('/api/table/close', { method: 'POST' });
     } catch { /* the server went away; nothing more we can do */ }
   }
-  return {
-    id: 'player_sees_a_players_table',
-    title: "A player gets a player's screen",
-    passed: check.passed,
-    total: check.total,
-    failures: check.failures,
-    features: [...check.touched],
-    error,
-    empty: !error && check.total === 0,
-    ok: !error && check.total > 0 && check.failures.length === 0,
-    ms: +(performance.now() - t0).toFixed(0),
-  };
+  return flowResult(check, {
+    id: 'player_sees_a_players_table', title: "A player gets a player's screen", error, t0,
+  });
 }
 
 /**
@@ -3097,18 +3079,9 @@ export async function runJoinDeeplink(CheckClass) {
       await api('/api/table/close', { method: 'POST' });
     } catch { /* the server went away */ }
   }
-  return {
-    id: 'join_deeplink',
-    title: 'A QR deep link leaves only a name to type',
-    passed: check.passed,
-    total: check.total,
-    failures: check.failures,
-    features: [...check.touched],
-    error,
-    empty: !error && check.total === 0,
-    ok: !error && check.total > 0 && check.failures.length === 0,
-    ms: +(performance.now() - t0).toFixed(0),
-  };
+  return flowResult(check, {
+    id: 'join_deeplink', title: 'A QR deep link leaves only a name to type', error, t0,
+  });
 }
 
 /**
@@ -3345,18 +3318,9 @@ export async function runQuickParty(CheckClass) {
     } catch { /* the server went away */ }
     for (const f of frames) f.remove();
   }
-  return {
-    id: 'quick_party',
-    title: 'Forge a party, claim a hero, play',
-    passed: check.passed,
-    total: check.total,
-    failures: check.failures,
-    features: [...check.touched],
-    error,
-    empty: !error && check.total === 0,
-    ok: !error && check.total > 0 && check.failures.length === 0,
-    ms: +(performance.now() - t0).toFixed(0),
-  };
+  return flowResult(check, {
+    id: 'quick_party', title: 'Forge a party, claim a hero, play', error, t0,
+  });
 }
 
 /**
@@ -3437,18 +3401,9 @@ export async function runPhoneLayout(CheckClass) {
   } finally {
     frame?.remove();
   }
-  return {
-    id: 'phone_layout',
-    title: 'A 390px phone plays without fighting the page',
-    passed: check.passed,
-    total: check.total,
-    failures: check.failures,
-    features: [...check.touched],
-    error,
-    empty: !error && check.total === 0,
-    ok: !error && check.total > 0 && check.failures.length === 0,
-    ms: +(performance.now() - t0).toFixed(0),
-  };
+  return flowResult(check, {
+    id: 'phone_layout', title: 'A 390px phone plays without fighting the page', error, t0,
+  });
 }
 
 export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
@@ -3495,18 +3450,9 @@ export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
         check.failures.push({ label: 'the app threw during this flow',
           detail: errors.slice(before).join(' | ').slice(0, 200) });
       }
-      results.push({
-        id: flow.id,
-        title: flow.title,
-        passed: check.passed,
-        total: check.total,
-        failures: check.failures,
-        features: [...check.touched],
-        error,
-        empty: !error && check.total === 0,
-        ok: !error && check.total > 0 && check.failures.length === 0,
-        ms: +(performance.now() - t0).toFixed(0),
-      });
+      results.push(flowResult(check, {
+        id: flow.id, title: flow.title, error, t0,
+      }));
       onProgress({ flow: flow.id });
     }
   } finally {

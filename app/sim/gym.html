@@ -446,6 +446,8 @@ $('#pub').onclick = async () => {
     suites: lastRun.suites.map((s) => ({ id: s.id, passed: s.passed,
       total: s.total, checks: s.checks, checksPassed: s.checksPassed })),
     ui: lastRun.ui,
+    // Measurements ride along with the grade but gate nothing - see grade().
+    metrics: g.metrics,
   });
   log('published.');
 };

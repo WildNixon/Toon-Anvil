@@ -45,6 +45,7 @@ export class Check {
     this.passed = 0;
     this.failures = [];
     this.touched = new Set();
+    this.metrics = new Map();
   }
 
   /** Record that a feature was actually exercised. */
@@ -65,6 +66,36 @@ export class Check {
   near(actual, expected, tol, label) {
     return this.ok(Math.abs(actual - expected) <= tol, label,
       `expected ${expected} +/- ${tol}, got ${actual}`);
+  }
+
+  /**
+   * Record a MEASUREMENT, not a claim.
+   *
+   * ok/eq/near answer "is this right". This answers "how much", which has
+   * no pass and no fail - so it deliberately does not touch `passed` or
+   * `failures`, and the rule that a scenario asserting nothing is not a
+   * pass stays exactly as it was. A scenario that only measures still
+   * counts as empty, which is correct: it proved nothing.
+   *
+   * A non-finite value is refused LOUDLY rather than stored, because a NaN
+   * that silently becomes 0 is how a chart ends up lying. `value` is
+   * positional and is never ||-defaulted anywhere on this path: 0 is a
+   * legitimate reading (already on screen, nothing spent) and must survive.
+   *
+   * `of` names the subject when one scenario measures many things - the
+   * question id, the seat, the screen - so rows stay distinguishable.
+   */
+  metric(name, value, { unit = null, of = null } = {}) {
+    if (!Number.isFinite(value)) {
+      this.failures.push({
+        label: `metric "${name}" was not a finite number`,
+        detail: `${of ? `${of}: ` : ''}${String(value)}`,
+      });
+      return null;
+    }
+    const row = { name, value, unit, of };
+    this.metrics.set(of ? `${name}@${of}` : name, row);
+    return row;
   }
 
   /** Deep equality, for round-trip checks where a diff is the useful output. */
@@ -1154,6 +1185,58 @@ export const SUITES = [
     why: 'Each piece can be correct while the seams between them are not. '
        + 'These are the journeys a real user actually takes.',
     scenarios: [
+      {
+        id: 'metrics_are_measured_not_claimed',
+        title: 'A measurement is recorded, a bad one is refused, and zero survives',
+        run(c) {
+          c.feature('gym', 'metrics');
+          // A Check of its own, so asserting about failures does not fail US.
+          const probe = new Check('probe');
+
+          probe.metric('taps', 3, { unit: 'taps', of: 'q1' });
+          c.eq(probe.metrics.get('taps@q1')?.value, 3, 'a reading is stored');
+          c.eq(probe.passed, 0, 'measuring is not passing');
+          c.eq(probe.failures.length, 0, 'and measuring is not failing');
+          c.eq(probe.total, 0,
+            'a scenario that only measures still asserted nothing');
+
+          // The reading this whole channel exists to protect: already on
+          // screen, nothing spent. A falsy-zero bug turns this into "no data".
+          probe.metric('taps', 0, { of: 'already-visible' });
+          c.eq(probe.metrics.get('taps@already-visible')?.value, 0,
+            'zero is a reading, not an absence');
+
+          // NaN must be refused loudly. A NaN that silently becomes 0 is how
+          // a chart ends up lying about a screen nobody checked.
+          const bad = probe.metric('taps', NaN, { of: 'broken' });
+          c.eq(bad, null, 'a non-finite value is refused');
+          c.ok(probe.failures.length === 1
+            && /not a finite number/.test(probe.failures[0].label),
+          'and it is refused LOUDLY, as a failure',
+          JSON.stringify(probe.failures));
+          c.ok(!probe.metrics.has('taps@broken'), 'nothing bad was stored');
+          probe.metric('taps', Infinity, { of: 'also-broken' });
+          c.eq(probe.failures.length, 2, 'Infinity is refused too');
+
+          // `of` keeps rows for different subjects apart; without it one
+          // scenario measuring 35 questions would report only the last.
+          c.eq(probe.metrics.size, 2, 'each subject keeps its own row');
+
+          // The aggregator: values kept whole, and a mean of nothing is null.
+          const g = grade([{ id: 's', scenarios: [
+            { id: 'a', total: 1, passed: 1, ok: true, failures: [], features: [],
+              metrics: [{ name: 'taps', value: 0, unit: 'taps', of: 'x' },
+                { name: 'taps', value: 4, unit: 'taps', of: 'y' }] },
+          ] }]);
+          c.eq(g.metrics.taps.n, 2, 'both readings counted');
+          c.eq(g.metrics.taps.mean, 2, 'the zero is in the mean, not dropped');
+          c.eq(g.metrics.taps.min, 0, 'min honours a legitimate zero');
+          c.same(g.metrics.taps.values, [0, 4],
+            'raw values survive, so a median and an IQR are still recoverable');
+          c.ok(!g.bars.some((b) => b.id === 'taps'),
+            'and a measurement gates NOTHING - BARS is the commit gate');
+        },
+      },
       {
         id: 'homebrew_to_sheet_to_sim',
         title: 'Homebrew flows ingest -> engine -> sheet -> simulation',
@@ -4422,6 +4505,7 @@ export async function runLogic(ctx, { onProgress = () => {} } = {}) {
         total: check.total,
         failures: check.failures,
         features: [...check.touched],
+        metrics: [...check.metrics.values()],
         error,
         empty,
         ok: !error && !empty && check.failures.length === 0,
@@ -4529,6 +4613,38 @@ export function grade(suites, ui = null) {
   const uiChecks = ui ? ui.reduce((n, f) => n + (f.total || 0), 0) : 0;
   const uiPassed = ui ? ui.reduce((n, f) => n + (f.passed || 0), 0) : 0;
 
+  /**
+   * Measurements, gathered but never graded.
+   *
+   * Deliberately absent from `bars`: BARS is the gate every developer runs
+   * before a commit, and a research number in there would redden the gym
+   * for everyone the first time a screen got one tap slower. Reach and ease
+   * bars live in sim/bars.json and are read by the night report instead.
+   *
+   * `values` is kept whole, not just the mean, because a median and an IQR
+   * cannot be recovered from a mean and nobody can tell a flat distribution
+   * from a bimodal one after the fact.
+   */
+  const metrics = {};
+  const metricRows = [...scenarios, ...(ui || [])]
+    .flatMap((s) => s.metrics || []);
+  for (const row of metricRows) {
+    if (!Number.isFinite(row.value)) continue;
+    const m = metrics[row.name] || (metrics[row.name] = {
+      n: 0, sum: 0, min: Infinity, max: -Infinity, unit: row.unit, values: [],
+    });
+    m.n += 1;
+    m.sum += row.value;
+    m.values.push(row.value);
+    if (row.value < m.min) m.min = row.value;
+    if (row.value > m.max) m.max = row.value;
+  }
+  for (const m of Object.values(metrics)) {
+    // n is 0 only if nothing was recorded, and a mean of nothing is null,
+    // never 0 - a 0 here would read as "measured, and it was zero".
+    m.mean = m.n ? m.sum / m.n : null;
+  }
+
   return {
     scenarios: scenarios.length,
     scenariosPassed: scenarios.filter((s) => s.ok).length,
@@ -4541,6 +4657,7 @@ export function grade(suites, ui = null) {
       checksPassed: uiPassed,
     } : null,
     features: [...features].sort(),
+    metrics,
     thin: thin.map((s) => `${s.id} (${s.total} checks)`),
     errors: [
       ...scenarios.filter((s) => s.error).map((s) => `${s.id}: ${s.error}`),
