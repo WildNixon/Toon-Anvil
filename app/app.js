@@ -189,9 +189,30 @@ function reconcileHp(character, state = getState()) {
   };
 }
 
+/**
+ * Bring an old HP shape up to date - and never die trying.
+ *
+ * This runs during boot, for a cosmetic normalisation nobody asked for. A
+ * player arriving at an open table without a join code is a READ-ONLY
+ * visitor: the server correctly refuses their write, and until this catch
+ * existed that 401 propagated out of boot() and painted a dead "could not
+ * start" panel instead of the join gate. The thing that would have let them
+ * in was the thing that failed to render. (BOOT-1.)
+ *
+ * Only a REFUSAL is swallowed. A refused write is a fact about who you are,
+ * not a fault; reconcileHp is idempotent, so the record migrates on the next
+ * boot after you join. Any other failure still throws, because a broken
+ * server must not be quietly absorbed by a migration.
+ */
 async function migrateHp(character) {
   const next = reconcileHp(character);
-  if (next !== character) await db.put('characters', next);
+  if (next !== character) {
+    try {
+      await db.put('characters', next);
+    } catch (err) {
+      if (!err?.refused) throw err;
+    }
+  }
   return next;
 }
 
@@ -802,15 +823,22 @@ async function boot() {
   setState({ characters, homebrew, ready: true });
 
 
-  const last = localStorage.getItem('toonanvil.lastCharacter');
-  if (last && characters.some((c) => c.id === last)) await selectCharacter(last);
-  else if (characters.length) await selectCharacter(characters[0].id);
-
   // Who am I at this table? With none open the answer is "the only person
   // here". This must land BEFORE the boot mode is chosen: which shell exists
   // depends on the seat, and the seat is not knowable from stale local state
   // - a device remembered as DM booting into an open table is a player.
+  //
+  // It also lands before selectCharacter, which WRITES: the app used to
+  // decide to save an HP migration six lines before it knew whether it was
+  // even allowed to. Working out who you are costs one request and is the
+  // honest order. recompute() reads only the compendium and homebrew, so
+  // selecting a character does not need the seat - the dependency only ever
+  // ran the other way.
   await session.refresh();
+
+  const last = localStorage.getItem('toonanvil.lastCharacter');
+  if (last && characters.some((c) => c.id === last)) await selectCharacter(last);
+  else if (characters.length) await selectCharacter(characters[0].id);
 
   // Legacy hash: the DM screen used to be one mode with lens tabs.
   const rawHash = location.hash.replace('#', '');
@@ -861,8 +889,35 @@ window.addEventListener('hashchange', () => {
 window.addEventListener('error', (e) => console.error('[toon-anvil]', e.error || e.message));
 window.addEventListener('unhandledrejection', (e) => console.error('[toon-anvil]', e.reason));
 
-boot().catch((err) => {
+/**
+ * A locked door and a broken one need different voices.
+ *
+ * Anything this browser is REFUSED during boot means "you have no seat
+ * here yet", and the join gate already knows how to say that. Painting a
+ * dead panel instead strands the visitor with no way forward - the control
+ * that would let them in is the one that failed to render. So a refusal
+ * tries the gate first, and only a genuine fault gets the panel.
+ *
+ * migrateHp already swallows the specific refusal that caused BOOT-1; this
+ * is the general case, so the next write added to boot cannot resurrect it.
+ */
+boot().catch(async (err) => {
   console.error('[toon-anvil] boot failed', err);
+  if (err?.refused) {
+    try {
+      await session.refresh();
+      if (session.isOpen() && session.needsJoin()) {
+        await mountGates();
+        renderNav();
+        renderWho();
+        return;
+      }
+    } catch (gateErr) {
+      // The gate could not be raised either - fall through and say so
+      // plainly rather than leaving a blank page behind a caught error.
+      console.error('[toon-anvil] the join gate could not be raised', gateErr);
+    }
+  }
   $('#view').innerHTML = `<div class="panel accent rivets">
     <span class="lvl accent">Boot failure</span>
     <h3>Toon Anvil could not start</h3>

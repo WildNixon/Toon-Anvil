@@ -4,6 +4,8 @@ Generated 2026-08-11T01:04:09+00:00 from `soak/findings.jsonl` (25 findings, 5 a
 
 **Updated 2026-08-10** during the cockpit work: **BOOT-1** added (high) — the root cause of HARNESS-1's residual, and a real bug that locks a returning player out of a table. HARNESS-1's "not root-caused" note is now resolved.
 
+**Updated 2026-08-12:** **BOOT-1 is FIXED**, and with it HARNESS-1 — `ui/join_gate` passes for the first time, so the gym has no permanently-red flow.
+
 Every item below was **confirmed against a running server**, not inferred from reading. Anything I could not reproduce is not here.
 
 Most of these have a **live reproduction** carrying the same id, in `app/sim/pending.js`. Open `/sim/pending.html` and run them: each one is expected to FAIL, and a failure is the defect still being present. When a fix lands its reproduction turns green — promote it into `appgym.js` and delete it from `pending.js`, so the gym guards it from then on. They are kept out of the graded gym on purpose: a suite with a permanent red in it stops being a gate.
@@ -124,7 +126,7 @@ Most of these have a **live reproduction** carrying the same id, in `app/sim/pen
 
 ### BOOT-1-refused-migration-kills-the-join-gate — A returning player arriving at an open table gets a dead "Boot failure" screen instead of the join gate
 
-**HIGH** · area: boot / join · effort: S · status: confirmed, NOT fixed — needs your call on the semantics
+**HIGH** · area: boot / join · effort: S · status: **FIXED 2026-08-12**
 
 **Why this matters.** This is the couch scenario the whole LAN epic exists for. Your friend played solo last week, so their browser holds a character. You open a table. They open the app — and instead of "A table is open, here's the join code field", they get *Toon Anvil could not start*. There is no way forward from that screen. They cannot join, because the thing that would let them join is what failed to render.
 
@@ -138,7 +140,19 @@ Note the ordering trap: `session.refresh()` — which is what learns "I am unsea
 
 **This is the whole of HARNESS-1's residual.** One defect, wearing a flake's clothes for four runs. It looked warm/cold-dependent because whether `reconcileHp` finds anything to migrate depends on what previous flows left in the data dir.
 
-**Proposed fix — three options, and I want your call rather than my guess.** The mechanical part is agreed: a refused *migration* write must never be fatal. What differs is what happens to the migration:
+**FIXED.** Option 1 (swallow the refusal), plus the ordering fix that was the actual root cause, plus the general case:
+
+1. `migrateHp` (`app/app.js:192`) swallows a **refused** write and only a refused one — `err.refused` is already set by `db.js:216` for 401/403. Any other failure still throws, because a broken server must not be quietly absorbed by a cosmetic migration. `reconcileHp` is idempotent, so the record migrates on the next boot after joining.
+2. **`session.refresh()` now runs BEFORE `selectCharacter()`.** This is the root cause: the app decided to write six lines before it knew whether it was allowed to. Verified safe first — `recompute()` (`app.js:78`) reads only the compendium and homebrew, so selecting a character never needed the seat; the dependency only ever ran the other way.
+3. `boot().catch()` (`app/app.js:892`) distinguishes **refused** from **broken**: a refusal raises the join gate, and only a genuine fault gets the dead panel. Defence in depth, so the next write added to boot cannot resurrect this.
+
+**Measured before and after on the isolated instance, same probe, same server.** Before: the gate never appeared — 25003 ms of budget spent, an 882-byte body reading *"Boot failure — Toon Anvil could not start — PUT /api/characters/gym-gate-probe -> 401"*. After: the gate appears in **199 ms**, carries its code and name fields, says *"A table is open"*, and the app boots whole (14029-byte body, no panel).
+
+**`ui/join_gate` is green for the first time** — the gym went from `FAIL — 131/131 scenarios` with that one flow red to **`PASS — 132/132 scenarios, 1614/1614 checks, 115 features`**. That flow failing-then-passing IS the regression guard; a `runMutations` mutation was considered and rejected, because mutations grade the logic tier only and `boot()` lives in the app shell, which the gym cannot import without booting a second app.
+
+**Not independently reproduced:** change 3's branch. Change 1 removes the only known trigger, so there is no longer a way to reach the general case on demand. Its failure mode if wrong is "you get the dead panel you would have got anyway".
+
+**The options considered, for the record.** The mechanical part is agreed: a refused *migration* write must never be fatal. What differs is what happens to the migration:
 
 1. **Swallow it** — `try { await db.put(...) } catch {}` in `migrateHp`. One line. The record stays un-migrated in this browser until they join; `reconcileHp` is idempotent so it retries on the next boot. Smallest change, and the un-migrated record is only ever read through `reconcileHp` anyway.
 2. **Defer it** — hold the migration and replay it after a successful join. Correct, but it needs a queue that does not exist yet, and a queue of writes made before you knew who you were is a fog-of-war question, not just a plumbing one.
