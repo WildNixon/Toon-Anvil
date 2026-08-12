@@ -284,6 +284,17 @@ def safe_id(raw: str) -> str | None:
     return raw
 
 
+# When a browser last made a real request. The idle watchdog reads it so
+# the server can stop with the app rather than outliving it.
+LAST_SEEN = time.time()
+
+
+def touch() -> None:
+    """Somebody is still here."""
+    global LAST_SEEN                                           # noqa: PLW0603
+    LAST_SEEN = time.time()
+
+
 class Handler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -291,6 +302,18 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*a, directory=str(APP), **kw)
 
     # ---- plumbing ------------------------------------------------------
+    def parse_request(self) -> bool:
+        # A stamp per REAL request, and only a real one. Stamping on
+        # every accepted socket instead meant a bare TCP connect - a
+        # port probe, an editor polling the port, the launcher's own
+        # readiness check - kept the server alive forever. Measured:
+        # the idle exit never fired because the test harness was
+        # connecting once a second to ask whether it had exited.
+        ok = super().parse_request()
+        if ok:
+            touch()
+        return ok
+
     def log_message(self, fmt: str, *args) -> None:
         if getattr(self, "_quiet", False):
             return
@@ -1101,6 +1124,10 @@ class Handler(SimpleHTTPRequestHandler):
                     send({"type": "change", "rev": rev, "gap": gap, "changes": items})
                     last = rev
                 else:
+                    # Somebody is holding this stream open, so they are
+                    # very much still here - one request that lasts
+                    # minutes would otherwise read as an idle server.
+                    touch()
                     # A comment line keeps proxies and idle timeouts happy
                     # without looking like data to the client.
                     self.wfile.write(b": keep-alive\n\n")
@@ -1609,10 +1636,54 @@ def _lan_ip() -> str | None:
         return None
 
 
+def _players_seated() -> bool:
+    """Is anyone actually at a table? Never strand a live session."""
+    try:
+        tools_on_path()
+        import table as table_mod                              # noqa: PLC0415
+        data = table_mod.read()
+        if not data.get("open"):
+            return False
+        return any(p.get("role") == "player"
+                   for p in (data.get("profiles") or {}).values())
+    except Exception:                                          # noqa: BLE001
+        # If we cannot tell, assume somebody IS there. Wrongly staying up
+        # costs a stray process; wrongly exiting ends five people's game.
+        return True
+
+
+def _idle_watch(srv, seconds: float) -> None:
+    """Stop when the app has gone, so the server does not outlive it.
+
+    Starting the server and starting the app are one act now, and stopping
+    should be too: close the tab and this should not still be holding a
+    port an hour later. Two guards keep that from becoming a foot-gun:
+
+      - the app polls while any tab is open, so "idle" really does mean
+        nobody is looking;
+      - a table with players seated NEVER idles out, because the DM closing
+        their own tab must not end everyone else's session.
+    """
+    while True:
+        time.sleep(5)
+        if time.time() - LAST_SEEN < seconds:
+            continue
+        if _players_seated():
+            continue
+        print()
+        print(f"no browser for {seconds:.0f}s and nobody seated - stopping")
+        threading.Thread(target=srv.shutdown, daemon=True).start()
+        return
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Toon Anvil server")
     ap.add_argument("--port", type=int, default=7801)
     ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--exit-when-idle", type=float, default=0,
+                    metavar="SECONDS",
+                    help="stop once no browser has called for this long "
+                         "and no players are seated. 0 never exits.")
     args = ap.parse_args()
 
     if not APP.exists():
@@ -1668,6 +1739,9 @@ def main() -> int:
         print(line)
     print(f"  data      ->  {DATA}")
     print("  ctrl-c to stop\n")
+    if args.exit_when_idle > 0:
+        threading.Thread(target=_idle_watch, daemon=True,
+                         args=(srv, args.exit_when_idle)).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

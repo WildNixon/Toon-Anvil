@@ -103,8 +103,11 @@ function drawHost() {
     onClick: async () => {
       if (busy) return;
       busy = true;
-      const out = await session.openTable(draft.host.trim() || 'DM');
-      busy = false;
+      let out;
+      // finally, not a trailing assignment: anything that throws between
+      // here and there would leave busy set and every later press dead.
+      try { out = await session.openTable(draft.host.trim() || 'DM'); }
+      finally { busy = false; }
       if (out?.error || out?.status === 403) {
         // The server only lets the machine it runs on open a table - a
         // player who could open one could rotate the code and lock the DM out.
@@ -170,8 +173,9 @@ function drawJoin() {
       const n = draft.join.trim();
       if (!c || !n) return toast('Both the code and a name are needed', 'warn');
       busy = true;
-      const out = await session.join({ code: c, name: n });
-      busy = false;
+      let out;
+      try { out = await session.join({ code: c, name: n }); }
+      finally { busy = false; }
       if (!out?.ok) return toast(out?.error || 'That code was not accepted', 'bad');
       await refreshChrome().catch(() => {});
       toast('You are at the table', 'ok');
@@ -323,8 +327,9 @@ function pickCard(status) {
         onClick: async () => {
           if (busy) return;
           busy = true;
-          const out = await session.claim(c.id);
-          busy = false;
+          let out;
+          try { out = await session.claim(c.id); }
+          finally { busy = false; }
           if (!out?.ok) return toast(out?.error || 'Somebody got there first', 'bad');
           await selectCharacter(c.id);
           await refreshChrome().catch(() => {});
@@ -369,8 +374,9 @@ function dmControls(status, started) {
     onClick: async () => {
       if (busy) return;
       busy = true;
-      const out = await session.setStarted(!started);
-      busy = false;
+      let out;
+      try { out = await session.setStarted(!started); }
+      finally { busy = false; }
       if (!out?.ok) return toast(out?.error || 'The server said no', 'bad');
       await session.refresh().catch(() => {});
       // Every other seat is watching the same flag and leaves the queue on

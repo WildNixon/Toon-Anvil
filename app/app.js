@@ -297,6 +297,28 @@ export function go(mode) {
  * stopped existing for this browser, renderMode's own guard bounces to one
  * that does.
  */
+/**
+ * Say it when the server has gone.
+ *
+ * The failure this replaces: with the server stopped the app looked entirely
+ * healthy - full nav, full lobby, every button present - and pressing one did
+ * nothing at all. No error, no toast, no change. From the outside that is
+ * indistinguishable from "the app is broken", which is exactly what it gets
+ * reported as.
+ *
+ * The banner names the fix, because "connection lost" tells somebody sitting
+ * at their own machine nothing they can act on.
+ */
+function renderServerDown(reachable) {
+  const box = $('#serverdown');
+  if (!box) return;
+  box.hidden = Boolean(reachable);
+  if (reachable) return;
+  box.innerHTML = '<strong>The server stopped</strong>'
+    + '<span>Nothing will save until it is back. Start it again with '
+    + '<code>python run.py</code> in the Toon Anvil folder, then reload.</span>';
+}
+
 export async function refreshChrome() {
   renderNav();
   renderWho();
@@ -876,6 +898,11 @@ async function boot() {
   // never delivered, because the baseline was taken after it. A screen that
   // exists must already be listening.
   await watchTheTable();
+
+  // One watcher for the whole shell: the poll already knew the server had
+  // gone, it simply never said so.
+  renderServerDown(live.serverReachable());
+  live.onReachChange(renderServerDown);
 
   renderNav();
   await mountRibbon();

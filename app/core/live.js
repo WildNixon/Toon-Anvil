@@ -47,8 +47,74 @@ export function subscribe(kinds, fn) {
   return () => subscribers.delete(entry);
 }
 
+/**
+ * Has the server stopped answering?
+ *
+ * The poll already knew - it caught the failure and returned false - but it
+ * told nobody, so the app went on looking perfectly healthy with every
+ * button quietly doing nothing. That is the worst shape a failure can take:
+ * a screen that says everything is fine.
+ *
+ * Counted rather than tripped on the first miss, because one dropped request
+ * on a busy laptop is not a stopped server.
+ */
+const REACH_MISSES_BEFORE_GONE = 2;
+let misses = 0;
+let reachable = true;
+const reachWatchers = new Set();
+
+export function serverReachable() { return reachable; }
+
+/** Called with (reachable) whenever that answer changes. Returns unsubscribe. */
+export function onReachChange(fn) {
+  reachWatchers.add(fn);
+  return () => reachWatchers.delete(fn);
+}
+
+/**
+ * A heartbeat that measures reachability directly, whatever transport is up.
+ *
+ * The first version inferred it from the poll, which meant it only worked in
+ * poll mode: with a stream open, a killed server left EventSource retrying
+ * in CONNECTING forever, the poll never ran, and the app cheerfully reported
+ * `reachable: true` while every button failed. Inferring a fact from a side
+ * effect of an unrelated mechanism is how you get an answer that is right
+ * most of the time and silent exactly when it matters.
+ *
+ * So this asks. One tiny request every REACH_MS, independent of stream or
+ * poll - cheap next to the 2s change poll it sits beside, and it cannot be
+ * defeated by a transport quirk.
+ */
+const REACH_MS = 10000;
+let reachTimer = null;
+
+async function reachPing() {
+  try {
+    const res = await fetch(`${serverBase()}/api/health`, { cache: 'no-store' });
+    noteReach(res.ok);
+  } catch {
+    noteReach(false);
+  }
+}
+
+function startReachWatch() {
+  if (reachTimer) return;
+  reachPing();
+  reachTimer = setInterval(reachPing, REACH_MS);
+}
+
+function noteReach(ok) {
+  misses = ok ? 0 : misses + 1;
+  const now = ok || misses < REACH_MISSES_BEFORE_GONE;
+  if (now === reachable) return;
+  reachable = now;
+  for (const fn of reachWatchers) {
+    try { fn(reachable); } catch { /* a bad watcher must not stop the rest */ }
+  }
+}
+
 export function status() {
-  return { mode, rev, subscribers: subscribers.size };
+  return { mode, rev, subscribers: subscribers.size, reachable };
 }
 
 function deliver(changes, gap) {
@@ -107,6 +173,7 @@ function startPolling() {
   stopPolling();
   const tick = async () => {
     const ok = await pollOnce();
+    noteReach(ok);
     idleTicks = ok ? idleTicks + 1 : 0;
     const wait = idleTicks > IDLE_AFTER ? IDLE_POLL_MS : POLL_MS;
     timer = setTimeout(tick, wait);
@@ -123,6 +190,9 @@ function stopPolling() {
 /* ------------------------------------------------------------------ */
 
 function startStream() {
+  // The stream is the fast path; polling is the fallback. Running both would
+  // double every delivery and burn a request every two seconds for nothing.
+  stopPolling();
   if (typeof EventSource === 'undefined') { startPolling(); return; }
   try {
     source = new EventSource(`${serverBase()}/api/stream?since=${rev}`);
@@ -151,9 +221,20 @@ function startStream() {
   source.onerror = () => {
     // EventSource reconnects on its own, but the server also ends streams on
     // purpose after a few minutes. Either way, polling covers the gap.
+    //
+    // Polling starts on ANY stream error, not only on CLOSED. When the
+    // server stops, EventSource sits in CONNECTING and retries forever - it
+    // never reaches CLOSED - so gating the fallback on CLOSED meant nothing
+    // ever noticed the server had gone. Measured: with the server killed the
+    // app reported mode 'stream', reachable true, and showed no warning at
+    // all while every button quietly failed.
+    //
+    // The poll is the only thing that MEASURES reachability, and its own
+    // two-miss counter is what keeps a routine stream restart from being
+    // reported as an outage.
+    if (!timer) startPolling();
     if (source && source.readyState === EventSource.CLOSED) {
       source = null;
-      startPolling();
       // Try the fast path again shortly; a dropped stream is usually
       // transient and polling is the fallback, not the destination.
       setTimeout(() => { if (started && !source) startStream(); }, 5000);
@@ -172,6 +253,10 @@ export async function start() {
   try {
     if (db.mode !== 'server') { mode = 'off'; return status(); }
   } catch { mode = 'off'; return status(); }
+
+  // Independent of stream or poll, because it is the ONLY thing that
+  // actually measures whether the server is there.
+  startReachWatch();
 
   started = true;
   // Learn the current revision first, so the first message is not a flood of

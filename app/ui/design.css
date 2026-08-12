@@ -1032,3 +1032,17 @@ body.sandbox #view { padding-bottom: 86px; }
   cursor: pointer;
 }
 #chrome .try:hover { background: rgba(241, 232, 210, .16); }
+
+/* The server stopped answering.
+   Loud on purpose: the failure this replaces was a screen that looked
+   perfectly healthy while every button quietly did nothing. */
+.serverdown {
+  background: var(--bad, #a3301a); color: #fff;
+  padding: 9px 14px; font-size: 14px; line-height: 1.4;
+  display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+}
+.serverdown strong { font-family: var(--display, sans-serif); letter-spacing: .06em; }
+.serverdown code {
+  background: rgba(0,0,0,.25); padding: 1px 6px; border-radius: 2px;
+  font-family: var(--mono, monospace); font-size: 13px;
+}

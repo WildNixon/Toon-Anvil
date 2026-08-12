@@ -36,11 +36,33 @@ export function authHeaders() {
   return t ? { 'X-Toon-Token': t } : {};
 }
 
+/**
+ * One call to the table API, which NEVER throws on a dead server.
+ *
+ * It used to let a network failure reject, and every caller awaited it
+ * without a catch - so with the server stopped, pressing a button did
+ * absolutely nothing: no error, no toast, no change, and any `busy` flag the
+ * caller had set stayed set, which quietly bricked every later press too.
+ * A screen that says everything is fine is the worst shape a failure takes.
+ *
+ * A refusal (403, 409) is a fact about who you are and comes back as one.
+ * A transport failure is a fact about the SERVER, and comes back saying so.
+ */
 async function api(path, opts = {}) {
-  const res = await fetch(`${serverBase()}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    ...opts,
-  });
+  let res;
+  try {
+    res = await fetch(`${serverBase()}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      ...opts,
+    });
+  } catch {
+    return {
+      status: 0,
+      offline: true,
+      error: 'The server is not answering. It may have stopped - restart it '
+        + 'with "python run.py".',
+    };
+  }
   const data = await res.json().catch(() => ({}));
   return { status: res.status, ...data };
 }

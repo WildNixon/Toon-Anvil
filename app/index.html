@@ -25,6 +25,10 @@ localStorage.getItem('toonanvil.role')==='dm'?'dm':'player'}catch(e){}</script>
       <nav class="modes" id="modes" aria-label="Modes"></nav>
     </header>
     <div id="ribbon" class="ribbon" hidden></div>
+    <!-- Shown when the server stops answering. Lives in the chrome rather
+         than a mode, because the point is that it is true whatever screen
+         you are looking at. -->
+    <div id="serverdown" class="serverdown" role="alert" hidden></div>
   </div>
   <main id="view" tabindex="-1">
     <div class="empty">Loading&hellip;</div>

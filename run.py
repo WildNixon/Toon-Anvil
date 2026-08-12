@@ -147,6 +147,46 @@ def run_checks() -> Check:
     return c
 
 
+def _open_when_ready(port: int, url: str, timeout: float = 60.0) -> None:
+    """Open the browser once the server answers - never before.
+
+    Polls the socket rather than sleeping a fixed amount, so a slow start
+    delays the browser instead of breaking it. If the server never comes up
+    the browser is NOT opened at all: a page that cannot load is worse than
+    no page, because it looks like the app is broken rather than absent.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.4)
+            if s.connect_ex(("127.0.0.1", port)) == 0:
+                webbrowser.open(url)
+                return
+        time.sleep(0.1)
+    print(f"{YELLOW}The server did not start within {timeout:.0f}s, so the "
+          f"browser was not opened.{OFF}")
+    print(f"{DIM}  If it comes up later, open {url} yourself.{OFF}")
+
+
+def already_running(port: int) -> dict | None:
+    """Is a Toon Anvil ALREADY serving here?
+
+    Without this, a second launch silently drifts to the next free port and
+    you end up with two servers, two data dirs in play and a bookmark that
+    points at whichever one you started first. Saying so is far kinder than
+    picking a different port and hoping.
+    """
+    import json as _json                                       # noqa: PLC0415
+    import urllib.request                                      # noqa: PLC0415
+    try:
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/health", timeout=1.5) as r:
+            body = _json.loads(r.read().decode() or "{}")
+        return body if body.get("app") == "toon-anvil" else None
+    except Exception:                                          # noqa: BLE001
+        return None
+
+
 def free_port(port: int, host: str = "127.0.0.1") -> bool:
     """Can this port actually be BOUND on the interface we will serve on?
 
@@ -187,6 +227,10 @@ def main() -> int:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--check", action="store_true", help="run checks and exit")
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--keep-alive", action="store_true",
+                    help="keep serving after the browser closes "
+                         "(default: stop once nothing is connected "
+                         "and nobody is seated)")
     ap.add_argument("--lan", action="store_true",
                     help="let other devices on your network join this table")
     args = ap.parse_args()
@@ -219,6 +263,21 @@ def main() -> int:
 
     port = args.port
     if not free_port(port, host):
+        mine = already_running(port)
+        if mine:
+            # Almost always the real answer: an earlier run is still up.
+            # Starting a second server on another port would leave two
+            # builds running against two data folders.
+            print()
+            print(f"{YELLOW}Toon Anvil is ALREADY running on "
+                  f"http://127.0.0.1:{port}{OFF}")
+            print(f"{DIM}  data: {mine.get('dataDir', '?')}{OFF}")
+            print(f"{DIM}  Opening that one. Close its window first if you "
+                  f"wanted a fresh start.{OFF}")
+            print()
+            if not args.no_browser:
+                webbrowser.open(f"http://127.0.0.1:{port}/#lobby")
+            return 0
         for candidate in range(port + 1, port + 12):
             if free_port(candidate, host):
                 print(f"{YELLOW}Port {port} is busy, using {candidate}.{OFF}")
@@ -250,6 +309,8 @@ def main() -> int:
     notes = [
         f"{DIM}  The browser opens on the Lobby: host a game and read the "
         f"code out, or play on your own.{OFF}",
+        f"{DIM}  Closing the app stops this server too, unless players "
+        f"are seated (--keep-alive to always stay up).{OFF}",
     ]
     if args.lan:
         notes += [
@@ -264,9 +325,26 @@ def main() -> int:
         ]
 
     if not args.no_browser:
-        threading.Timer(1.2, lambda: webbrowser.open(lobby_url)).start()
+        # Wait for the socket to actually ACCEPT, then open the browser.
+        #
+        # This used to be a flat 1.2s timer, which is a guess about how long
+        # loading 1.7MB of SRD takes on somebody else's machine. Measured
+        # here it is ~0.7s, so the guess held - but a cold disk, a slower
+        # laptop or an antivirus scanner pushes it past 1.2s and the browser
+        # then opens on a connection-refused page. The user sees "the app
+        # will not launch" and the server behind it is perfectly fine.
+        threading.Thread(
+            target=_open_when_ready, args=(port, lobby_url), daemon=True,
+        ).start()
 
     sys.argv = [sys.argv[0], "--port", str(port), "--host", host]
+    # Close together. Only when WE opened the browser: --no-browser is
+    # how somebody runs this as a plain server, and exiting under them
+    # because nothing has connected yet would be a bad surprise. The
+    # server also refuses to idle out while players are seated, so a DM
+    # closing their own tab never ends everybody else's session.
+    if not args.no_browser and not args.keep_alive:
+        sys.argv += ["--exit-when-idle", "120"]
     import serve                                               # noqa: PLC0415
     serve.BANNER_NOTES = notes
     return serve.main()
