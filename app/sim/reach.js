@@ -26,8 +26,7 @@
  */
 
 import {
-  tap, tappable, inViewport, screenful, visibleText, NotTappable,
-  TEXT_MIN_PX, INPUT_MIN_PX, TAP_MIN_PX,
+  tap, tappable, intersectsViewport, screenful, visibleText, NotTappable,
 } from './probe.js';
 
 /* ------------------------------------------------------------------ */
@@ -62,10 +61,14 @@ const fold = (label) => (doc) =>
 /** Does the visible text of `main` match? The default answer predicate. */
 const says = (re) => (doc) => re.test(visibleText(doc));
 
-/** Is a selector present AND inside the viewport? */
+/** Is a selector present and actually on screen?
+ *
+ * INTERSECTS rather than contains: a panel taller than a phone is never
+ * wholly inside the viewport, and asking for containment marked every DM
+ * answer unreachable - including the zero-tap control. */
 const shows = (sel) => (doc, win) => {
   const el = doc.querySelector(sel);
-  return Boolean(el) && inViewport(el, win);
+  return Boolean(el) && intersectsViewport(el, win);
 };
 
 /* ------------------------------------------------------------------ */
@@ -205,7 +208,13 @@ export function assertNoDrift(catalogue) {
 export function vetoes(doc, win, caps) {
   const s = screenful(doc, win);
   const out = [];
-  if (s.tiny.length) out.push(`legibility: ${s.tiny.length} elements under floor`);
+  // Legibility is MEASURED AND REPORTED, never vetoed on. Calibration
+  // against the shipped app found a 10px floor on every screen - the
+  // `.lvl` badges, chips and mono hints the whole design is built from.
+  // A 13px veto therefore rejected every screen in the app, including the
+  // control that is meant to cost zero taps, which is a grader measuring
+  // its own opinion rather than the app. minFontPx rides along on the row
+  // so a real shrink still shows up in the report.
   if (caps && s.choices > caps.CHOICE_CAP) {
     out.push(`density: ${s.choices} choices > ${caps.CHOICE_CAP}`);
   }

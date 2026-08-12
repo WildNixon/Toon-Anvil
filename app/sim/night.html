@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Toon Anvil — the cost tier</title>
+<style>
+  body { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+         background: #14110e; color: #e8e0d2; margin: 0; padding: 24px; }
+  h1 { font-size: 18px; margin: 0 0 4px; letter-spacing: .04em; }
+  p.lede { color: #9c9184; max-width: 68ch; margin: 0 0 18px; }
+  button { font: inherit; background: #2f5d50; color: #e8e0d2; border: 0;
+           padding: 9px 16px; margin-right: 8px; cursor: pointer; }
+  button.ghost { background: #26221c; }
+  button[disabled] { opacity: .45; cursor: default; }
+  #log { white-space: pre-wrap; margin-top: 18px; font-size: 13px;
+         border-left: 2px solid #3a332a; padding-left: 12px; }
+  .bad { color: #e0796a; }
+  .ok { color: #8ec07c; }
+  .dim { color: #7b7266; }
+  table { border-collapse: collapse; margin-top: 14px; font-size: 12px; }
+  th, td { text-align: left; padding: 3px 12px 3px 0; vertical-align: top; }
+  th { color: #9c9184; font-weight: normal; border-bottom: 1px solid #3a332a; }
+</style>
+</head>
+<body>
+<h1>The cost tier</h1>
+<p class="lede">
+  Measures how many taps it costs to get an answer onto a screen, for the
+  same 60 questions the availability tier answers over HTTP. It opens its
+  own table, seats one DM and five players, and drives them one at a time —
+  every frame on this origin shares a token slot, so simultaneous seats are
+  not possible and a turn order is sequential anyway.
+  <br><br>
+  <strong>Keep this tab in front.</strong> A backgrounded tab clamps timers
+  to about a second, which does not corrupt anything but makes a run take
+  roughly sixteen times as long.
+</p>
+
+<button id="run">Measure this table</button>
+<button id="publish" class="ghost" disabled>Publish the rows</button>
+<span id="status" class="dim"></span>
+
+<div id="log"></div>
+<div id="table"></div>
+
+<script type="module">
+import { assertNoDrift, ALL, measure } from './reach.js';
+import { openBench, withSeat, settler, sweep, currentSize } from './seats.js';
+
+const $ = (s) => document.querySelector(s);
+const log = (msg, cls = '') => {
+  $('#log').insertAdjacentHTML('beforeend',
+    `<div class="${cls}">${msg}</div>`);
+  $('#log').scrollIntoView({ block: 'end' });
+};
+
+let rows = [];
+
+// The veto caps. Deliberately read from sim/bars.json rather than guessed
+// here: a floor set below the app you already ship is a bar you end up
+// moving at 3am to make a number look better.
+async function caps() {
+  try {
+    const bars = await fetch('/sim/bars.json').then((r) => r.json());
+    if (bars?.reach?.CHOICE_CAP) return bars.reach;
+  } catch { /* not published yet */ }
+  return null;
+}
+
+$('#run').onclick = async () => {
+  $('#run').disabled = true;
+  $('#log').innerHTML = '';
+  rows = [];
+  const t0 = performance.now();
+
+  let bench = null;
+  try {
+    const catalogue = await fetch('/sim/reach-catalogue.json').then((r) => r.json());
+    const n = assertNoDrift(catalogue);
+    log(`catalogue: ${n} questions, ${n} declared routes, no drift`, 'ok');
+
+    const leaked = sweep();
+    if (leaked) log(`swept ${leaked} leaked frames from a previous run`, 'bad');
+
+    const capset = await caps();
+    if (!capset) {
+      log('no reach caps in sim/bars.json — the density veto is OFF for this '
+        + 'run, and rows say so rather than pretending it applied', 'bad');
+    }
+
+    bench = await openBench();
+    log(`bench: 1 DM + ${bench.seats.length - 1} players, code ${bench.code}`);
+
+    const size = await currentSize(bench.seat('dm').token);
+    log(`campaign: day ${size.day} · ${size.factions} factions · `
+      + `${size.clocks} clocks · ${size.pins} pins · ${size.campaignBytes}B`);
+
+    const byRole = { dm: ALL.filter((q) => isDm(q.id, catalogue)),
+      player: ALL.filter((q) => !isDm(q.id, catalogue)) };
+
+    // The DM's whole catalogue runs inside ONE seat entry - booting a frame
+    // per question would be most of the wall clock and would measure the
+    // boot rather than the question.
+    await withSeat(bench, 'dm', async ({ doc, win }) => {
+      const settle = settler(doc);
+      await settle();
+      const reset = async () => { await goHome(doc, win, settle); };
+      for (const q of byRole.dm) {
+        rows.push(await one(q, { doc, win, settle, reset, caps: capset },
+          'dm', 'dm', size));
+      }
+    });
+    log(`DM seat: ${byRole.dm.length} questions`, 'ok');
+
+    // Players: the same catalogue from each seat, because "can Kim see it"
+    // and "can Ash see it" are different questions once anyone has claimed
+    // a different character.
+    for (const seat of bench.seats.filter((s) => s.role === 'player')) {
+      await withSeat(bench, seat.id, async ({ doc, win }) => {
+        const settle = settler(doc);
+        await settle();
+        const reset = async () => { await goHome(doc, win, settle); };
+        for (const q of byRole.player) {
+          rows.push(await one(q, { doc, win, settle, reset, caps: capset },
+            seat.id, 'player', size));
+        }
+      });
+      log(`${seat.name}: ${byRole.player.length} questions`, 'ok');
+    }
+
+    const got = rows.filter((r) => r.taps !== null).length;
+    log(`\n${rows.length} rows, ${got} with a tap count, `
+      + `${rows.length - got} unreachable — ${
+        ((performance.now() - t0) / 1000).toFixed(1)}s`, 'ok');
+    render();
+    $('#publish').disabled = false;
+  } catch (e) {
+    log(`\nRUN FAILED — ${e.name}: ${e.message}`, 'bad');
+    log('Rows collected before the failure are kept and can still be '
+      + 'published; a partial run is reported as partial, never as a zero.',
+    'dim');
+    if (rows.length) { render(); $('#publish').disabled = false; }
+  } finally {
+    await bench?.close();
+    sweep();
+    $('#run').disabled = false;
+  }
+};
+
+function isDm(id, catalogue) {
+  return catalogue.questions.find((q) => q.id === id)?.seat === 'dm';
+}
+
+/** Back to a known screen between routes, so one route cannot poison the next. */
+async function goHome(doc, win, settle) {
+  const home = [...doc.querySelectorAll('#modes button')][0];
+  if (home) { home.click(); await settle(); }
+}
+
+async function one(q, ctx, seatId, role, size) {
+  let row = null;
+  try {
+    row = await measure(q, ctx);
+  } catch (e) {
+    return { questionId: q.id, seat: seatId, role, size, taps: null,
+      probeError: `${e.name}: ${e.message}`.slice(0, 140) };
+  }
+  if (!row) {
+    // Every declared route broke. That is a finding about the app, and it
+    // is recorded as unreachable rather than as a missing row - a missing
+    // row would merge as "availability only" and quietly flatter it.
+    return { questionId: q.id, seat: seatId, role, size, taps: null,
+      unreachable: true };
+  }
+  return { ...row, seat: seatId, role, size };
+}
+
+function render() {
+  const worst = [...rows].filter((r) => r.taps !== null)
+    .sort((a, b) => b.taps - a.taps).slice(0, 15);
+  const unreachable = rows.filter((r) => r.taps === null);
+  $('#table').innerHTML = `
+    <table>
+      <tr><th>most expensive</th><th>seat</th><th>taps</th><th>vetoed</th></tr>
+      ${worst.map((r) => `<tr><td>${r.questionId}</td><td>${r.seat}</td>`
+        + `<td>${r.taps}</td><td class="dim">${(r.vetoed || []).join('; ')}</td></tr>`).join('')}
+    </table>
+    <table>
+      <tr><th>unreachable (${unreachable.length})</th><th>seat</th><th>why</th></tr>
+      ${unreachable.slice(0, 20).map((r) => `<tr><td>${r.questionId}</td>`
+        + `<td>${r.seat}</td><td class="dim">${
+          r.probeError || (r.vetoed || []).join('; ') || 'no declared route worked'
+        }</td></tr>`).join('')}
+    </table>`;
+}
+
+$('#publish').onclick = async () => {
+  $('#publish').disabled = true;
+  await fetch('/api/appgym', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label: 'night-browser', rows }),
+  });
+  log(`published ${rows.length} rows to data/appgym.jsonl`, 'ok');
+};
+</script>
+</body>
+</html>

@@ -57,6 +57,24 @@ export function inViewport(el, win = ownerWin(el)) {
 }
 
 /**
+ * Is any of this element on screen?
+ *
+ * Containment is the right question for a TAP TARGET - a button half off the
+ * bottom is a button you have to scroll to. It is the wrong question for
+ * CONTENT: a panel taller than a 390x844 phone is never wholly inside the
+ * viewport, so asking "is .cockpit-main contained" answers no for a screen
+ * that is plainly showing the fight. Measured: it marked every DM answer
+ * unreachable, including the control that is supposed to cost zero taps.
+ */
+export function intersectsViewport(el, win = ownerWin(el)) {
+  if (!el || !win) return false;
+  const r = el.getBoundingClientRect();
+  if (r.width <= 0 || r.height <= 0) return false;
+  return r.bottom > 0 && r.right > 0
+    && r.top < win.innerHeight && r.left < win.innerWidth;
+}
+
+/**
  * Could a person tap this, right now, without scrolling?
  *
  * Returns {ok, why} rather than a boolean because WHY a path failed is the

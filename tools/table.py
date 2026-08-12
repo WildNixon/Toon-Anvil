@@ -39,7 +39,11 @@ CODE_WORD = "ANVIL"
 
 def _blank() -> dict:
     return {"open": False, "code": None, "createdAt": None,
-            "profiles": {}, "tokens": {}, "forgeOpen": False, "grants": {}}
+            "profiles": {}, "tokens": {}, "forgeOpen": False, "grants": {},
+            # The lobby latch. False while everyone is still gathering,
+            # True once the DM says go - which is what lets five phones
+            # leave the queue together instead of one at a time.
+            "started": False}
 
 
 def read() -> dict:
@@ -186,6 +190,9 @@ def status(token: str | None = None) -> dict:
         # The whole gate is visible state: a player's Build appears and
         # disappears off these two fields.
         "forgeOpen": bool(data.get("forgeOpen")),
+        # Public, like forgeOpen: every seat's lobby watches this to know
+        # when to stop waiting. It is not a secret and it is not a permission.
+        "started": bool(data.get("started")),
         "grants": visible_grants,
         "me": me,
         "profiles": [
@@ -289,6 +296,22 @@ def set_forge(open_: bool) -> dict:
         data["forgeOpen"] = bool(open_)
         _write(data)
         return {"ok": True, "forgeOpen": data["forgeOpen"]}
+
+
+def set_started(started: bool) -> dict:
+    """Begin the session, or send everyone back to the lobby.
+
+    Separate from `open`: a table can be open for ten minutes while people
+    pick characters and argue about names. Starting is the moment the DM
+    says go, and it is what every seat is waiting on.
+    """
+    with _lock:
+        data = read()
+        if not data.get("open"):
+            return {"ok": False, "error": "no table is open"}
+        data["started"] = bool(started)
+        _write(data)
+        return {"ok": True, "started": data["started"]}
 
 
 def set_grant(character_id: str, max_total_level: int) -> dict:

@@ -186,6 +186,10 @@ export function navFor({ tableOpen, seat, forgeOpen: forge, hasGrant }, modes) {
   const shell = seat === 'dm' ? 'dm' : 'player';
   return modes.filter((m) => {
     if (m.gear) return true;                       // Settings serves both shells
+    // The lobby is the one screen both seats share: hosting and joining are
+    // the same room from two sides, and hiding it from the DM shell would
+    // mean the person running the game cannot see who has turned up.
+    if (m.always) return true;
     // THE hard split: a mode belongs to one shell, and the seat picks the
     // shell. The DM's app is the same solo and at a table - that is the
     // whole point of it being an app rather than a tab.
@@ -235,6 +239,24 @@ export async function openTable(name = 'DM') {
   await refresh();
   return out;
 }
+
+/**
+ * Begin the session, or send everyone back to the lobby.
+ *
+ * Separate from opening: a table can be open for ten minutes while people
+ * pick characters. Starting is the moment the DM says go, and every seat is
+ * watching this one flag so five phones leave the queue together instead of
+ * being told to navigate one at a time.
+ */
+export async function setStarted(started = true) {
+  const out = await api('/api/table/start', {
+    method: 'POST', body: JSON.stringify({ started }),
+  });
+  await refresh();
+  return out;
+}
+
+export function started() { return Boolean(cached?.started); }
 
 export async function closeTable() {
   const out = await api('/api/table/close', { method: 'POST' });

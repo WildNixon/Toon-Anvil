@@ -56,6 +56,13 @@ const MODES = [
   { id: 'dm-setup',  label: 'Setup', shell: 'dm', group: 'The Campaign',
     load: () => import('./modes/dm/setup-mode.js') },
 
+  // Where a session starts and where everyone waits. Belongs to BOTH shells,
+  // because hosting and joining are one room seen from two sides. Listed
+  // LAST on purpose: the boot mode falls back to visibleModes()[0], and
+  // putting the lobby earlier would quietly move the DM's home screen.
+  { id: 'lobby',     label: 'Lobby',     always: true,    group: 'The Table',
+    load: () => import('./modes/lobby/lobby.js') },
+
   // No shell: the gear serves both.
   { id: 'settings',  label: 'Settings',  gear: true,
     load: () => import('./modes/settings/settings.js') },
@@ -498,7 +505,15 @@ async function mountGates() {
         await session.refresh();
         await refreshChrome();
         if (picked === 'new') go('build');
-        else if (picked) await selectCharacter(picked);
+        else if (picked) {
+          await selectCharacter(picked);
+          // Say where to go rather than inheriting whatever the boot mode
+          // happened to be. This used to rely on the player shell's first
+          // mode already being the sheet, so adding the lobby silently left
+          // a player who had just picked a character sitting in the queue
+          // looking at it. You chose someone - here they are.
+          go('sheet');
+        }
         await renderMode();
       },
     });
@@ -843,9 +858,16 @@ async function boot() {
   // Legacy hash: the DM screen used to be one mode with lens tabs.
   const rawHash = location.hash.replace('#', '');
   const hash = rawHash === 'dm' ? 'dm-stage' : rawHash;
+  // A table that is open but not started means everyone is still gathering,
+  // and the lobby is where gathering happens - so that is where a boot lands
+  // rather than dropping someone onto a character sheet with no sense that
+  // anyone else is there. An explicit hash still wins: somebody who
+  // bookmarked their sheet gets their sheet.
+  const gathering = session.isOpen() && !session.started();
   const mode = visibleModes().some((m) => m.id === hash)
     ? hash
-    : (visibleModes()[0]?.id || 'build');
+    : gathering ? 'lobby'
+      : (visibleModes()[0]?.id || 'build');
   setState({ mode });
 
   // Watch BEFORE anything renders. The watcher baselines on the current

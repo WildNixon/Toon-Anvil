@@ -36,7 +36,10 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CATALOGUE = ROOT / "sim" / "reach-catalogue.json"
+# Lives under app/ because serve.py serves static files from there and
+# ONLY from there - the browser tier has to be able to fetch the same
+# file this one reads, or the two tiers are agreeing by coincidence.
+CATALOGUE = ROOT / "app" / "sim" / "reach-catalogue.json"
 
 # What the dice rail actually asks for (dicerail.js), so the bytes a DM would
 # have to scan are the bytes a real screen really receives.

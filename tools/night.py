@@ -464,6 +464,14 @@ def run(args):
         print(f"  ! the report failed ({type(e).__name__}: {e})")
         print(f"  the rows are intact at {ROWS} — rerun tools/night_report.py")
     finally:
+        # Close the bench. A run that leaves its table open leaves the whole
+        # instance write-locked behind a join code nobody kept, so the next
+        # thing to touch it - the ager, the cost tier, a person - gets a 401
+        # for no reason it can see.
+        try:
+            _req(base, "/api/table/close", "POST")
+        except (OSError, urllib.error.URLError, ConnectionError):
+            pass
         if proc:
             proc.terminate()
         LOCK.unlink(missing_ok=True)

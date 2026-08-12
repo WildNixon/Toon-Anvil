@@ -3598,7 +3598,7 @@ export const SUITES = [
         id: 'nav_truth_table',
         title: 'Two shells: who sees which app, as one pure rule',
         run(c, { session }) {
-          c.feature('seat', 'nav', 'shell', 'grants');
+          c.feature('seat', 'nav', 'shell', 'grants', 'lobby');
           // A miniature MODES table carrying every flag the rule reads.
           const MODES = [
             { id: 'sheet', shell: 'player' }, { id: 'build', shell: 'player' },
@@ -3609,9 +3609,17 @@ export const SUITES = [
             { id: 'dm-world', shell: 'dm' }, { id: 'dm-story', shell: 'dm' },
             { id: 'dm-setup', shell: 'dm' },
             { id: 'settings', gear: true },
+            // The lobby: hosting and joining are one room seen from two
+            // sides, so it belongs to BOTH shells like the gear does.
+            { id: 'lobby', always: true },
           ];
           const ids = (args) => session.navFor(args, MODES).map((m) => m.id);
-          const DM_SHELL = 'dm-stage,dm-deck,dm-world,dm-story,dm-setup,settings';
+          // The lobby trails the list because it is declared last in MODES,
+          // which is deliberate: the boot mode falls back to the FIRST
+          // visible mode, and a lobby earlier in the list would silently
+          // move the DM's home screen.
+          const DM_SHELL = 'dm-stage,dm-deck,dm-world,dm-story,dm-setup,'
+            + 'settings,lobby';
 
           // The claim worth pinning: the DM's app is the SAME app solo and
           // at a table. The seat picks the shell, whole.
@@ -3642,8 +3650,22 @@ export const SUITES = [
 
           c.eq(ids({ tableOpen: false, seat: 'player',
             forgeOpen: false, hasGrant: false }).join(','),
-          'sheet,build,combat,shop,settings',
+          'sheet,build,combat,shop,settings,lobby',
           'solo player seat keeps Build and Combat - no DM to gate them');
+
+          // The lobby is in BOTH shells and survives every gate, because
+          // hosting and joining are the same room from two sides. A player
+          // who could not see it could not join; a DM who could not see it
+          // could not watch anyone arrive.
+          for (const args of [
+            { tableOpen: false, seat: 'dm' },
+            { tableOpen: true, seat: 'dm' },
+            { tableOpen: false, seat: 'player' },
+            { tableOpen: true, seat: 'player', forgeOpen: false, hasGrant: false },
+          ]) {
+            c.ok(ids(args).includes('lobby'),
+              `the lobby survives ${JSON.stringify(args)}`);
+          }
         },
       },
             {
@@ -4146,6 +4168,62 @@ export const SUITES = [
           c.eq(me?.hp, 22, 'player characters keep their hit points');
 
           await table.del('encounters', 'current', dm.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'only_the_dm_starts_the_session',
+        title: 'The lobby latch belongs to the DM, and a player cannot touch it',
+        why: 'Starting drags every seat out of the lobby at once. If a player '
+           + 'could flip it they could yank four other phones onto their '
+           + 'character sheets mid-sentence, or shove everyone back into the '
+           + 'queue in the middle of a fight. Same reasoning as the forge: '
+           + 'close has a local-machine hatch for disaster recovery, start '
+           + 'deliberately has none.',
+        async run(c, { table }) {
+          c.feature('table', 'lobby', 'permissions', 'security');
+          await table.close();
+
+          const opened = await table.open('Gym DM');
+          const dm = opened.token;
+          c.ok(Boolean(dm), 'the table opened');
+
+          // A fresh table has NOT started: gathering is the resting state,
+          // or everyone would boot straight past the lobby they came for.
+          const fresh = await table.status(dm);
+          c.eq(fresh.body.started, false, 'a new table has not started');
+
+          const joined = await table.join(opened.code, 'Kim');
+          const player = joined.token;
+          c.ok(Boolean(player), 'a player joined');
+
+          // The refusal, over HTTP. Hiding the button proves nothing.
+          const forged = await table.start(true, player);
+          c.eq(forged.status, 403, 'a player cannot start the session');
+          const unseated = await table.start(true, null);
+          c.ok(unseated.status === 401 || unseated.status === 403,
+            'and neither can a browser with no seat at all',
+            String(unseated.status));
+          c.eq((await table.status(dm)).body.started, false,
+            'so it is still not started');
+
+          // The DM can, and every seat can SEE it - the flag is public
+          // state, because a player screen has to act on it.
+          c.eq((await table.start(true, dm)).body.started, true,
+            'the DM starts it');
+          c.eq((await table.status(player)).body.started, true,
+            'and the player receives that, which is what leaves the queue');
+
+          // Reversible: a DM who started by accident is not stuck.
+          c.eq((await table.start(false, dm)).body.started, false,
+            'the DM can send everyone back to the lobby');
+
+          // Closing forgets it, so the next table starts by gathering.
+          await table.start(true, dm);
+          await table.close();
+          const after = await table.open('Gym DM 2');
+          c.eq((await table.status(after.token)).body.started, false,
+            'a NEW table has not inherited the previous start');
           await table.close();
         },
       },

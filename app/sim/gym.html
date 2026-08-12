@@ -189,6 +189,8 @@ async function buildCtx() {
         changes: (since = 0) => call(`/api/changes?since=${since}`),
         forge: (open, token) => call('/api/table/forge',
           { method: 'POST', body: JSON.stringify({ open }) }, token),
+        start: (started, token) => call('/api/table/start',
+          { method: 'POST', body: JSON.stringify({ started }) }, token),
         grant: (body, token) => call('/api/table/grant',
           { method: 'POST', body: JSON.stringify(body) }, token),
         // Hold a real EventSource open and collect what arrives. Testing the

@@ -834,6 +834,21 @@ class Handler(SimpleHTTPRequestHandler):
                 bump("table", None, self._client())
                 return self._send_json(out)
 
+            if action == "start":
+                # Begin the session. DM token only, same reasoning as forge:
+                # close has a local-machine hatch for disaster recovery, but a
+                # start hatch would let any browser on the DM's machine drag
+                # five phones out of the lobby.
+                who = mod.whoami(self._token())
+                if not who:
+                    return self._send_json({"error": "join first"}, 401)
+                if who.get("role") != "dm":
+                    return self._send_json(
+                        {"error": "only the DM starts the session"}, 403)
+                out = mod.set_started(bool(payload.get("started", True)))
+                bump("table", None, self._client())
+                return self._send_json(out)
+
             if action == "grant":
                 # Permit a character (or every player's character) to level.
                 # DM token only - same reasoning as the forge above.

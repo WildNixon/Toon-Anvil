@@ -232,6 +232,12 @@ def main() -> int:
     # address, not a place a browser can go.
     local_url = (f"http://127.0.0.1:{port}" if host in ("0.0.0.0", "")
                  else f"http://{host}:{port}")
+    # Land on the lobby, not on a character sheet. Starting the server and
+    # starting a GAME used to be two unrelated acts: the server came up, the
+    # browser opened someone's sheet, and hosting was five taps away inside
+    # the DM shell. The launch now opens the room where a session begins -
+    # host, or join, or play alone, all from the first screen.
+    lobby_url = f"{local_url}/#lobby"
     print(f"\n  Inbox:  {ROOT / 'inbox'}")
     print(f"{DIM}  Put homebrew files in the inbox folder; PDFs are split "
           f"automatically.{OFF}")
@@ -241,9 +247,12 @@ def main() -> int:
     # is one that already works. Printing them here too meant the same two
     # addresses appeared twice under two different labels, which at setup
     # time reads as two different answers. These notes ride along instead.
-    notes = []
+    notes = [
+        f"{DIM}  The browser opens on the Lobby: host a game and read the "
+        f"code out, or play on your own.{OFF}",
+    ]
     if args.lan:
-        notes = [
+        notes += [
             f"{DIM}  Anyone on this network can reach the app now - the "
             f"join code gates seats,{OFF}",
             f"{DIM}  not the pages. Use --lan only on a network you "
@@ -255,7 +264,7 @@ def main() -> int:
         ]
 
     if not args.no_browser:
-        threading.Timer(1.2, lambda: webbrowser.open(local_url)).start()
+        threading.Timer(1.2, lambda: webbrowser.open(lobby_url)).start()
 
     sys.argv = [sys.argv[0], "--port", str(port), "--host", host]
     import serve                                               # noqa: PLC0415

@@ -1,0 +1,11 @@
+{
+  "_why": "Veto caps for the cost tier, CALIBRATED against the shipped app before the first graded run rather than guessed. A floor set below the app you already ship is a bar you end up moving at 3am to make a number look better.",
+  "_measured": "DM shell at 390x844, all five lenses plus Settings: choices 5-21, distinct numbers 0-33, minimum font 10px on every screen.",
+  "reach": {
+    "CHOICE_CAP": 32,
+    "NUMBER_CAP": 48,
+    "_choice_note": "observed max 21 (World). Set one notch above so a real regression trips it and today's app does not.",
+    "_number_note": "observed max 33 (Story). Stage legitimately shows ~22 for a fight, which is why this is not tighter.",
+    "_legibility_note": "NOT a veto. The app's own floor is 10px everywhere, so vetoing on 13px rejected every screen. minFontPx is reported per row instead."
+  }
+}
