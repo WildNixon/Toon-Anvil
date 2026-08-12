@@ -109,3 +109,9 @@ venv/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# The overnight measurement run. night/bench.json holds LIVE join tokens for
+# the isolated instance, and the jsonl files are raw measurement rows that
+# regenerate from a re-run - the report is the artefact worth keeping.
+night/
+data/night/
