@@ -253,9 +253,12 @@ export function colourOf(characterId) {
 
 /* ------------------------------------------------------------------ */
 
-export async function openTable(name = 'DM') {
+export async function openTable(name = 'DM', { campaignId = null, campaignName = null } = {}) {
+  // The campaign is optional: naming one stamps it on the table so every
+  // seat's queue can say what the room is playing; naming none is a pickup
+  // game, which is a way to play and not a mistake.
   const out = await api('/api/table/open', {
-    method: 'POST', body: JSON.stringify({ name }),
+    method: 'POST', body: JSON.stringify({ name, campaignId, campaignName }),
   });
   if (out.token) setToken(out.token);
   await refresh();

@@ -159,8 +159,8 @@ async function buildCtx() {
       };
       return {
         status: (token) => call('/api/table', {}, token),
-        open: (name) => call('/api/table/open',
-          { method: 'POST', body: JSON.stringify({ name }) }),
+        open: (name, extra = {}) => call('/api/table/open',
+          { method: 'POST', body: JSON.stringify({ name, ...extra }) }),
         close: () => call('/api/table/close', { method: 'POST' }),
         join: (code, name) => call('/api/table/join',
           { method: 'POST', body: JSON.stringify({ code, name }) }),

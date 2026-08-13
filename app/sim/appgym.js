@@ -4361,6 +4361,66 @@ export const SUITES = [
         },
       },
       {
+        id: 'table_carries_campaign',
+        title: 'The table says what the room is playing, to every seat',
+        why: 'Before this, "which campaign" was a per-browser answer - an '
+           + 'active flag plus localStorage - so the session itself never '
+           + 'knew, and a player queueing in the lobby could not be told what '
+           + 'they were queueing for. The fields are id and display name '
+           + 'ONLY: the campaign record itself stays behind redact_campaign, '
+           + 'and a pickup game that names no campaign is a way to play, not '
+           + 'a validation error.',
+        async run(c, { table }) {
+          c.feature('table', 'lobby', 'campaign');
+          await table.close();
+
+          const opened = await table.open('Gym DM', {
+            campaignId: 'camp-gym-probe', campaignName: 'Gym Campaign',
+          });
+          c.ok(Boolean(opened.token), 'the table opened with a campaign named');
+
+          const dm = await table.status(opened.token);
+          c.eq(dm.body.campaignId, 'camp-gym-probe', 'the DM sees the id');
+          c.eq(dm.body.campaignName, 'Gym Campaign', 'and the name');
+
+          // Public like started/forgeOpen: the player's queue renders it.
+          const joined = await table.join(opened.code, 'Kim');
+          const player = await table.status(joined.token);
+          c.eq(player.body.campaignName, 'Gym Campaign',
+            'a seated player is told what the room is playing');
+          const nobody = await table.status(null);
+          c.eq(nobody.body.campaignName, 'Gym Campaign',
+            'so is an unseated browser - it is a title, not a secret');
+
+          // Only the two display fields ride along. The record itself keeps
+          // going through redact_campaign like always.
+          c.ok(!('campaign' in player.body) && !('lore' in player.body),
+            'and nothing else campaign-shaped rides the table status');
+
+          // A hostile id is dropped rather than stored: the field becomes
+          // part of a record other seats read.
+          await table.close();
+          const nasty = await table.open('Gym DM', {
+            campaignId: '../../etc/passwd', campaignName: 'Nasty',
+          });
+          c.eq((await table.status(nasty.token)).body.campaignId, null,
+            'an id that could escape the data directory is refused');
+
+          // A pickup game: no campaign, no complaint, nulls all the way.
+          await table.close();
+          const pickup = await table.open('Gym DM');
+          const st = await table.status(pickup.token);
+          c.eq(st.body.campaignId, null, 'a pickup game carries no id');
+          c.eq(st.body.campaignName, null, 'and no name');
+
+          // The closed-table shape is unchanged: still no code key at rest.
+          await table.close();
+          const closed = await table.status(null);
+          c.ok(!('code' in closed.body),
+            'a closed table still never carries the code');
+        },
+      },
+      {
         id: 'not_joined_is_not_privileged',
         title: 'A browser that never joined sees a player\'s view, not the DM\'s',
         why: 'Found at a real table: whoami() answers None BOTH for "no table, '

@@ -23,7 +23,6 @@
  */
 
 import { getState, el, toast } from '../../core/store.js';
-import { db } from '../../core/db.js';
 import * as session from '../../core/session.js';
 import * as live from '../../core/live.js';
 import { qrSvg } from '../../ui/qr.js';
@@ -61,7 +60,7 @@ export async function render(root) {
     // behaving like a bug.
     if (!wasStarted && session.started()) {
       toast('The session has started', 'ok');
-      return go(session.isDm() ? 'dm-stage' : 'play');
+      return go(session.isDm() ? 'dm-stage' : 'sheet');
     }
     draw();
   });
@@ -131,7 +130,7 @@ function drawHost() {
   const soloRow = el('div', { class: 'btnrow' });
   soloRow.append(el('button', {
     class: 'act ghost',
-    onClick: async () => { await session.setLocalRole('player'); go('play'); },
+    onClick: async () => { await session.setLocalRole('player'); go('sheet'); },
   }, 'Play on my own'));
   soloRow.append(el('button', {
     class: 'act ghost',
@@ -194,6 +193,13 @@ function drawQueue(status) {
   const isDm = session.isDm();
   const started = Boolean(status.started);
 
+  // What the room is playing, said to every seat - a player queueing for
+  // "Curse of the Amber Throne" should not have to ask. Absent for a pickup
+  // game, which names no campaign on purpose.
+  if (status.campaignName) {
+    container.append(el('div', { class: 'strip' },
+      el('span', { class: 'grow' }, `Playing ${status.campaignName}`)));
+  }
   if (started) container.append(startedBanner(isDm));
   if (isDm) container.append(hostCard(status));
   container.append(rosterCard(status, isDm));
@@ -207,7 +213,7 @@ function startedBanner(isDm) {
   box.append(el('h3', {}, 'The session has started'));
   box.append(el('div', { class: 'btnrow' }, el('button', {
     class: 'act',
-    onClick: () => go(isDm ? 'dm-stage' : 'play'),
+    onClick: () => go(isDm ? 'dm-stage' : 'sheet'),
   }, isDm ? 'Go to the Stage' : 'Go to my character')));
   return box;
 }
@@ -306,7 +312,7 @@ function pickCard(status) {
       'You are ready. The DM starts when the room is.'));
     panel.append(el('div', { class: 'btnrow' }, el('button', {
       class: 'act ghost',
-      onClick: async () => { await selectCharacter(mine[0]); go('play'); },
+      onClick: async () => { await selectCharacter(mine[0]); go('sheet'); },
     }, 'Look at my sheet')));
     return panel;
   }

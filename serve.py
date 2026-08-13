@@ -815,7 +815,15 @@ class Handler(SimpleHTTPRequestHandler):
                 if not self._is_local():
                     return self._send_json(
                         {"error": "only the DM's own machine can open a table"}, 403)
-                out = mod.open_table(payload.get("name") or "DM")
+                # The campaign is optional - a pickup game names none. The id
+                # goes through safe_id because it becomes part of the record
+                # other seats read; the name is display-only and table.py
+                # trims it.
+                out = mod.open_table(
+                    payload.get("name") or "DM",
+                    campaign_id=safe_id(str(payload.get("campaignId") or ""))
+                    or None,
+                    campaign_name=payload.get("campaignName") or None)
                 bump("table", None, self._client())
                 return self._send_json(out)
 

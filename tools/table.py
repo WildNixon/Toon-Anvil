@@ -43,7 +43,13 @@ def _blank() -> dict:
             # The lobby latch. False while everyone is still gathering,
             # True once the DM says go - which is what lets five phones
             # leave the queue together instead of one at a time.
-            "started": False}
+            "started": False,
+            # What the room is playing. Before this, "which campaign" was a
+            # per-browser answer (an active flag plus localStorage), so the
+            # session itself never knew - and the queue could not tell a
+            # player what they were queueing for. Id and display name ONLY:
+            # everything else about a campaign stays behind redact_campaign.
+            "campaignId": None, "campaignName": None}
 
 
 def read() -> dict:
@@ -78,12 +84,20 @@ def normalise_code(raw: str) -> str:
 # lifecycle
 # --------------------------------------------------------------------------
 
-def open_table(dm_name: str = "DM") -> dict:
-    """Start a table. Returns the code and the DM's own token."""
+def open_table(dm_name: str = "DM", campaign_id: str | None = None,
+               campaign_name: str | None = None) -> dict:
+    """Start a table. Returns the code and the DM's own token.
+
+    The campaign is optional on purpose: a pickup one-shot with forged
+    pregens is a first-class way to play, not a degraded one.
+    """
     with _lock:
         data = _blank()
         data["open"] = True
         data["code"] = new_code()
+        data["campaignId"] = campaign_id or None
+        data["campaignName"] = (str(campaign_name).strip()[:80] or None) \
+            if campaign_name else None
         # Session zero starts with the forge open: players make and rebuild
         # their characters freely until the DM closes it for the campaign.
         data["forgeOpen"] = True
@@ -193,6 +207,11 @@ def status(token: str | None = None) -> dict:
         # Public, like forgeOpen: every seat's lobby watches this to know
         # when to stop waiting. It is not a secret and it is not a permission.
         "started": bool(data.get("started")),
+        # Also public: the queue tells everyone what the room is playing.
+        # The NAME is already player-visible through redact_campaign; the
+        # rest of the campaign record never rides the table status.
+        "campaignId": data.get("campaignId"),
+        "campaignName": data.get("campaignName"),
         "grants": visible_grants,
         "me": me,
         "profiles": [
