@@ -15,10 +15,13 @@ import * as session from '../../core/session.js';
 import * as live from '../../core/live.js';
 import { log } from '../../core/events.js';
 import {
-  listCampaigns, activeCampaign, saveCampaign, setActive, newCampaign,
+  listCampaigns, activeCampaign, saveCampaign, setActive,
   newRegion, newFaction, currentRegion,
   newClock, tickClock, advanceDayClocks,
 } from '../../core/campaign.js';
+import {
+  campaignStartBlock as foundingBlock, deckBooks, cleanTitle,
+} from './founding.js';
 import { query } from '../../core/events.js';
 import { lineChart, barChart } from '../../ui/chart.js';
 import { weatherFor, forecastFor } from '../../core/weather.js';
@@ -60,34 +63,6 @@ function ensureShelfListing() {
     shelfListing = r;
     if (container?.dataset.rendered === 'dm-deck') draw();
   });
-}
-
-/** The Deck-material books: what a campaign can begin from. */
-function deckBooks() {
-  const cats = shelfListing?.categories || {};
-  return ['settings', 'adventures'].flatMap((c) => cats[c] || []);
-}
-
-/** 'Plane-Shift_Kaladesh.pdf' -> 'Plane Shift Kaladesh'. */
-function cleanTitle(name) {
-  return String(name || '').replace(/\.pdf$/i, '')
-    .replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-async function beginFromBook(book, typedName = '') {
-  const c = newCampaign(typedName || cleanTitle(book.name));
-  c.sourceSlug = book.slug;
-  c.sourceName = book.name;
-  c.active = all.length === 0;
-  await saveCampaign(c);
-  await setActive(c.id);
-  await refresh();
-  await log('campaign_founded', { name: c.name, source: book.name },
-    { campaignId: c.id });
-  toast(`${c.name} begins - the book is open`, 'ok');
-  // Straight into the review rows: founding from a book IS the setup flow.
-  await ingestFromShelf(book.slug, book.name);
-  if (!ingest) draw();
 }
 
 export async function render(root) {
@@ -1153,103 +1128,30 @@ function newCampaignPanel() {
 }
 
 /**
- * The one place a campaign is born. `hero: true` (the empty Deck) leads
- * with a full row per shelf book; the compact form (campaign panel) offers
- * a picker instead. The blank-start row - the 'Campaign name' input and
- * 'Found the campaign' button - renders SYNCHRONOUSLY and unconditionally:
- * the gym's fallbacks (and a DM with no books) depend on it existing even
- * while the shelf is still being fetched.
+ * A campaign is born in founding.js now, shared with the Lobby - this
+ * wrapper just wires the Deck's own state and its after-founding move in.
+ * `hero: true` (the empty Deck) leads with a full row per shelf book; the
+ * compact form (campaign panel) offers a picker instead.
  */
 function campaignStartBlock({ hero = false } = {}) {
-  const box = el('div', {});
-  const name = el('input', {
-    type: 'text', placeholder: 'Campaign name...',
-    'aria-label': 'Campaign name', style: 'max-width:240px',
-  });
-
-  const books = deckBooks().filter((b) => b.extractedOk);
-  if (hero) {
-    box.append(el('span', { class: 'eyebrow' }, 'From a book on your shelf'));
-    if (shelfListing === null) {
-      ensureShelfListing();
-      box.append(el('p', { class: 'muted', style: 'font-size:12px;margin:4px 0 8px' },
-        'Looking at the shelf...'));
-    } else if (!books.length) {
-      box.append(el('p', { class: 'muted', style: 'font-size:13px;margin:4px 0 8px' },
-        'No settings or adventures on the shelf yet. Drop a .pdf book in '
-        + 'Setup and it files itself; then it appears here.'));
-    } else {
-      let toHighlight = null;
-      for (const b of books) {
-        const row = el('div', {
-          style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;'
-            + 'padding:7px 0;border-bottom:1px solid var(--etch)'
-            + (b.slug === highlightSlug ? ';outline:2px solid var(--accent);'
-              + 'outline-offset:3px' : ''),
-        });
-        row.append(el('strong', { style: 'flex:1;min-width:170px' },
-          cleanTitle(b.name)));
-        row.append(el('span', { class: 'mono muted', style: 'font-size:11px' },
-          `${b.pages || '?'} pages · ${Object.values(b.written || {})
-            .reduce((n, x) => n + x, 0)} sections`));
-        row.append(el('button', {
-          class: 'act small',
-          title: 'Found a campaign named for this book (or type a name first) '
-            + 'and open its sections for filing',
-          onClick: () => beginFromBook(b, name.value.trim()),
-        }, 'Begin this campaign'));
-        if (b.slug === highlightSlug) toHighlight = row;
-        box.append(row);
-      }
-      if (toHighlight) {
-        setTimeout(() => toHighlight.scrollIntoView({ block: 'center' }), 60);
-        highlightSlug = null;
-      }
-    }
-    box.append(el('span', {
-      class: 'eyebrow', style: 'display:block;margin-top:12px',
-    }, 'Or start blank'));
-  }
-
-  const row = el('div', { class: 'btnrow', style: 'margin-top:8px' });
-  row.append(name);
-  row.append(el('button', {
-    class: 'act',
-    onClick: async () => {
-      const n = name.value.trim();
-      if (!n) return toast('Name it first', 'warn');
-      const c = newCampaign(n);
-      c.active = all.length === 0;
-      await saveCampaign(c);
-      await setActive(c.id);
+  return foundingBlock({
+    hero,
+    books: deckBooks(shelfListing).filter((b) => b.extractedOk),
+    shelfPending: shelfListing === null,
+    all,
+    highlightSlug,
+    onHighlight: () => { highlightSlug = null; },
+    onNeedShelf: ensureShelfListing,
+    onFound: async (c, { book }) => {
       await refresh();
-      await log('campaign_founded', { name: c.name }, { campaignId: c.id });
-      draw();
-      toast(`${c.name} begins`, 'ok');
-      return null;
+      if (book) {
+        // Straight into the review rows: founding from a book IS the
+        // setup flow - here. The Lobby deliberately does not do this.
+        await ingestFromShelf(book.slug, book.name);
+        if (!ingest) draw();
+      } else {
+        draw();
+      }
     },
-  }, 'Found the campaign'));
-  box.append(row);
-
-  // The compact path to a second book campaign, next to the blank row.
-  if (!hero) {
-    if (shelfListing === null) ensureShelfListing();
-    if (books.length) {
-      const prow = el('div', { class: 'btnrow', style: 'margin-top:8px' });
-      const sel = el('select', {
-        'aria-label': 'Book to begin from', style: 'width:auto',
-      });
-      for (const b of books) sel.append(el('option', { value: b.slug }, b.name));
-      prow.append(sel);
-      prow.append(el('button', {
-        class: 'act ghost',
-        onClick: () => {
-          const b = books.find((x) => x.slug === sel.value);
-          if (b) beginFromBook(b, name.value.trim());
-        },
-      }, 'Begin from this book'));
-      box.append(prow);
-    }
-  }
-  return box;
+  });
 }

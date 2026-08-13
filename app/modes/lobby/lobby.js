@@ -26,6 +26,9 @@ import { getState, el, toast } from '../../core/store.js';
 import * as session from '../../core/session.js';
 import * as live from '../../core/live.js';
 import { qrSvg } from '../../ui/qr.js';
+import { listCampaigns, activeCampaign, setActive } from '../../core/campaign.js';
+import { listShelf, uploadPdf, verdictLine } from '../../core/shelf.js';
+import { campaignStartBlock, deckBooks } from '../dm/founding.js';
 import { go, refreshChrome, selectCharacter } from '../../app.js';
 
 export const title = 'Lobby';
@@ -35,21 +38,52 @@ let unsubscribe = null;
 let busy = false;
 // Held across redraws so a half-typed name survives a player arriving.
 const draft = { host: 'DM', join: '', code: '', colour: null };
+// The host face is campaign-first, so it needs the campaign list and the
+// shelf. Both live here so draw() can stay synchronous.
+let campaigns = [];
+let activeCamp = null;
+let shelfListing = null;
+let shelfFetching = false;
+// { name } while a dropped PDF is being read - which can be minutes.
+let filing = null;
+
+async function refreshCampaigns() {
+  campaigns = await listCampaigns().catch(() => []);
+  activeCamp = await activeCampaign().catch(() => null);
+}
+
+/** One in-flight shelf fetch, however many redraws ask. */
+function ensureShelf() {
+  if (shelfListing !== null || shelfFetching) return;
+  shelfFetching = true;
+  listShelf().then((r) => {
+    shelfFetching = false;
+    shelfListing = r;
+    if (container?.dataset.rendered === 'lobby') draw();
+  });
+}
 
 export async function render(root) {
   container = root;
+  // Entering the mode re-reads the shelf: it is server state another surface
+  // (the Deck, the workshop drop, the CLI) may have grown since we looked.
+  shelfListing = null;
   await session.refresh().catch(() => {});
+  await refreshCampaigns();
   draw();
 
   if (unsubscribe) unsubscribe();
   // The whole screen is other people arriving, so it redraws on the table
   // and on characters - a claim changes a row without changing the table.
-  unsubscribe = live.subscribe(['table', 'characters'], async () => {
+  // Campaigns too: the host face lists them, and a founding in another tab
+  // should appear here without a reload.
+  unsubscribe = live.subscribe(['table', 'characters', 'campaigns'], async () => {
     if (container?.dataset.rendered !== 'lobby') {
       unsubscribe?.(); unsubscribe = null; return;
     }
     const wasStarted = session.started();
     await session.refresh().catch(() => {});
+    await refreshCampaigns();
     await refreshChrome().catch(() => {});
 
     // The DM said go. Leave the queue on our own rather than waiting to be
@@ -84,18 +118,67 @@ function draw() {
 function drawHost() {
   const panel = el('div', { class: 'panel rivets accent' });
   panel.append(el('span', { class: 'lvl accent' }, 'Start a session'));
-  panel.append(el('h3', {}, 'Nobody is hosting yet'));
+  panel.append(el('h3', {}, 'Set the campaign, then open the table'));
   panel.append(el('p', { class: 'muted', style: 'font-size:14px;max-width:60ch' },
-    'Open a table and everyone on this network joins with a short code. '
-    + 'They pick a character, you see them arrive, and you start when the '
-    + 'room is ready.'));
+    'Pick what the room will play first - resume a campaign, begin one from '
+    + 'a book, or drop a fresh PDF and it files itself. Then open the table: '
+    + 'everyone on this network joins with a short code, you watch them '
+    + 'arrive, and you start when the room is ready.'));
 
+  // -- the campaign, first ------------------------------------------------
+  if (campaigns.length) {
+    panel.append(el('span', { class: 'eyebrow' }, 'Resume a campaign'));
+    for (const c of campaigns) {
+      const row = el('div', {
+        style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;'
+          + 'padding:6px 0;border-bottom:1px solid var(--etch)',
+      });
+      row.append(el('strong', { style: 'flex:1;min-width:150px' }, c.name));
+      row.append(el('span', { class: 'mono muted', style: 'font-size:11px' },
+        `day ${c.day || 1}${c.sourceName ? ` · from ${c.sourceName}` : ''}`));
+      if (activeCamp?.id === c.id) {
+        row.append(el('span', { class: 'chip ok' }, 'this one'));
+      } else {
+        row.append(el('button', {
+          class: 'act ghost small',
+          onClick: async () => {
+            await setActive(c.id);
+            await refreshCampaigns();
+            draw();
+          },
+        }, 'Play this one'));
+      }
+      panel.append(row);
+    }
+    panel.append(el('div', { style: 'margin-top:12px' }));
+  }
+
+  panel.append(campaignStartBlock({
+    hero: true,
+    books: deckBooks(shelfListing).filter((b) => b.extractedOk),
+    shelfPending: shelfListing === null,
+    all: campaigns,
+    emptyHint: 'No settings or adventures on the shelf yet. Drop a .pdf '
+      + 'below and it files itself; then it appears here.',
+    onNeedShelf: ensureShelf,
+    // The Lobby founds and stays put - no section filing here. The Deck's
+    // book nudge picks that up the next time the DM opens it.
+    onFound: async () => { await refreshCampaigns(); draw(); },
+  }));
+  panel.append(pdfRow());
+
+  // -- then the table -----------------------------------------------------
+  panel.append(el('div', { class: 'rule' }));
+  panel.append(el('p', { class: 'muted', style: 'font-size:13px;margin:0 0 4px' },
+    activeCamp
+      ? `Playing: ${activeCamp.name}`
+      : 'No campaign picked - hosting a pickup game'));
   const name = el('input', {
     type: 'text', value: draft.host, 'aria-label': 'Your name at the table',
     style: 'max-width:220px',
     onInput: (e) => { draft.host = e.target.value; },
   });
-  const row = el('div', { class: 'btnrow', style: 'margin-top:10px' });
+  const row = el('div', { class: 'btnrow', style: 'margin-top:4px' });
   row.append(name);
   row.append(el('button', {
     class: 'act',
@@ -105,8 +188,13 @@ function drawHost() {
       let out;
       // finally, not a trailing assignment: anything that throws between
       // here and there would leave busy set and every later press dead.
-      try { out = await session.openTable(draft.host.trim() || 'DM'); }
-      finally { busy = false; }
+      try {
+        // Resolved at click time, not draw time: the campaign picked ten
+        // seconds ago is the one the table should carry.
+        const camp = await activeCampaign().catch(() => null);
+        out = await session.openTable(draft.host.trim() || 'DM',
+          camp ? { campaignId: camp.id, campaignName: camp.name } : {});
+      } finally { busy = false; }
       if (out?.error || out?.status === 403) {
         // The server only lets the machine it runs on open a table - a
         // player who could open one could rotate the code and lock the DM out.
@@ -138,6 +226,48 @@ function drawHost() {
   }, 'Prep as the DM'));
   solo.append(soloRow);
   container.append(solo);
+}
+
+/** Drop a book, watch it file itself, begin from it - without leaving. */
+function pdfRow() {
+  const box = el('div', { style: 'margin-top:12px' });
+  box.append(el('span', { class: 'eyebrow' }, 'Or drop a fresh book'));
+
+  if (filing) {
+    // uploadPdf is synchronous by contract: the response IS the finished
+    // verdict, so there is no progress to poll - just an honest busy line.
+    box.append(el('p', { class: 'muted', style: 'font-size:13px;margin:4px 0 0' },
+      `Reading ${filing.name}... a big book takes a minute or two, and the `
+      + 'rest of the app keeps working while it grinds.'));
+    return box;
+  }
+
+  box.append(el('input', {
+    type: 'file', accept: '.pdf', 'aria-label': 'Campaign book PDF',
+    style: 'margin-top:4px',
+    onChange: async (e) => {
+      const f = e.target.files?.[0];
+      if (f) await shelveBook(f);
+    },
+  }));
+  box.append(el('p', { class: 'muted', style: 'font-size:12px;margin:4px 0 0' },
+    'It lands on the shelf, files itself by what it is, and appears above '
+    + 'ready to begin.'));
+  return box;
+}
+
+async function shelveBook(f) {
+  filing = { name: f.name };
+  draw();
+  toast(`Reading ${f.name} - a big book takes a minute or two...`, 'ok');
+  const res = await uploadPdf(f);
+  filing = null;
+  // Minutes may have passed. If the DM wandered off to another mode, say
+  // what happened in a toast and leave their screen alone.
+  toast(verdictLine(res), res.status === 200 ? 'ok' : 'bad');
+  if (container?.dataset.rendered !== 'lobby') return;
+  shelfListing = null;
+  draw();
 }
 
 /* ------------------------------------------------------------------ */

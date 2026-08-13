@@ -3324,6 +3324,108 @@ export async function runQuickParty(CheckClass) {
 }
 
 /**
+ * The campaign-first host flow, driven through the actual Lobby screen.
+ *
+ * Every other flow opens its table straight over HTTP, which means the host
+ * FACE - the thing a real DM walks through - had zero coverage until the
+ * redesign made it campaign-first. This walks the whole promise: the pickup
+ * escape is visible, founding a campaign updates the caption, hosting stamps
+ * the campaign on the table, and the queue tells the room what it is playing.
+ *
+ * Boots ?storage=memory so the founded campaign lives and dies with the
+ * frame; the table itself is real server state and is closed in finally.
+ */
+export async function runLobbyHostFlow(CheckClass) {
+  const check = new CheckClass('lobby_host');
+  const t0 = performance.now();
+  let error = null;
+  let frame = null;
+  try {
+    check.feature('ui', 'table', 'lobby', 'campaign');
+
+    await api('/api/table/close', { method: 'POST' });
+
+    frame = document.createElement('iframe');
+    frame.src = '/index.html?storage=memory';
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;'
+      + 'height:1000px;border:0';
+    document.body.append(frame);
+    await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
+    const doc = frame.contentDocument;
+
+    const ready = await waitFor(() => (doc.querySelector('main') ? true : null),
+      { timeout: 15000 });
+    check.ok(!!ready, 'the app boots');
+    if (!ready) throw new Error('no app frame');
+
+    // Take the DM seat if the first-run welcome asks.
+    [...doc.querySelectorAll('.welcome button')]
+      .find((b) => /dungeon master/i.test(b.textContent))?.click();
+    await waitUntilSettled(doc);
+
+    // The lobby, via the nav like a person would.
+    let onLobby = false;
+    for (let i = 0; i < 4 && !onLobby; i += 1) {
+      button(doc, 'Lobby')?.click();
+      onLobby = !!(await waitFor(() => (
+        /Set the campaign/.test(mainText(doc)) ? true : null),
+      { timeout: 3000 }));
+    }
+    check.ok(onLobby, 'the host face leads with the campaign',
+      mainText(doc).slice(0, 100));
+
+    // The skippable path is stated, not hidden: with nothing picked the
+    // host row says so in words.
+    check.ok(/pickup game/.test(mainText(doc)),
+      'and the no-campaign escape is stated in words');
+
+    // The blank start renders synchronously - the same contract the Deck
+    // has always had - so founding needs no shelf and no books.
+    const nameInput = doc.querySelector('main input[aria-label="Campaign name"]');
+    check.ok(!!nameInput, 'the campaign name field is offered');
+    setField(nameInput, 'Gym Night');
+    button(doc, 'Found the campaign')?.click();
+
+    const captioned = await waitFor(() => (
+      /Playing: Gym Night/.test(mainText(doc)) ? true : null),
+    { timeout: 8000 });
+    check.ok(!!captioned, 'founding it updates the host caption');
+
+    const hostName = doc.querySelector(
+      'main input[aria-label="Your name at the table"]');
+    check.ok(!!hostName, 'the host name field is offered');
+    setField(hostName, 'Gym DM');
+    button(doc, 'Host a game')?.click();
+
+    // The queue face: code up, campaign named to the whole room.
+    const queued = await waitFor(() => (
+      /How they get in/.test(mainText(doc))
+        && /ANVIL-/.test(mainText(doc)) ? true : null),
+    { timeout: 10000 });
+    check.ok(!!queued, 'hosting lands on the queue with a readable code');
+    check.ok(/Playing Gym Night/.test(mainText(doc)),
+      'and the queue says what the room is playing');
+
+    // Over HTTP, not just on the screen: the table record itself carries it.
+    const st = await api('/api/table');
+    check.eq(st.body.campaignName, 'Gym Night',
+      'the table status carries the campaign for every seat');
+    check.ok(!!st.body.campaignId, 'id too', String(st.body.campaignId));
+  } catch (err) {
+    error = `${err.name}: ${err.message}`;
+  } finally {
+    frame?.remove();
+    try {
+      await api('/api/table/close', { method: 'POST' });
+    } catch { /* the server went away */ }
+  }
+  return flowResult(check, {
+    id: 'lobby_host',
+    title: 'Set the campaign, host the table, the room is told', error, t0,
+  });
+}
+
+/**
  * The phone pass: at 390px nothing scrolls the page sideways, inputs are
  * 16px (under that, iOS zooms the whole page on focus), and the taps a
  * fight leans on are 44px. A dedicated narrow frame, because every other
@@ -3477,6 +3579,8 @@ export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
   onProgress({ flow: 'join_deeplink' });
   results.push(await runQuickParty(CheckClass));
   onProgress({ flow: 'quick_party' });
+  results.push(await runLobbyHostFlow(CheckClass));
+  onProgress({ flow: 'lobby_host' });
   results.push(await runPhoneLayout(CheckClass));
   onProgress({ flow: 'phone_layout' });
   return results;
