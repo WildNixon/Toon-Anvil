@@ -93,6 +93,14 @@ export async function openBench({ players = 5 } = {}) {
     });
   }
 
+  // The DM says go. Without this, the lobby latch (which postdates this
+  // bench) parks every seat in the queue at boot - and the liveness gate
+  // then reports a whole cycle of honest-looking SeatDead. A bench is a
+  // table mid-session, so it starts like one.
+  await api('/api/table/start', {
+    method: 'POST', token: dm.token, body: { started: true },
+  });
+
   const combatants = seats.slice(1).map((s, i) => ({
     id: `c${i + 1}`, characterId: s.characterId, name: s.name,
     init: 20 - i, hp: 38 - i * 3, maxHp: 38, side: 'ally', conditions: [],

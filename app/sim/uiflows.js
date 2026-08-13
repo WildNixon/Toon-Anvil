@@ -2157,6 +2157,53 @@ export const FLOWS = [
       }
     },
   },
+
+  {
+    id: 'mode_headers',
+    title: 'Every screen says its name and what it is for',
+    why: 'The nav labels are one vague word each - Stage, Deck, World - which '
+       + 'is fine ONLY while every screen restates its name and its use. The '
+       + 'nameplate lives outside main so the modes (which wipe their own '
+       + 'container) and the gym text probes (which read main) never touch '
+       + 'it; this flow is what keeps it dumb text. LAST in the shared frame '
+       + 'ON PURPOSE: it storms through every mode in both shells, and the '
+       + 'wake of a dozen just-left screens - lazy unsubscribes, abandoned '
+       + 'fetches - starved the spellbook flow at two different steps on two '
+       + 'runs when this ran mid-sequence. A read-only audit belongs after '
+       + 'the narrative it audits.',
+    async run(c, { doc }) {
+      c.feature('ui', 'shell', 'nav');
+      const probe = async (seat) => {
+        c.ok(await ensureSeat(doc, seat), `the ${seat} shell is on`);
+        for (const b of [...doc.querySelectorAll('#modes button')]) {
+          const label = b.textContent.trim();
+          b.click();
+          const ok = await waitFor(() => (
+            doc.querySelector('#modehead h2')?.textContent.trim() === label
+              ? true : null), { timeout: 4000 });
+          c.ok(!!ok, `${seat}/${label}: the nameplate matches the nav`,
+            doc.querySelector('#modehead h2')?.textContent || '(none)');
+          const sub = doc.querySelector('#modehead .lens-sub')
+            ?.textContent.trim() || '';
+          c.ok(sub.length > 20, `${seat}/${label}: and says what it is for`);
+          // Dumb text, enforced. A button here would shadow document-wide
+          // button() lookups; an input would trip the phone font floor; a
+          // digit would pollute the numbers metric if this ever moved.
+          c.eq(doc.querySelectorAll('#modehead button, #modehead input, '
+            + '#modehead select, #modehead textarea, #modehead summary, '
+            + '#modehead [role="tab"], #modehead [tabindex]').length, 0,
+          `${seat}/${label}: the nameplate is dumb text`);
+          c.ok(!/\d/.test(doc.querySelector('#modehead')?.textContent || ''),
+            `${seat}/${label}: and carries no digits`);
+        }
+      };
+      await probe('player');
+      await probe('dm');
+      c.ok(/· Toon Anvil$/.test(doc.title),
+        'the browser tab is named for the screen', doc.title);
+      await ensureSeat(doc, 'player');
+    },
+  },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -3479,6 +3526,14 @@ export async function runPhoneLayout(CheckClass) {
 
     check.ok(await goToMode(doc, 'Play', 'Abilities'), 'the sheet opens');
     noSideScroll('the sheet');
+
+    // The nameplate is allowed one short row: every pixel of its height
+    // pushes the first tap target down, and the reach tier pays for that.
+    const nameplate = doc.querySelector('#modehead');
+    check.ok(!!nameplate && nameplate.offsetHeight > 0
+      && nameplate.offsetHeight < 96,
+    'the nameplate stays under a hundred pixels at phone width',
+    `${nameplate?.offsetHeight ?? 'missing'}px`);
 
     const anyInput = doc.querySelector('main input[type=number], main input[type=text]');
     check.eq(anyInput ? win.getComputedStyle(anyInput).fontSize : 'none',

@@ -30,6 +30,10 @@ localStorage.getItem('toonanvil.role')==='dm'?'dm':'player'}catch(e){}</script>
          you are looking at. -->
     <div id="serverdown" class="serverdown" role="alert" hidden></div>
   </div>
+  <!-- The screen's nameplate: painted by renderMode, outside <main> so the
+       modes (which own and wipe #view) and the gym's main-scoped text
+       probes never collide with it. Dumb text only - no controls. -->
+  <div id="modehead" class="modehead" hidden></div>
   <main id="view" tabindex="-1">
     <div class="empty">Loading&hellip;</div>
   </main>

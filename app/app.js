@@ -25,35 +25,51 @@ import * as theme from './ui/theme.js';
  * This is navigation, not security. A player who types a hash reaches
  * nothing the server would not refuse anyway.
  */
+// Each `blurb` is the one sentence under the screen's name - what it is and
+// what it is for, in plain words. RULES: no digits (the phone gym counts
+// numeric tokens on screen) and nothing that needs updating when a feature
+// lands, or fourteen sentences become fourteen small lies.
 const MODES = [
   { id: 'sheet',     label: 'Play',      shell: 'player', group: 'Your Hero', ribbon: true,
+    blurb: 'Your character in play: roll checks, cast spells, take damage, and rest.',
     load: () => import('./modes/sheet/sheet.js') },
   { id: 'build',     label: 'Build',     shell: 'player', group: 'Your Hero', ribbon: true,
+    blurb: 'Make and grow characters: abilities, class, species, background, and gear.',
     load: () => import('./modes/build/build.js') },
   { id: 'combat',    label: 'Combat',    shell: 'player', group: 'Adventure', ribbon: true,
     // The solo tracker. At a table the DM's runner IS the fight; a second,
     // unsynced initiative list is clutter that disagrees with the real one.
     soloOnly: true,
+    blurb: 'A solo fight tracker: line up combatants, roll initiative, and keep every hit point straight.',
     load: () => import('./modes/combat/combat.js') },
   { id: 'rp',        label: 'Roleplay',  shell: 'player', group: 'Adventure', ribbon: true,
+    blurb: 'Log the story as it happens: promises made, people met, and moments worth keeping.',
     load: () => import('./modes/rp/rp.js') },
   { id: 'shop',      label: 'Market',    shell: 'player', group: 'Adventure', ribbon: true,
+    blurb: 'Generate shops, browse their stock, buy kit, and sell your loot.',
     load: () => import('./modes/shop/shop.js') },
   { id: 'chronicle', label: 'Chronicle', shell: 'player', group: 'Adventure', ribbon: true,
+    blurb: 'The full record of your adventures: every roll, purchase, and story beat, kept by day.',
     load: () => import('./modes/chronicle/chronicle.js') },
   { id: 'table',     label: 'Party',     shell: 'player', group: 'Adventure', tableOnly: true, ribbon: true,
+    blurb: 'Everyone at the table: who is playing, how the party is doing, and the world you are in.',
     load: () => import('./modes/table/table.js') },
 
   // The DM shell: an entirely different app. Same solo as at a table.
   { id: 'dm-stage',  label: 'Stage', shell: 'dm', group: 'The Session',
+    blurb: 'Run the session live: the fight, the party board, and the levers only you hold.',
     load: () => import('./modes/dm/stage-mode.js') },
   { id: 'dm-deck',   label: 'Deck',  shell: 'dm', group: 'The Session',
+    blurb: 'The campaign dashboard: the calendar, the sky, regions, factions, clocks, and the map.',
     load: () => import('./modes/dm/deck.js') },
   { id: 'dm-world',  label: 'World', shell: 'dm', group: 'The Campaign',
+    blurb: 'Prep and reference: the bestiary, encounter building, treasure, and the rules.',
     load: () => import('./modes/dm/world-mode.js') },
   { id: 'dm-story',  label: 'Story', shell: 'dm', group: 'The Campaign',
+    blurb: 'How the campaign is going: pacing, spotlight, and what the record says between sessions.',
     load: () => import('./modes/dm/story-mode.js') },
   { id: 'dm-setup',  label: 'Setup', shell: 'dm', group: 'The Campaign',
+    blurb: 'Get ready to play: forge a ready party, open the forge, and accept homebrew and books.',
     load: () => import('./modes/dm/setup-mode.js') },
 
   // Where a session starts and where everyone waits. Belongs to BOTH shells,
@@ -61,10 +77,12 @@ const MODES = [
   // LAST on purpose: the boot mode falls back to visibleModes()[0], and
   // putting the lobby earlier would quietly move the DM's home screen.
   { id: 'lobby',     label: 'Lobby',     always: true,    group: 'The Table',
+    blurb: 'Where a session starts: set the campaign, host the table, and watch everyone arrive.',
     load: () => import('./modes/lobby/lobby.js') },
 
   // No shell: the gear serves both.
   { id: 'settings',  label: 'Settings',  gear: true,
+    blurb: 'This device: theme, seat, where your work is kept, and the optional connectors.',
     load: () => import('./modes/settings/settings.js') },
 ];
 
@@ -266,6 +284,19 @@ async function renderMode() {
   }
   currentMode = entry.id;
   view.dataset.rendered = entry.id;
+  // The screen's own nameplate: the nav label again, plus one sentence on
+  // what the screen is for. Painted OUTSIDE <main> on purpose - modes wipe
+  // and repaint their container freely, and the gym's text probes read main,
+  // so the header must be neither casualty nor contaminant. Dumb text only:
+  // no controls, ever.
+  const head = $('#modehead');
+  if (head) {
+    head.hidden = false;
+    head.innerHTML = `<div class="head"><h2>${esc(entry.label)}</h2>`
+      + '<div class="bar"></div></div>'
+      + `<p class="lens-sub">${esc(entry.blurb || '')}</p>`;
+  }
+  document.title = `${entry.label} · Toon Anvil`;
   view.innerHTML = '<div class="empty">Loading&hellip;</div>';
   try {
     const mod = await entry.load();

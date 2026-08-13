@@ -119,7 +119,8 @@ function mapPanel() {
 
 function tabsPanel() {
   const panel = el('div', { class: 'panel rivets accent' });
-  panel.append(el('span', { class: 'lvl accent' }, 'Table'));
+  // 'Party', like the nav button that got you here - one screen, one name.
+  panel.append(el('span', { class: 'lvl accent' }, 'Party'));
   const me = session.me();
   panel.append(el('h3', {}, me ? `Playing as ${me.name}` : 'At the table'));
 
