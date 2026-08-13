@@ -275,6 +275,24 @@ def kind_dir(kind: str) -> Path:
     return d
 
 
+def _clamp(raw, low: float, high: float, default: float) -> float:
+    """A number from a request body, forced into a range it cannot escape.
+
+    Used on every knob that decides how much a connector call costs. The old
+    code did `int(payload.get("maxTokens") or 400)` with no ceiling, which
+    means a request could ask for any completion length it liked and bill the
+    key owner for it. Junk falls back to the default rather than raising: the
+    caller asked for something reasonable and got it.
+    """
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return default
+    if val != val:                                         # NaN
+        return default
+    return max(low, min(high, val))
+
+
 def safe_id(raw: str) -> str | None:
     """Reject anything that could escape the data directory."""
     if not ID_RE.match(raw or ""):
@@ -934,12 +952,58 @@ class Handler(SimpleHTTPRequestHandler):
             payload = self._read_json()
             if payload is None:
                 return self._send_json({"error": "bad json body"}, 400)
+
+            # THE GATE. These are the only routes that can spend the user's
+            # money, and until now they were the only POST routes with no
+            # guard of any kind - so under --lan any phone at the table could
+            # run up the DM's bill, with maxTokens unclamped.
+            #
+            # Loopback-or-DM, the same shape /api/table/open already uses:
+            # solo play on your own machine must not need a token, and once a
+            # table is open only the DM's token spends. Deliberately without
+            # close's local-machine hatch - that hatch is disaster recovery,
+            # and a spending hatch would simply be the hole again.
+            tbl = self._table()
+            if tbl is not None and tbl.read().get("open"):
+                who = tbl.whoami(self._token())
+                if not who:
+                    return self._send_json(
+                        {"ok": False, "error": "join the table first"}, 401)
+                if who.get("role") != "dm":
+                    return self._send_json(
+                        {"ok": False, "error": "only the DM's own key is spent "
+                         "here, and only the DM spends it."}, 403)
+            elif not self._is_local():
+                return self._send_json(
+                    {"ok": False, "error": "with no table open, only the "
+                     "machine running the server may use a connector."}, 403)
+
             try:
                 tools_on_path()
                 import connectors                          # noqa: PLC0415
+                import spend                               # noqa: PLC0415
             except Exception as exc:                       # noqa: BLE001
                 return self._send_json(
                     {"error": f"connectors unavailable: {exc}"}, 503)
+
+            # The cap, checked BEFORE the call, so it is a cap rather than a
+            # post-mortem.
+            refusal = spend.check_budget()
+            if refusal:
+                return self._send_json(refusal, 402)
+
+            # An id that is not in the catalogue is refused here rather than in
+            # each provider, because the ledger and the privacy rule both read
+            # from that row. Naming nothing stays fine - that is a transport
+            # probe, and it carries nothing of yours.
+            cap_id = payload.get("capability")
+            cap = connectors.capability(cap_id)
+            if cap is None:
+                return self._send_json(
+                    {"ok": False, "error": f"'{cap_id}' is not a capability in "
+                     "the catalogue, so there is no way to know whether it may "
+                     "leave this machine or what it should cost. Refusing "
+                     "rather than guessing."}, 400)
 
             try:
                 if parsed.path == "/api/llm":
@@ -947,8 +1011,13 @@ class Handler(SimpleHTTPRequestHandler):
                         prompt=str(payload.get("prompt") or ""),
                         system=payload.get("system"),
                         provider=payload.get("provider"),
-                        max_tokens=int(payload.get("maxTokens") or 400),
-                        temperature=float(payload.get("temperature") or 0.9))
+                        # CLAMPED. An unclamped integer out of a request body
+                        # is how one call becomes a hundred dollars.
+                        max_tokens=int(_clamp(payload.get("maxTokens"),
+                                              1, 2000, 400)),
+                        temperature=_clamp(payload.get("temperature"),
+                                           0, 2, 0.9),
+                        cap_id=cap_id)
                 elif parsed.path == "/api/image":
                     out = connectors.generate_image(
                         prompt=str(payload.get("prompt") or ""),
@@ -957,11 +1026,11 @@ class Handler(SimpleHTTPRequestHandler):
                 elif parsed.path == "/api/sfx/search":
                     out = connectors.search_sounds(
                         query=str(payload.get("query") or ""),
-                        limit=int(payload.get("limit") or 8))
+                        limit=int(_clamp(payload.get("limit"), 1, 50, 8)))
                 elif parsed.path == "/api/sfx/generate":
                     out = connectors.generate_sound(
                         prompt=str(payload.get("prompt") or ""),
-                        seconds=float(payload.get("seconds") or 4))
+                        seconds=_clamp(payload.get("seconds"), 0.5, 22, 4))
                 else:
                     return self._send_json({"error": "unknown endpoint"}, 404)
             except Exception as exc:                       # noqa: BLE001
@@ -970,6 +1039,21 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._send_json(
                     {"ok": False, "error": f"{type(exc).__name__}"}, 502)
 
+            # Record what it actually cost. Every provider already tells us,
+            # and the app used to throw it away - so the ledger's figures are
+            # measured rather than a second guess at the estimate.
+            if out.get("ok"):
+                cat = connectors.catalogue()
+                prices = cat.get("prices", {})
+                kind = cap.get("kind") or (
+                    "llm" if parsed.path == "/api/llm"
+                    else "image" if parsed.path == "/api/image" else "sfx")
+                out["spend"] = spend.record(
+                    cap_id=cap_id, provider=out.get("provider"),
+                    model=out.get("model"), kind=kind,
+                    usage=out.get("usage"), prices=prices,
+                    est_cents=connectors.estimate_cents(
+                        cap, out.get("provider"), prices) if cap else None)
             return self._send_json(out, 200 if out.get("ok") else 502)
 
         if parsed.path == "/api/appgym":
@@ -1392,6 +1476,20 @@ class Handler(SimpleHTTPRequestHandler):
                     "available": False,
                     "reason": f"connectors unavailable: {type(exc).__name__}",
                     "providers": {},
+                })
+
+        if parts == ["api", "spend"]:
+            # What the connectors have actually cost. Read-only and local-ish
+            # by nature: it carries no key, only counts and totals, and a
+            # player seeing the DM's spend is not a secret worth defending.
+            try:
+                tools_on_path()
+                import spend                               # noqa: PLC0415
+                return self._send_json(spend.summary())
+            except Exception as exc:                       # noqa: BLE001
+                return self._send_json({
+                    "calls": 0, "cents": 0,
+                    "reason": f"ledger unavailable: {type(exc).__name__}",
                 })
 
         if parts == ["api", "appgym"]:

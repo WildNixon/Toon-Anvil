@@ -45,6 +45,11 @@ except ImportError:                                        # pragma: no cover
 
 ROOT = Path(__file__).resolve().parent.parent
 SECRETS = ROOT / "secrets.json"
+# What a key actually unlocks, and roughly what it costs. Under app/
+# because the browser has to fetch the same file this module reads -
+# two copies of "what is on offer" would drift, and the one the user
+# reads is the one that matters.
+CAPABILITIES = ROOT / "app" / "data" / "connector-capabilities.json"
 
 TIMEOUT = 120
 
@@ -63,6 +68,44 @@ def _secrets() -> dict:
         return data if isinstance(data, dict) else {}
     except (json.JSONDecodeError, OSError):
         return {}
+
+
+def catalogue() -> dict:
+    """The capability map. Never cached, for the same reason secrets are
+    not: editing the file should take effect without a restart."""
+    try:
+        data = json.loads(CAPABILITIES.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        # A missing or broken catalogue must not take the app down - it
+        # is a menu, not a dependency. The UI shows providers alone.
+        return {}
+
+
+def estimate_cents(cap: dict, provider: str, prices: dict) -> float | None:
+    """Roughly what one use of this capability costs on this provider.
+
+    None means "we cannot say", which is a real answer and must never be
+    rendered as 0. A zero here is a CLAIM that something is free, and
+    only a local provider gets to make it.
+    """
+    p = prices.get(provider)
+    if not isinstance(p, dict):
+        return None
+    est = cap.get("est") or {}
+    if cap.get("kind") == "llm":
+        if "inPerMTok" not in p:
+            return None
+        return ((est.get("inTokens", 0) / 1e6) * p["inPerMTok"]
+                + (est.get("outTokens", 0) / 1e6) * p["outPerMTok"])
+    if cap.get("kind") == "image" and "perImage" in p:
+        return est.get("images", 1) * p["perImage"]
+    if cap.get("kind") == "sfx":
+        if "perSecond" in p:
+            return est.get("seconds", 0) * p["perSecond"]
+        if "perSearch" in p:
+            return p["perSearch"]
+    return None
 
 
 def key_for(name: str) -> str | None:
@@ -146,23 +189,111 @@ def describe() -> dict:
                     "attribution comes back with them.",
         },
     }
+    # The catalogue rides along, with every cost worked out per provider, so
+    # the screen can answer "what would this key give me, and what would it
+    # cost" in one fetch and without a second opinion about either.
+    cat = catalogue()
+    prices = cat.get("prices", {})
+    caps = []
+    for cap in cat.get("capabilities", []):
+        usable = [p for p in cap.get("providers", []) if p in providers]
+        caps.append({
+            **cap,
+            "providers": usable,
+            # Only providers that are actually set up right now. This is what
+            # turns the catalogue from a brochure into a status board.
+            "readyProviders": [p for p in usable if providers[p]["configured"]],
+            "estCents": {p: estimate_cents(cap, p, prices) for p in usable},
+        })
+
+    # What each key would unlock, counted from the catalogue rather than
+    # asserted in prose - so adding a capability updates the sales pitch.
+    for pid, prov in providers.items():
+        # `internal` rows spend real money and belong in the catalogue, but
+        # counting them here would pad the pitch: nobody adds a key in order
+        # to unlock the button that checks the key.
+        mine = [c for c in caps
+                if pid in c["providers"] and not c.get("internal")]
+        prov["unlocks"] = [c["id"] for c in mine]
+        prov["unlocksBuilt"] = [c["id"] for c in mine if c.get("status") == "built"]
+        prov["free"] = all(
+            (prices.get(pid) or {}).get(k, 1) == 0
+            for k in ("inPerMTok", "perImage", "perSearch", "perSecond")
+            if k in (prices.get(pid) or {})
+        ) and bool(prices.get(pid))
+
     return {
         "available": True,
         "secretsFile": str(SECRETS),
         "secretsFileExists": SECRETS.exists(),
         "providers": providers,
         "anyConfigured": any(p["configured"] for p in providers.values()),
+        "capabilities": caps,
+        "prices": prices,
+        "pricesAsOf": cat.get("pricesAsOf"),
+        "priceNote": cat.get("priceNote"),
+        "notOffered": cat.get("notOffered") or cat.get("_notOffered"),
     }
 
 
-def _pick_llm(preferred: str | None) -> str | None:
-    """Local first: it costs nothing and needs no key."""
+LOCAL_LLM = ("ollama",)
+
+
+def _usage(in_tok, out_tok) -> dict:
+    """What a call actually used.
+
+    Every provider already tells us this and the code used to throw it away -
+    OpenAI as prompt_tokens, Anthropic as input_tokens, Ollama as
+    prompt_eval_count. `measured` says whether these are real numbers or a
+    blank, so an estimate is never quietly promoted to a fact.
+    """
+    ok = isinstance(in_tok, int) and isinstance(out_tok, int)
+    return {"inTokens": in_tok if ok else None,
+            "outTokens": out_tok if ok else None,
+            "measured": ok}
+
+
+def _pick_llm(preferred: str | None, local_only: bool = False) -> str | None:
+    """Local first: it costs nothing and needs no key.
+
+    `local_only` is the privacy rule with teeth. The README promises your
+    homebrew "is never uploaded anywhere", and a capability carrying your own
+    prose - lore, book extracts, chronicle text - would break that the moment
+    it reached a hosted model. Those capabilities pass local_only=True, and if
+    no local model is running the call is REFUSED rather than quietly sent
+    somewhere else. A promise enforced in code beats one kept in a docstring.
+    """
     caps = describe()["providers"]
-    if preferred and caps.get(preferred, {}).get("configured"):
+    allowed = LOCAL_LLM if local_only else ("ollama", "anthropic", "openai")
+    if preferred and preferred in allowed and caps.get(preferred, {}).get("configured"):
         return preferred
-    for name in ("ollama", "anthropic", "openai"):
+    for name in allowed:
         if caps.get(name, {}).get("configured"):
             return name
+    return None
+
+
+def capability(cap_id: str | None) -> dict | None:
+    """One catalogue row.
+
+    Three distinct answers, and keeping them apart is the whole point:
+
+      `{}`   the call named no capability - a bare transport probe, which
+             carries nothing of yours by construction.
+      row    the call named one, and here is what the catalogue says about it.
+      None   the call named one that does not exist.
+
+    That last case used to return `{}` as well, which quietly made a typo the
+    MOST permissive path in the file: an unknown id has no `contentClass`, so
+    a misspelt `session_recap` would have sent the user's own writing to a
+    hosted provider. A safety rule that a spelling mistake can switch off is
+    not a safety rule.
+    """
+    if not cap_id:
+        return {}
+    for c in catalogue().get("capabilities", []):
+        if c.get("id") == cap_id:
+            return c
     return None
 
 
@@ -184,9 +315,34 @@ def _post_json(url: str, payload: dict, headers: dict, timeout: int = TIMEOUT) -
 # --------------------------------------------------------------------------
 
 def generate_text(prompt: str, system: str | None = None, provider: str | None = None,
-                  max_tokens: int = 400, temperature: float = 0.9) -> dict:
-    """Ask a model for prose. Returns {ok, text} or {ok: False, error}."""
-    chosen = _pick_llm(provider)
+                  max_tokens: int = 400, temperature: float = 0.9,
+                  cap_id: str | None = None) -> dict:
+    """Ask a model for prose. Returns {ok, text, usage} or {ok: False, error}.
+
+    `cap_id` names the catalogue capability being bought. It decides two
+    things: whether your content may leave the machine, and what the spend
+    ledger records the money against. Naming nothing is allowed - a transport
+    probe carries nothing of yours. Naming something that is not in the
+    catalogue is refused, because the alternative is a typo choosing the
+    privacy policy.
+    """
+    cap = capability(cap_id)
+    if cap is None:
+        return {"ok": False, "capability": cap_id,
+                "error": f"'{cap_id}' is not a capability in the catalogue, so "
+                         "there is no way to know whether it may leave this "
+                         "machine or what it should cost. Refusing rather than "
+                         "guessing."}
+    local_only = cap.get("contentClass") == "user"
+    chosen = _pick_llm(provider, local_only=local_only)
+    if not chosen and local_only:
+        # Deliberately NOT falling back to a hosted model. This capability
+        # carries the user's own writing, and the whole point of the rule is
+        # that it is a refusal rather than a silent upload.
+        return {"ok": False, "contentClass": "user", "capability": cap_id,
+                "error": "this one sends your own writing, so it only runs on "
+                         "a local model. Start Ollama and pull a model - or "
+                         "pick a capability that does not carry your content."}
     if not chosen:
         return {"ok": False,
                 "error": "no language model is configured. Start Ollama for a "
@@ -201,7 +357,13 @@ def generate_text(prompt: str, system: str | None = None, provider: str | None =
                 "options": {"temperature": temperature, "num_predict": max_tokens},
             }, {})
             return {"ok": True, "provider": chosen, "model": model,
-                    "text": (data.get("response") or "").strip()}
+                    "capability": cap_id,
+                    "text": (data.get("response") or "").strip(),
+                    # Ollama counts too, and it costs nothing - recording it
+                    # keeps the ledger's arithmetic honest across providers
+                    # instead of only where money changed hands.
+                    "usage": _usage(data.get("prompt_eval_count"),
+                                    data.get("eval_count"))}
 
         if chosen == "anthropic":
             model = setting("ANTHROPIC_MODEL", "claude-sonnet-4-5")
@@ -218,8 +380,10 @@ def generate_text(prompt: str, system: str | None = None, provider: str | None =
             })
             parts = [b.get("text", "") for b in data.get("content", [])
                      if b.get("type") == "text"]
+            u = data.get("usage") or {}
             return {"ok": True, "provider": chosen, "model": model,
-                    "text": "".join(parts).strip()}
+                    "capability": cap_id, "text": "".join(parts).strip(),
+                    "usage": _usage(u.get("input_tokens"), u.get("output_tokens"))}
 
         model = setting("OPENAI_MODEL", "gpt-4o-mini")
         messages = ([{"role": "system", "content": system}] if system else []) + [
@@ -229,8 +393,11 @@ def generate_text(prompt: str, system: str | None = None, provider: str | None =
             {"model": model, "messages": messages, "max_tokens": max_tokens,
              "temperature": temperature},
             {"Authorization": f"Bearer {key_for('OPENAI_API_KEY') or ''}"})
+        u = data.get("usage") or {}
         return {"ok": True, "provider": chosen, "model": model,
-                "text": (data["choices"][0]["message"]["content"] or "").strip()}
+                "capability": cap_id,
+                "text": (data["choices"][0]["message"]["content"] or "").strip(),
+                "usage": _usage(u.get("prompt_tokens"), u.get("completion_tokens"))}
 
     except urllib.error.HTTPError as exc:
         # Report the status, never the request - a body can echo a key back.

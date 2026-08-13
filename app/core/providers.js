@@ -52,6 +52,24 @@ export async function capabilities({ refresh = false } = {}) {
 
 export function forget() { cached = null; }
 
+/**
+ * What the connectors have actually cost so far.
+ *
+ * Deliberately separate from `capabilities()`: that one quotes an ESTIMATE
+ * before you spend, this reports what was really spent afterwards, and
+ * collapsing the two would let a guess quietly become a fact. Never throws -
+ * with no server the honest answer is "no calls, nothing spent".
+ */
+export async function spendSummary() {
+  try {
+    const res = await fetch(`${serverBase()}/api/spend`);
+    if (!res.ok) throw new Error(String(res.status));
+    return await res.json();
+  } catch {
+    return { calls: 0, cents: 0, byCapability: {}, budgetCents: null };
+  }
+}
+
 /** Is a specific provider ready to be called? */
 export async function isConfigured(id) {
   const caps = await capabilities();
@@ -110,11 +128,20 @@ async function call(path, body, { timeout = 60000 } = {}) {
  */
 export async function generateText({
   prompt, system = null, provider = null, maxTokens = 400, temperature = 0.9,
+  capability = null,
 } = {}) {
   if (!prompt || !String(prompt).trim()) {
     return { ok: false, reason: 'nothing to write about' };
   }
-  return call('/api/llm', { prompt, system, provider, maxTokens, temperature });
+  // `capability` names the catalogue row being bought. The server uses it for
+  // two things a caller cannot be trusted to get right on its own: whether
+  // this text may leave the machine at all, and what the spend is recorded
+  // against. Naming none is allowed - that is a transport probe and carries
+  // nothing of the user's. Naming one that is not in the catalogue is refused
+  // by the server, because otherwise a typo would pick the privacy policy.
+  return call('/api/llm', {
+    prompt, system, provider, maxTokens, temperature, capability,
+  });
 }
 
 /* ------------------------------------------------------------------ */

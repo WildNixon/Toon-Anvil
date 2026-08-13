@@ -21,6 +21,9 @@ data/shops/
 # people are the most personal thing in the tree.
 data/profiles/
 data/events.jsonl
+# What YOUR key cost YOU. A record of your own usage, and nobody
+# else's business.
+data/spend.jsonl
 # The fight currently on the table: whose turn it is, who is hurt, and every
 # monster's hit points. Live play state, not something to publish.
 data/encounters/

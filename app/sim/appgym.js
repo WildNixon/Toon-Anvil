@@ -1967,6 +1967,75 @@ export const SUITES = [
        + 'is unharmed when they do not.',
     scenarios: [
       {
+        id: 'catalogue_is_a_menu_not_an_advert',
+        title: 'Every capability names a real provider, and a built one has code',
+        why: 'The catalogue is what a person reads BEFORE putting a credential in a file. '
+           + 'The transport has been finished far longer than anything plugged into it, so '
+           + 'the temptation is to list what it could do rather than what it does. A row '
+           + 'marked built with no code behind it is not an oversight, it is an advert.',
+        async run(c) {
+          c.feature('connectors', 'catalogue', 'cost');
+          const caps = await fetch('/api/providers').then((r) => r.json());
+          const cat = caps.capabilities || [];
+          c.ok(cat.length > 0, 'the catalogue reaches the browser', String(cat.length));
+          c.ok(Boolean(caps.pricesAsOf),
+            'and it carries the date its prices came from - a figure with no date is a figure nobody can check');
+
+          const known = new Set(Object.keys(caps.providers || {}));
+          for (const cap of cat) {
+            c.ok((cap.providers || []).every((p) => known.has(p)),
+              `${cap.id} names only providers that exist`, JSON.stringify(cap.providers));
+            c.ok(['built', 'planned'].includes(cap.status),
+              `${cap.id} says whether it exists`, String(cap.status));
+            c.ok(typeof cap.insteadOf === 'string' && cap.insteadOf.length > 20,
+              `${cap.id} says what already works without a key`);
+            // A user-content capability offered on a hosted provider would
+            // break the promise the README makes unconditionally. This check
+            // caught read_aloud on its first run: the row was marked as
+            // carrying your writing AND offered on ElevenLabs, because there
+            // is no local voice model. The rule did not bend - the row moved
+            // to the not-offered list, where it says why.
+            if (cap.contentClass === 'user') {
+              c.same(cap.providers, ['ollama'],
+                `${cap.id} carries the user's writing, so it is local-only`);
+            }
+          }
+
+          // Everything the app can spend on must be IN the catalogue, or the
+          // ledger has an unnamed row and the privacy rule has a hole. The
+          // internal flag keeps such rows off the menu without exempting them
+          // from either.
+          const ids = new Set(cat.map((x) => x.id));
+          const menu = cat.filter((x) => !x.internal);
+          c.ok(menu.length > 0, 'the menu is not entirely internal rows',
+            `${menu.length} of ${cat.length}`);
+          c.ok(ids.has('connector_test'),
+            'even the Test button names a capability, so its cost is not a blank row');
+
+          // The anti-advert check: fetch the app's own source and look for
+          // the capability id. A row cannot claim to be built unless some
+          // module actually asks for it by name.
+          const SOURCES = ['/modes/dm/panels.js', '/modes/settings/settings.js',
+            '/modes/sheet/sheet.js', '/modes/dm/deck.js'];
+          const src = (await Promise.all(SOURCES.map((u) => fetch(u)
+            .then((r) => (r.ok ? r.text() : '')).catch(() => '')))).join(' ');
+          for (const cap of cat.filter((x) => x.status === 'built')) {
+            c.ok(src.includes(`'${cap.id}'`) || src.includes(`"${cap.id}"`),
+              `${cap.id} is marked built and a module really asks for it`);
+          }
+
+          // And the estimate must be a number or an honest absence - never
+          // a zero standing in for 'we could not work it out', because zero
+          // is a claim that something is free.
+          for (const cap of cat) {
+            for (const [pid, v] of Object.entries(cap.estCents || {})) {
+              c.ok(v === null || Number.isFinite(v),
+                `${cap.id}/${pid} costs a number or says nothing`, String(v));
+            }
+          }
+        },
+      },
+      {
         id: 'degrade_cleanly',
         title: 'Nothing configured is a clean answer, not an exception',
         async run(c, { providers }) {
@@ -4168,6 +4237,70 @@ export const SUITES = [
           c.eq(me?.hp, 22, 'player characters keep their hit points');
 
           await table.del('encounters', 'current', dm.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'only_the_dm_spends_the_key',
+        title: 'A player at the table cannot spend the API key of the DM',
+        why: 'These were the only POST routes in the server with no guard of any kind. '
+           + 'Every other privileged route checks a token; /api/llm, /api/image and '
+           + '/api/sfx checked nothing, so under --lan any phone at the table could run '
+           + 'up a bill on the key belonging to the DM. A cost you cannot cap is a cost '
+           + 'you cannot quote, which '
+           + 'makes this a prerequisite for the price list rather than a nicety.',
+        async run(c, { table }) {
+          c.feature('connectors', 'permissions', 'security', 'cost');
+          await table.close();
+
+          // Solo: no table, and the request comes from the machine running
+          // the server. It must go THROUGH - a 502 for 'no model' is the
+          // gate letting it past, which is what solo play needs.
+          const solo = await table.llm({ prompt: 'hi', capability: 'npc_voice' });
+          c.ok(solo.status !== 401 && solo.status !== 403,
+            'with no table open, this machine may still use a connector',
+            String(solo.status));
+
+          const opened = await table.open('Gym DM');
+          const joined = await table.join(opened.code, 'Kim');
+
+          const asPlayer = await table.llm({ prompt: 'hi' }, joined.token);
+          c.eq(asPlayer.status, 403, 'a seated player is refused');
+          const asNobody = await table.llm({ prompt: 'hi' });
+          c.eq(asNobody.status, 401,
+            'and a browser with no seat is refused too');
+
+          const asDm = await table.llm({ prompt: 'hi' }, opened.token);
+          c.ok(asDm.status !== 401 && asDm.status !== 403,
+            'the DM gets through', String(asDm.status));
+
+          // The privacy rule, enforced rather than promised. A capability
+          // carrying the user's own writing is local-only, so with no local
+          // model it must REFUSE - never quietly reach for a hosted one.
+          const userContent = await table.llm(
+            { prompt: 'summarise', capability: 'session_recap' }, opened.token);
+          c.ok(!userContent.body.ok,
+            'a capability carrying your own writing does not just go anywhere');
+          c.ok(/local model/i.test(String(userContent.body.error || '')),
+            'and says why, naming the local-model rule',
+            String(userContent.body.error).slice(0, 80));
+
+          // An unclamped completion length is how one call becomes a bill.
+          // It must be accepted and clamped, not honoured and not rejected.
+          const huge = await table.llm(
+            { prompt: 'hi', maxTokens: 999999 }, opened.token);
+          c.ok(huge.status !== 500,
+            'an absurd maxTokens is clamped rather than crashing the server',
+            String(huge.status));
+
+          // A capability id nobody has heard of used to be the MOST permissive
+          // path in the file: no row means no contentClass, so a misspelt
+          // session_recap would have been treated as carrying nothing. A
+          // safety rule a typo can switch off is not a safety rule.
+          const typo = await table.llm(
+            { prompt: 'hi', capability: 'sesion_recap' }, opened.token);
+          c.eq(typo.status, 400,
+            'a capability that is not in the catalogue is refused, not assumed harmless');
           await table.close();
         },
       },

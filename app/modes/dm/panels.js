@@ -14,6 +14,7 @@ import { getState, setState, el, toast } from '../../core/store.js';
 import { db } from '../../core/db.js';
 import { rollHoard, applyToCharacter } from './loot.js';
 import * as gen from './generators.js';
+import { generateText } from '../../core/providers.js';
 
 /** Label + control, matching the layout dm.js uses elsewhere. */
 function field(label, control) {
@@ -154,6 +155,88 @@ export function lootPanel({ tables, magicItems, loot, redraw, saveCharacter }) {
 /* improvisation                                                       */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The one connector capability that is actually wired up.
+ *
+ * The generator gives you {name, trait, want, secret}. That is a slot fill,
+ * not a person, and putting a voice on it is the part a DM does at 11pm with
+ * four people looking at them. This turns those four facts into two lines of
+ * description and one line to read aloud.
+ *
+ * Three things it deliberately is not:
+ *
+ *   - not automatic. It costs money on a hosted model, so it happens when
+ *     you press it and not before.
+ *   - not an authority. It arrives as a DRAFT beside the facts that produced
+ *     it, and the facts stay on screen underneath.
+ *   - not a rules answer. Nothing here decides anything - it writes.
+ *
+ * contentClass is 'none' in the catalogue because the four facts came from
+ * local tables, so pressing this sends nothing of yours anywhere.
+ */
+function npcVoice(npc, redraw) {
+  const box = el('div', { style: 'margin:2px 0 10px' });
+
+  if (npc._voice) {
+    const draft = el('div', {
+      class: 'note', style: 'margin:6px 0',
+    });
+    draft.append(el('p', { style: 'margin:0 0 4px;font-size:13px' },
+      el('strong', {}, 'A draft, to change however you like')));
+    for (const line of String(npc._voice).split(/\n+/).filter(Boolean)) {
+      draft.append(el('p', { style: 'margin:3px 0;font-size:14px' }, line));
+    }
+    if (npc._voiceCost) {
+      draft.append(el('p', {
+        class: 'mono muted', style: 'margin:6px 0 0;font-size:11px',
+      }, npc._voiceCost));
+    }
+    box.append(draft);
+  }
+
+  const row = el('div', { class: 'btnrow' });
+  row.append(el('button', {
+    class: 'act ghost small',
+    disabled: npc._voiceBusy || undefined,
+    onClick: async () => {
+      npc._voiceBusy = true;
+      redraw();
+      const r = await generateText({
+        capability: 'npc_voice',
+        maxTokens: 220,
+        system: 'You write short, concrete NPC descriptions for a tabletop '
+          + 'game master. No rules, no dice, no stat blocks.',
+        prompt: `An NPC called ${npc.name}. They are ${npc.trait}. They want `
+          + `${npc.want}. Their secret: ${npc.secret}. `
+          + 'Write two short lines describing how they look and carry '
+          + 'themselves, then one line of dialogue they might open with. '
+          + 'Do not mention the secret outright.',
+      });
+      npc._voiceBusy = false;
+      if (r.ok) {
+        npc._voice = r.text;
+        // What it actually cost, from the ledger row the server just wrote -
+        // measured where the provider reports usage, and labelled when it is
+        // only an estimate. Shown next to the thing it bought.
+        const sp = r.spend;
+        if (sp && sp.cents !== null && sp.cents !== undefined) {
+          const d = sp.cents / 100;
+          npc._voiceCost = sp.cents === 0
+            ? `${sp.provider} - no cost`
+            : `${sp.provider} - ${d < 0.01 ? `$${d.toFixed(4)}` : `$${d.toFixed(3)}`}`
+              + `${sp.centsAreEstimate ? ' (estimated)' : ''}`;
+        }
+      } else {
+        toast(r.reason || 'no answer', 'bad');
+      }
+      redraw();
+    },
+  }, npc._voiceBusy ? 'Writing...' : npc._voice ? 'Try again' : 'Give them a voice'));
+  box.append(row);
+  return box;
+}
+
+
 export function improvPanel({ tables, monsters, improv, redraw, sendToFight }) {
   const panel = el('div', { class: 'panel rivets' });
   panel.append(el('span', { class: 'lvl' }, 'Improvise'));
@@ -226,6 +309,7 @@ export function improvPanel({ tables, monsters, improv, redraw, sendToFight }) {
     `Wants: ${r.npc.want}`,
     `Secret: ${r.npc.secret}`,
   ], 'authored');
+  panel.append(npcVoice(r.npc, redraw));
 
   block(r.tavern.name, [r.tavern.detail, `Kept by ${r.tavern.keeper}`], 'authored');
 

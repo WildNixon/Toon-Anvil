@@ -243,6 +243,41 @@ request.
 The cheapest thing to add is a local model: install Ollama, pull a model, and
 the writing assistant works with no key and no cost.
 
+### What a key buys, before you commit one
+
+Settings lists every capability a connector unlocks, what it would cost per
+use, and — the part that matters — **what already works for free instead**.
+Prices are quoted with the date they were read, because they move and this
+table does not; the estimate is always "roughly", and the ledger below
+corrects it with real numbers.
+
+Three rules the server enforces rather than promises:
+
+- **Only the DM spends.** With a table open, `/api/llm`, `/api/image` and
+  `/api/sfx` require a DM token; a player's phone gets a 403. With no table
+  open the machine running the server may spend, so solo play needs nothing.
+- **Anything carrying your own writing goes to a local model only.** Homebrew
+  prose, book extracts, campaign lore and session chronicles are marked
+  `contentClass: 'user'` in the catalogue and are routed to Ollama. With no
+  local model running, those capabilities *refuse with a reason* — they never
+  quietly fall back to a hosted provider. The promise elsewhere in this README
+  that your homebrew is never uploaded anywhere stays literally true.
+- **Completion length is clamped.** An unclamped integer from a request body
+  is how one call becomes a hundred dollars.
+
+Every call is recorded to `data/spend.jsonl` (gitignored — it is your usage
+and it belongs to you) with the token counts the provider actually reported.
+Rows the provider did not report are marked `measured: false` and fall back to
+the estimate, and the summary tells you what share of the total is guesswork,
+because "you have spent $2" is a sentence with a lot of shrugging in it if
+most of it was inferred. Set `TOON_ANVIL_BUDGET_CENTS` and the server refuses
+past it, naming the number.
+
+Most rows in the catalogue are marked **planned**, and say so. One capability
+is built — *Give this NPC a voice* in the DM's Improvise panel — chosen as the
+smallest honest proof that catalogue, estimate, gate, call, ledger and shown
+cost are one working path rather than six intentions.
+
 ## Playing together on one network
 
 Profiles, a join code, permissions the **server** enforces, and screens that

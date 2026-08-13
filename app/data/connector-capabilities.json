@@ -1,0 +1,209 @@
+{
+  "_why": "What an optional API key actually unlocks, and roughly what it costs, so a person can decide BEFORE putting a credential in a file. Read by tools/connectors.py and served to the browser through /api/providers, so the screen and the server cannot drift apart about what is on offer.",
+  "_honesty": [
+    "`status` is the load-bearing field. Most rows are `planned`: the connector transport is finished but almost nothing is plugged into it, and a catalogue that hid that would be advertising rather than a menu.",
+    "`insteadOf` says what already works for free. This app ships good seeded generators and a measured simulator; a capability that duplicates one of those is not worth your money and should say so.",
+    "Costs are ESTIMATES computed from the token counts below. The spend ledger records what a call actually used, which is the number that should be believed when the two disagree."
+  ],
+  "_notOffered": {
+    "why": "Three things are deliberately absent, and saying so is part of the map.",
+    "rules_adjudication": "Nothing here decides a rule. COCKPIT-LOG.md: 'this project does not fake adjudication it has not modelled.' A language model is a fast writer, not an authority on your table.",
+    "balance_verdicts": "Nothing here replaces a measured verdict from the campaign simulator. Those numbers come from hundreds of simulated campaigns with confidence intervals; a model's opinion would read the same and mean far less.",
+    "read_aloud": "Speaking your boxed text aloud would mean uploading your boxed text, and there is no local voice model here the way there is a local writing model. The rule that anything carrying your own words stays on your machine does not get an exception because a feature is nice. It also does not need one: your browser's own speech synthesis reads any text on the screen, offline, with no key and no bill. That is the version worth building."
+  },
+  "pricesAsOf": "2026-08",
+  "priceNote": "Published list prices, per million tokens, in US cents. They move, and this file does not move with them - treat every figure as 'roughly', and check your provider. The ledger's measured figures are the honest ones.",
+  "prices": {
+    "ollama": {
+      "inPerMTok": 0,
+      "outPerMTok": 0,
+      "note": "Local. No key, no request off your machine, no cost."
+    },
+    "openai": {
+      "inPerMTok": 15,
+      "outPerMTok": 60,
+      "model": "gpt-4o-mini"
+    },
+    "anthropic": {
+      "inPerMTok": 300,
+      "outPerMTok": 1500,
+      "model": "claude-sonnet-4-5"
+    },
+    "sd-local": {
+      "perImage": 0,
+      "note": "Local Stable Diffusion. Your GPU, your electricity, no bill."
+    },
+    "elevenlabs": {
+      "perSecond": 1.2,
+      "note": "Sound generation, billed in credits; this is an approximation."
+    },
+    "freesound": {
+      "perSearch": 0,
+      "note": "Free API, CC-licensed results. Attribution travels with them."
+    }
+  },
+  "capabilities": [
+    {
+      "id": "npc_voice",
+      "title": "Give an NPC a voice",
+      "forSeat": "dm",
+      "kind": "llm",
+      "status": "built",
+      "contentClass": "none",
+      "providers": [
+        "ollama",
+        "openai",
+        "anthropic"
+      ],
+      "est": {
+        "inTokens": 120,
+        "outTokens": 180
+      },
+      "what": "Turns the four facts the generator already rolled - name, trait, want, secret - into two lines of description and one line of dialogue you can read aloud. Arrives as a draft to edit, never as a decision.",
+      "insteadOf": "The generator gives you {name, trait, want, secret}. That is a slot fill, not a person, and putting a voice on it is the part a DM does at 11pm."
+    },
+    {
+      "id": "deeper_tables",
+      "title": "Deeper rumours, traps and encounter beats",
+      "forSeat": "dm",
+      "kind": "llm",
+      "status": "planned",
+      "contentClass": "none",
+      "providers": [
+        "ollama",
+        "openai",
+        "anthropic"
+      ],
+      "est": {
+        "inTokens": 200,
+        "outTokens": 400
+      },
+      "what": "Extends the seeded tables in the moment, keeping the seed and the source chip so a generated line is always distinguishable from an authored one.",
+      "insteadOf": "The shipped tables hold 10 rumours and 6 traps in total. A campaign exhausts the rumour table in one session and starts seeing repeats in the second."
+    },
+    {
+      "id": "session_recap",
+      "title": "Recap the session into Story",
+      "forSeat": "dm",
+      "kind": "llm",
+      "status": "planned",
+      "contentClass": "user",
+      "providers": [
+        "ollama"
+      ],
+      "est": {
+        "inTokens": 3000,
+        "outTokens": 500
+      },
+      "what": "Reads the typed event log for one session and writes the 'previously on' paragraph, with the open threads listed under it.",
+      "insteadOf": "Story shows counts and a 200-row feed. IDEA-2 calls it the thinnest lens in the app and the highest ratio of DM value to effort on the list.",
+      "blockedBy": "NIGHT-1 and NIGHT-2. sessionId is never set, so session boundaries are inferred, and the event window truncates silently past ~400 events - a recap today would confidently summarise the wrong slice. Both are fixable and both are already written up."
+    },
+    {
+      "id": "lore_readback",
+      "title": "Read back filed lore and region notes",
+      "forSeat": "dm",
+      "kind": "llm",
+      "status": "planned",
+      "contentClass": "user",
+      "providers": [
+        "ollama"
+      ],
+      "est": {
+        "inTokens": 1200,
+        "outTokens": 250
+      },
+      "what": "Summarises what a book section actually said about this region or faction, in two lines you can use at the table.",
+      "insteadOf": "Nothing. campaign.lore and region.note are written by the Deck's ingest and read by NOTHING in the app - measured, and used as a control in the night run. You file a section with one click and it disappears."
+    },
+    {
+      "id": "homebrew_effects",
+      "title": "Propose effects from homebrew prose",
+      "forSeat": "dm",
+      "kind": "llm",
+      "status": "planned",
+      "contentClass": "user",
+      "providers": [
+        "ollama"
+      ],
+      "est": {
+        "inTokens": 1500,
+        "outTokens": 600
+      },
+      "what": "Reads a feature's prose and proposes structured effects, each with its evidence, for you to confirm or reject.",
+      "insteadOf": "mapping.js already does this with regex, and says so plainly: 'these are suggestions for a human to confirm - not conclusions. Regex over natural language is genuinely lossy.' The confirm-by-human UI already ships, which is what makes this safe to try."
+    },
+    {
+      "id": "plain_words_spell",
+      "title": "What does this spell do, in plain words",
+      "forSeat": "player",
+      "kind": "llm",
+      "status": "planned",
+      "contentClass": "none",
+      "providers": [
+        "ollama",
+        "openai",
+        "anthropic"
+      ],
+      "est": {
+        "inTokens": 400,
+        "outTokens": 150
+      },
+      "what": "One sentence on what a spell or feature actually does at the table, beside the rules text.",
+      "insteadOf": "All 339 SRD spell descriptions already ship - and are rendered on NO player screen. The cheaper fix is to render the text that is already there, and that needs no key at all."
+    },
+    {
+      "id": "npc_portrait",
+      "title": "A face for an NPC",
+      "forSeat": "dm",
+      "kind": "image",
+      "status": "planned",
+      "contentClass": "none",
+      "providers": [
+        "sd-local"
+      ],
+      "est": {
+        "images": 1
+      },
+      "what": "A portrait from the NPC's own description, drawn on your own machine.",
+      "insteadOf": "Nothing. Local Stable Diffusion only, on purpose: a hosted image API is the easiest way to spend real money by accident, and this is a tool that otherwise costs nothing to run."
+    },
+    {
+      "id": "table_sfx",
+      "title": "A sound for the moment",
+      "forSeat": "dm",
+      "kind": "sfx",
+      "status": "planned",
+      "contentClass": "none",
+      "providers": [
+        "freesound",
+        "elevenlabs"
+      ],
+      "est": {
+        "seconds": 4
+      },
+      "what": "Finds or generates a one-off sound - a portcullis, a wolf, a market - to drop into a scene.",
+      "insteadOf": "Six synthesised ambience beds already ship and are wired into the DM's Stage. They need no key, no request and no cost, and they work on a train."
+    },
+    {
+      "id": "connector_test",
+      "title": "Check that a key works",
+      "forSeat": "dm",
+      "kind": "llm",
+      "status": "built",
+      "internal": true,
+      "contentClass": "none",
+      "providers": [
+        "ollama",
+        "openai",
+        "anthropic"
+      ],
+      "est": {
+        "inTokens": 30,
+        "outTokens": 60
+      },
+      "what": "One sentence about a harbour town, asked of a provider you just configured, to prove the key and the endpoint are right.",
+      "insteadOf": "Nothing - this is the only row here you did not choose. It is the Test button below, and it is listed so that what it costs shows up in your ledger under a name rather than under a blank."
+    }
+  ]
+}

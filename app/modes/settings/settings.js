@@ -15,8 +15,12 @@
 import { el, esc, toast, getState } from '../../core/store.js';
 import { getDataSource, setDataSource } from '../../core/db.js';
 import {
-  capabilities, forget, generateText, BEDS, playBed, stopBed, nowPlaying,
+  capabilities, forget, generateText, spendSummary,
+  BEDS, playBed, stopBed, nowPlaying,
 } from '../../core/providers.js';
+import {
+  catalogueSection, providerSection, spendSection,
+} from './connectors-panel.js';
 import { startSandbox, refreshChrome } from '../../app.js';
 import * as session from '../../core/session.js';
 import * as theme from '../../ui/theme.js';
@@ -25,12 +29,17 @@ export const title = 'Settings';
 
 let container = null;
 let caps = null;
+let spendInfo = null;
 let testing = null;
 
 export async function render(root) {
   container = root;
   draw();
   caps = await capabilities({ refresh: true });
+  draw();
+  // Second, and separately: what has actually been spent. Slower and less
+  // important than the catalogue, so it must not hold the screen up.
+  spendInfo = await spendSummary();
   draw();
 }
 
@@ -145,16 +154,13 @@ function seatPanel() {
 
 /* ------------------------------------------------------------------ */
 
-const KIND_LABEL = { llm: 'Writing', image: 'Pictures', sfx: 'Sound' };
-
 function connectorPanel() {
   const panel = el('div', { class: 'panel rivets' });
   panel.append(el('span', { class: 'lvl' }, 'Connectors'));
   panel.append(el('h3', {}, 'Optional, and off by default'));
   panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
-    'Toon Anvil works completely without any of these. They add a writing '
-    + 'assistant for improvisation, portraits, and sound - nothing that '
-    + 'changes a rule or a number.'));
+    'Toon Anvil works completely without any of these. They add writing, '
+    + 'pictures and sound - nothing that changes a rule or a number.'));
 
   // The part people actually need to read.
   const note = el('div', { class: 'note' });
@@ -180,64 +186,44 @@ function connectorPanel() {
     return panel;
   }
 
-  const providers = Object.entries(caps.providers || {});
-  const byKind = {};
-  for (const [id, p] of providers) (byKind[p.kind] ||= []).push([id, p]);
+  // The catalogue comes FIRST: what a key would buy is the question a
+  // person has before they care which vendor sells it.
+  for (const node of catalogueSection(caps)) panel.append(node);
 
-  for (const [kind, list] of Object.entries(byKind)) {
-    panel.append(el('h3', { style: 'margin-top:16px;font-size:16px' },
-      KIND_LABEL[kind] || kind));
-    for (const [id, p] of list) {
-      const row = el('div', {
-        style: 'padding:8px 0;border-bottom:1px solid var(--etch)',
-      });
-      const top = el('div', {
-        style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap',
-      });
-      top.append(el('span', {
-        class: 'chip',
-        style: p.configured ? 'background:rgba(47,107,98,.3)'
-          : 'background:rgba(58,66,71,.2)',
-      }, p.configured ? 'ready' : 'not set up'));
-      top.append(el('strong', { style: 'flex:1;min-width:150px' }, p.label));
-      if (p.configured && kind === 'llm') {
-        top.append(el('button', {
-          class: 'act small',
-          onClick: async () => {
-            testing = id; draw();
-            const r = await generateText({
-              provider: id, maxTokens: 60,
-              prompt: 'In one sentence, describe a rain-soaked harbour town at '
-                + 'dusk. Do not mention rules or dice.',
-            });
-            testing = null; draw();
-            toast(r.ok ? `${p.label}: ${r.text.slice(0, 110)}`
-              : `${p.label} failed: ${r.reason}`, r.ok ? 'ok' : 'bad');
-          },
-        }, testing === id ? 'Asking...' : 'Test'));
-      }
-      row.append(top);
-      row.append(el('p', {
-        class: 'muted', style: 'font-size:13px;margin:4px 0 0',
-      }, p.note));
-      panel.append(row);
-    }
-  }
+  const onTest = async (id, p) => {
+    testing = id; draw();
+    const r = await generateText({
+      provider: id, maxTokens: 60, capability: 'connector_test',
+      prompt: 'In one sentence, describe a rain-soaked harbour town at '
+        + 'dusk. Do not mention rules or dice.',
+    });
+    testing = null;
+    spendInfo = await spendSummary();
+    draw();
+    toast(r.ok ? `${p.label}: ${r.text.slice(0, 110)}`
+      : `${p.label} failed: ${r.reason}`, r.ok ? 'ok' : 'bad');
+  };
+  for (const node of providerSection(caps, { testing, onTest })) panel.append(node);
+  for (const node of spendSection(spendInfo)) panel.append(node);
 
   panel.append(el('button', {
     class: 'act ghost', style: 'margin-top:12px',
-    onClick: async () => { forget(); caps = await capabilities({ refresh: true }); draw(); },
+    onClick: async () => {
+      forget();
+      caps = await capabilities({ refresh: true });
+      spendInfo = await spendSummary();
+      draw();
+    },
   }, 'Check again'));
 
   if (!caps.anyConfigured) {
     panel.append(el('p', { class: 'muted', style: 'font-size:13px;margin-top:10px' },
       'Nothing is configured, which is a perfectly good place to stay. The '
       + 'cheapest thing to add is a local model: install Ollama, pull a model, '
-      + 'and the writing assistant works with no key and no cost.'));
+      + 'and everything above marked "no cost" works with no key and no bill.'));
   }
   return panel;
 }
-
 /* ------------------------------------------------------------------ */
 
 function ambiencePanel() {
