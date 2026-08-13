@@ -15,6 +15,7 @@
 
 import { getState, el, toast } from '../../core/store.js';
 import { db } from '../../core/db.js';
+import { go } from '../../app.js';
 import * as session from '../../core/session.js';
 import {
   runnerPanel, publish, state as fight, addMonsters, setTokenPosition,
@@ -283,10 +284,10 @@ function tableStrip() {
       return strip;
     }
     strip.append(el('span', { class: 'grow' },
-      'Prepping solo. When the players arrive, open a table in Setup.'));
+      'Prepping solo. When the players arrive, host from the Lobby.'));
     strip.append(el('button', {
-      class: 'act ghost small', onClick: () => ctx.goToLens('setup'),
-    }, 'Go to Setup'));
+      class: 'act ghost small', onClick: () => go('lobby'),
+    }, 'Go to the Lobby'));
     return strip;
   }
 

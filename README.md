@@ -202,7 +202,8 @@ working with no network.
 | **Deck** | The campaign as a control panel. The in-game **day** and its **weather** (computed from the campaign's seed — deterministic, so every screen derives the same sky and any day is recomputable), **clocks** (pressure that fills a segment at a time — tie one to the calendar and every day advances it; public ones show on the players' strip, secret ones are stripped by the server), the **interactive map** (drop the setting's image; pan, zoom, pin locations, factions, quests and the party; reveal pins one by one), **factions** with standing sliders, public toggles and SECRET agendas plus a standing-over-days chart, and the **economy**: a price dial per region that the players' Market actually charges — turn it and their open screens re-price, live. Also ingests a setting document: split by headings, file each section as a region, faction, NPC or lore with one click. |
 | **World** | The prep: bestiary, encounter builder, treasure hoards, improv generators, rules reference — behind sub-tabs, each with its own search. Nothing here redraws off the live feed, so a half-typed search survives a player's die roll. |
 | **Story** | The whole party's event log as it happens — every roll, purchase and promise with the character's name on it — plus the open threads: promises unkept, secrets unused, NPCs met once. Read-only: the story is what the table did. |
-| **Setup** | Before the campaign: open the table (the code shows big — with a join link and QR — and only to the DM's seat: the server's own machine, or any device holding the DM token), forge a **quick party** of ready SRD heroes for the join gate, the forge toggle, and the homebrew workshop — homebrew is added and accepted by the DM here, before the start, and stays a DM-only tool after. |
+| **Lobby** | Where a session starts, for both seats: the DM sets the campaign (resume one, begin from a book, drop a PDF, or start blank), opens the table — the code shows big, with a join link and QR, and only to the DM's seat — and everyone waits in one queue that shows who has arrived, what they picked, and what the room is playing. |
+| **Setup** | Before the campaign: forge a **quick party** of ready SRD heroes for the join gate, the forge toggle, and the homebrew workshop — homebrew is added and accepted by the DM here, before the start, and stays a DM-only tool after. Hosting itself lives in the Lobby; Setup keeps a status strip and Close for disaster recovery. |
 
 **Treasure and improv results still say where they came from** — SRD content
 is marked `SRD`, authored tables are marked `authored`, and a DM reading one
@@ -300,13 +301,17 @@ out silently. Clicked Cancel? Windows remembers: open *Windows Security →
 Firewall & network protection → Allow an app through firewall*, find Python,
 and tick Private. No prompt at all usually means it is already allowed.
 
-Open the table from the DM screen's **Setup** lens. Beside the big code
-(`ANVIL-K7WU`) the panel shows the **join link and a QR code** — the server
-reports the address it actually bound, so even if the port drifted, what is
-on that screen is the truth. A phone scans the square, the join gate opens
-with the code already filled in, and typing a name is all that is left. No
-camera? Read the code aloud; the gate takes it typed too. Phones need no
-install and no account: the app is a browser tab — just keep the tab open.
+Host from the **Lobby** — it leads with the campaign (resume one, begin from
+a book on your shelf, drop a fresh PDF, or start blank; skipping is a pickup
+game, not an error), then opens the table. Beside the big code (`ANVIL-K7WU`)
+the queue shows the **join link and a QR code** — the server reports the
+address it actually bound, so even if the port drifted, what is on that
+screen is the truth. A phone scans the square, the join gate opens with the
+code already filled in, and typing a name is all that is left. No camera?
+Read the code aloud; the gate takes it typed too. Phones need no install and
+no account: the app is a browser tab — just keep the tab open. Everyone
+waits in the same queue, which names what the room is playing, and the DM
+starts the session when the room is ready.
 
 **Quick party, one tap.** The Setup lens can forge up to eight complete
 level-1 heroes from the SRD — abilities, skills, kit and spells all set —

@@ -1,32 +1,31 @@
 /**
  * SETUP - before the campaign, and the levers that frame it.
  *
- * The table itself (open it, read the code aloud, close it), the forge
- * (whether players can build), and the homebrew workshop - which lives here
- * because homebrew is added and accepted by the DM before the start, and
- * stays a DM-only tool after.
+ * The forge (whether players can build), a quick party, and the homebrew
+ * workshop - which lives here because homebrew is added and accepted by the
+ * DM before the start, and stays a DM-only tool after.
  *
- * The join code renders only for the trusted seat - the machine running the
- * server, or whoever holds the DM token: the server itself withholds it from
- * everyone else, so this screen cannot leak what it was never given.
+ * Hosting itself lives in the LOBBY. This screen used to carry a complete
+ * second copy of the host flow - open form, code, join link, QR - and two
+ * ways to do one thing is how neither gets learned. What remains here is a
+ * status strip that says whether a table is open and points at the one room
+ * where it happens, plus Close for disaster recovery beside the forge.
  */
 
 import { el, toast, getState, setState } from '../../core/store.js';
 import { db } from '../../core/db.js';
 import * as session from '../../core/session.js';
-import { refreshChrome } from '../../app.js';
-import { qrSvg } from '../../ui/qr.js';
+import { go, refreshChrome } from '../../app.js';
 import { forgeParty, RECIPES } from '../../core/pregen.js';
 
 let box = null;
 let ctx = null;
-let opening = false;
 
 export async function render(root, context) {
   box = root;
   ctx = context;
   box.innerHTML = '';
-  box.append(tablePanel());
+  box.append(tableStrip());
   if (session.isOpen()) {
     box.append(quickPartyPanel());
     box.append(forgePanel());
@@ -36,105 +35,42 @@ export async function render(root, context) {
 
 /* ------------------------------------------------------------------ */
 
-function tablePanel() {
+/**
+ * Status, not a second host flow. The code, the link and the QR live in the
+ * Lobby - the one room where hosting happens. Close stays: when the network
+ * is on fire the DM should not have to change rooms to pull the plug.
+ */
+function tableStrip() {
   const panel = el('div', { class: 'panel rivets accent' });
   panel.append(el('span', { class: 'lvl accent' }, 'The table'));
 
   if (!session.isOpen()) {
     panel.append(el('h3', {}, 'No table open'));
     panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
-      'Open a table and players on this network join with a short code. '
-      + 'A join code keeps a stranger from wandering in by accident - it is '
-      + 'not authentication, so use this on a network you trust.'));
-    const name = el('input', {
-      type: 'text', value: 'DM', 'aria-label': 'Your name at the table',
-      style: 'max-width:220px',
-    });
-    const row = el('div', { class: 'btnrow', style: 'margin-top:8px' });
-    row.append(name);
-    row.append(el('button', {
-      class: 'act',
-      onClick: async () => {
-        if (opening) return;
-        opening = true;
-        const out = await session.openTable(name.value.trim() || 'DM');
-        opening = false;
-        if (out.status === 403 || out.error) {
-          toast(out.error || 'The server said no', 'bad');
-        } else {
-          toast('The table is open', 'ok');
-          await refreshChrome();
-        }
-        ctx.redraw();
-      },
-    }, 'Open the table'));
-    panel.append(row);
+      'Host from the Lobby: set the campaign, open the table, and read the '
+      + 'code out while you watch everyone arrive.'));
+    panel.append(el('div', { class: 'btnrow' }, el('button', {
+      class: 'act', onClick: () => go('lobby'),
+    }, 'Open the Lobby')));
     return panel;
   }
 
   const status = session.current() || {};
   panel.append(el('h3', {}, 'The table is open'));
-  if (status.code) {
-    panel.append(el('p', { class: 'muted', style: 'font-size:13px;margin:0 0 4px' },
-      'Read this aloud. Players open this address and type it in:'));
-    panel.append(el('div', {
-      class: 'mono',
-      style: 'font-size:clamp(26px,6vw,40px);font-weight:700;letter-spacing:.12em;'
-        + 'color:var(--accent-text);margin:4px 0 10px',
-    }, status.code));
-
-    // The server reports where it is actually reachable, computed from the
-    // socket it bound - port drift and all. The link carries the CODE, which
-    // is shoutable by design; the join TOKEN never rides in a URL.
-    const lanAddr = (status.addresses || [])
-      .find((a) => !a.includes('127.0.0.1'));
-    if (status.lanHint && lanAddr) {
-      const joinUrl = `${lanAddr}/?code=${status.code}`;
-      panel.append(el('p', { class: 'muted', style: 'font-size:13px;margin:8px 0 2px' },
-        'Or hand them this link - a phone camera reads the square:'));
-      const urlBox = el('input', {
-        type: 'text', readonly: true, value: joinUrl, class: 'mono',
-        'aria-label': 'Join link',
-        style: 'width:100%;max-width:420px;font-size:13px;margin:2px 0 6px',
-        onFocus: (e) => e.target.select(),
-      });
-      panel.append(urlBox);
-      if (navigator.clipboard && window.isSecureContext) {
-        // Clipboard API needs a secure context (localhost qualifies; plain
-        // http over the LAN does not) - elsewhere the selectable box above
-        // IS the copy story.
-        panel.append(el('div', { class: 'btnrow' }, el('button', {
-          class: 'act ghost small',
-          onClick: async () => {
-            try {
-              await navigator.clipboard.writeText(joinUrl);
-              toast('Link copied', 'ok');
-            } catch { urlBox.focus(); }
-          },
-        }, 'Copy link')));
-      }
-      panel.append(el('div', {
-        class: 'qr', html: qrSvg(joinUrl),
-        style: 'width:min(46vw,190px);margin:10px 0 2px;line-height:0',
-      }));
-    } else if (status.lanHint === false) {
-      panel.append(el('p', { class: 'muted', style: 'font-size:12px' },
-        'Only this machine can reach the table right now. Restart with '
-        + 'python run.py --lan to invite phones.'));
-    }
-  } else {
-    panel.append(el('p', { class: 'muted', style: 'font-size:13px' },
-      "The code shows only to the DM's seat."));
-  }
-
   const players = (status.profiles || []).filter((p) => p.role === 'player');
   panel.append(el('p', { class: 'mono muted', style: 'font-size:12px' },
     players.length
       ? `${players.length} player${players.length === 1 ? '' : 's'}: `
         + players.map((p) => p.name).join(', ')
       : 'Nobody has joined yet.'));
+  panel.append(el('p', { class: 'muted', style: 'font-size:13px' },
+    'The code, the join link and the QR square are in the Lobby, with the '
+    + 'queue of who has arrived.'));
 
   panel.append(el('div', { class: 'btnrow', style: 'margin-top:8px' },
+    el('button', {
+      class: 'act', onClick: () => go('lobby'),
+    }, 'Open the Lobby'),
     el('button', {
       class: 'act ghost',
       onClick: async () => {
