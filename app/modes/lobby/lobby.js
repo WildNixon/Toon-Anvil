@@ -275,6 +275,17 @@ async function shelveBook(f) {
 /* ------------------------------------------------------------------ */
 
 function drawJoin() {
+  // A ?code= arrival prefills the overlay gate - and this face too, read
+  // from the same stash, so dismissing the overlay does not throw away the
+  // code the link carried. Consumed on read: a code is a per-table fact,
+  // not a preference.
+  if (!draft.code) {
+    try {
+      draft.code = sessionStorage.getItem('toonanvil.joincode') || '';
+      sessionStorage.removeItem('toonanvil.joincode');
+    } catch { /* storage denied - typing it still works */ }
+  }
+
   const panel = el('div', { class: 'panel rivets accent' });
   panel.append(el('span', { class: 'lvl accent' }, 'Join'));
   panel.append(el('h3', {}, 'A table is open'));

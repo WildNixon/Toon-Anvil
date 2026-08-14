@@ -8,7 +8,7 @@
 
 import { initDb, db, compendia, getDataSource, setDataSource, openRealStore }
   from './core/db.js';
-import { getState, setState, subscribe, watch, esc, el, $ } from './core/store.js';
+import { getState, setState, subscribe, watch, esc, el, $, toast } from './core/store.js';
 import { setContext, subscribe as onEvent } from './core/events.js';
 import { derive } from './core/derive.js';
 import * as session from './core/session.js';
@@ -495,6 +495,12 @@ const cap = (s) => String(s || '').replace(/^./, (c) => c.toUpperCase());
 async function watchTheTable() {
   await live.start();
 
+  // My own snapshot of "was this browser seated at an open table", for the
+  // close signal below. A snapshot rather than reading session before the
+  // refresh, because mode subscriptions share the session cache and whichever
+  // callback refreshes first would blind the others to what just changed.
+  let seat = { open: session.isOpen(), seated: Boolean(session.me()) };
+
   live.subscribe(['characters', 'table'], async ({ changes, gap }) => {
     const mine = getState().characterId;
     const touchedMe = gap || changes.some(
@@ -510,6 +516,18 @@ async function watchTheTable() {
       // and the current mode re-checked - a player who joined while on the DM
       // screen should not be left sitting on it.
       await session.refresh();
+
+      // The one thing a closing table owes every seat it strands: a word.
+      // Found at a real table: a player parked on her sheet learned nothing
+      // when the DM closed - the rail just quietly emptied. Only OTHER
+      // people's closes arrive here (live.js drops this client's own writes),
+      // so the DM who pressed Close keeps their button's local toast and
+      // never hears this one.
+      const open = session.isOpen();
+      if (seat.open && seat.seated && !open) {
+        toast('The table was closed', 'warn');
+      }
+      seat = { open, seated: Boolean(session.me()) };
       renderNav();
       if (!visibleModes().some((m) => m.id === getState().mode)) await renderMode();
       // A table change can be a grant or the forge - the sheet's banner and
@@ -863,6 +881,12 @@ async function boot() {
   // ever rides in a URL - never a token.
   if (params.has('code')) {
     deepLinkCode = (params.get('code') || '').trim();
+    // The lobby's own join face reads this stash, so a player who dismisses
+    // the overlay gate ("Not now") has not thrown away the code they
+    // arrived with. sessionStorage on purpose: it dies with the tab, like
+    // the code it carries dies with the table.
+    try { sessionStorage.setItem('toonanvil.joincode', deepLinkCode); }
+    catch { /* storage denied - the overlay prefill still works */ }
     params.delete('code');
     const qs = params.toString();
     history.replaceState({}, '',

@@ -3016,6 +3016,22 @@ export async function runPlayerView(CheckClass) {
     await goToMode(doc, 'Play');
     check.ok(!codeShape.test(doc.documentElement.innerHTML),
       'nor on the player\'s own sheet', opened.body.code);
+
+    // The close signal, from the seat it was built for. Found at a real
+    // table: a player parked on her sheet learned nothing when the DM
+    // closed - the rail just quietly emptied. The close comes from the gym
+    // page (a different client id), so the event genuinely reaches the
+    // frame the way another machine's close would.
+    await api('/api/table/close', { method: 'POST' });
+    const told = await waitFor(() => (/table was closed/i
+      .test(doc.querySelector('#toast')?.textContent || '') ? true : null),
+    { timeout: 10000 });
+    check.ok(!!told, 'a seat parked on its sheet is told the table closed');
+    const partyGone = await waitFor(() => (
+      ![...doc.querySelectorAll('#modes button')]
+        .some((b) => b.textContent.trim() === 'Party') ? true : null),
+    { timeout: 8000 });
+    check.ok(!!partyGone, 'and the table-only Party tab left the nav');
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {
@@ -3118,6 +3134,38 @@ export async function runJoinDeeplink(CheckClass) {
       .test(doc.querySelector('.welcome')?.textContent || '') ? true : null),
     { timeout: 8000 });
     check.ok(!!seated, 'one name and one tap later, the table greets them');
+
+    // The dismissal path, in a FRESH stranger frame (one app frame at a
+    // time - the previous one is gone first). Found at a real table: the
+    // link prefilled the overlay, but "Not now" threw the code away and the
+    // lobby's own join face started empty - the person who arrived by QR
+    // had to go ask for the code they were already carrying.
+    frame.remove();
+    frame = document.createElement('iframe');
+    frame.src = `/index.html?code=${encodeURIComponent(code)}`;
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;'
+      + 'height:1000px;border:0';
+    document.body.append(frame);
+    frame.contentWindow?.localStorage?.removeItem('toonanvil.token');
+    await new Promise((r) => { frame.onload = r; setTimeout(r, 15000); });
+    const doc2 = frame.contentDocument;
+    const gate2 = await waitForGate(doc2);
+    check.ok(!!gate2, 'a second stranger is greeted too');
+    [...(gate2?.querySelectorAll('button') || [])]
+      .find((b) => /not now/i.test(b.textContent))?.click();
+    const lobbyCode = await waitFor(() => doc2
+      .querySelector('main input[aria-label="Join code"]') || null,
+    { timeout: 8000 });
+    check.eq(lobbyCode?.value, code,
+      'dismissing the overlay keeps the code - the lobby face inherits it');
+    const lobbyName = doc2.querySelector('main input[aria-label="Your name"]');
+    setField(lobbyName, 'Couch Kid Two');
+    [...doc2.querySelectorAll('main button')]
+      .find((b) => b.textContent.trim() === 'Join the table')?.click();
+    const queued = await waitFor(() => (/picking someone|Your character/
+      .test(mainText(doc2)) ? true : null), { timeout: 8000 });
+    check.ok(!!queued,
+      'and the lobby face finishes the join the link started');
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {
