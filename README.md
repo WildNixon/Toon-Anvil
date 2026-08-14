@@ -1,15 +1,25 @@
 # Toon Anvil
 
-**Drop in homebrew. Get back a balanced subclass, a character sheet, and a plan
-for playing it.**
+**A workshop and a table. Drop in homebrew and get back a balanced subclass
+with the measurements to prove it — then sit down and play it, phones around
+the couch, from the same app.**
 
-You wrote a subclass. You don't know if it's broken. Toon Anvil runs it through
-a few hundred simulated campaigns from level 1 to 20, tells you which features
-actually do anything, proposes a fix for the ones that are too strong, and hands
-you a character sheet and a page you can send to your table.
+**The workshop.** You wrote a subclass. You don't know if it's broken. Toon
+Anvil runs it through a few hundred simulated campaigns from level 1 to 20,
+tells you which features actually do anything, proposes a fix for the ones
+that are too strong, and hands you a character sheet and a page you can send
+to your table.
 
-It runs entirely on your machine. No account, no upload, no network after
-install.
+**The table.** Host from the Lobby: set the campaign — resume one, begin from
+a book on your shelf, or drop a PDF and it files itself — then open the table,
+and everyone on your network joins with a short code. Character sheets, dice,
+a live fight, the DM's screens, all in a browser tab, with the server
+enforcing who may see and change what.
+
+It runs entirely on your machine. No account, no upload, no network beyond
+your own wifi. Writing help, portraits and sound are optional connectors,
+priced and explained before you commit a key — and your own writing never
+leaves the machine.
 
 ```bash
 python run.py
@@ -20,7 +30,7 @@ itself, starts a local server and opens the app.
 
 ---
 
-## What it does
+## What the workshop does
 
 **Ingest.** Drop homebrew into `inbox/` — PDF, Markdown, HTML, JSON, or plain
 text. PDFs are split automatically into subclasses, spells, items and feats, one
