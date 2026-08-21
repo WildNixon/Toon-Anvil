@@ -2149,6 +2149,26 @@ export const SUITES = [
           c.ok(!bad.ok, 'an unknown bed is refused rather than thrown');
         },
       },
+      {
+        id: 'audio_is_off_until_asked',
+        title: 'Sound is a choice this device makes, and a framed copy never makes it',
+        why: 'Five phones chiming at once is a problem, and a test frame that '
+           + 'chimes is a worse one. The rule is pure so it can be stated '
+           + 'here in full: nothing stored means off; on means on; and a '
+           + 'framed copy of the app is silent whatever is stored - which is '
+           + 'what keeps every gym iframe mute with no stub at all.',
+        run(c, { audio }) {
+          c.feature('audio');
+          c.eq(audio.resolveEnabled(null, false), false, 'nothing stored means off');
+          c.eq(audio.resolveEnabled('off', false), false, 'anything but on means off');
+          c.eq(audio.resolveEnabled('on', false), true, 'on means on');
+          c.eq(audio.resolveEnabled('on', true), false,
+            'but a framed app is silent whatever is stored');
+          c.eq(audio.context(), null,
+            'and nothing in this gym has constructed an audio context');
+          c.eq(audio.master(), null, 'nor a master gain');
+        },
+      },
     ],
   },
 
@@ -4868,7 +4888,8 @@ export const BARS = {
   // And again (52 -> 55) with the strategy-DM epic: prepared encounters,
   // the battle board, the cockpit, clocks.
   // And again (55 -> 56) when the app learned to say which version it is.
-  minFeaturesCovered: 56,
+  // And again (56 -> 57) when sound became a choice each device makes.
+  minFeaturesCovered: 57,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.

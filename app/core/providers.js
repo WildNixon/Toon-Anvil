@@ -19,6 +19,7 @@
  *    ever learns WHETHER one is present.
  */
 
+import * as audio from './audio.js';
 import { serverBase } from './db.js';
 
 /* ------------------------------------------------------------------ */
@@ -207,7 +208,6 @@ export const BEDS = {
   sea: { label: 'Sea', filter: 'lowpass', freq: 800, q: 0.5, gain: 0.15, wobble: 0.12 },
 };
 
-let audioCtx = null;
 let playing = null;
 
 function noiseBuffer(ctx, seconds = 4) {
@@ -229,9 +229,11 @@ export function playBed(id, { volume = 1 } = {}) {
   if (!bed) return { ok: false, reason: `no bed called "${id}"` };
   stopBed();
   try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return { ok: false, reason: 'this browser has no Web Audio' };
-    audioCtx = audioCtx || new Ctx();
+    // The core owns the context and the master gain. A bed tap is its own
+    // user gesture, so this is also the unlock - and beds are deliberately
+    // NOT gated by the sound-effects switch: tapping one is the opt-in.
+    const audioCtx = audio.unlock();
+    if (!audioCtx) return { ok: false, reason: 'this browser has no Web Audio' };
     const src = audioCtx.createBufferSource();
     src.buffer = noiseBuffer(audioCtx);
     src.loop = true;
@@ -251,7 +253,7 @@ export function playBed(id, { volume = 1 } = {}) {
     lfoGain.gain.value = bed.freq * 0.35;
     lfo.connect(lfoGain).connect(filter.frequency);
 
-    src.connect(filter).connect(gain).connect(audioCtx.destination);
+    src.connect(filter).connect(gain).connect(audio.master());
     src.start();
     lfo.start();
     // Fade in: an ambience that starts at full volume is a jump-scare.
@@ -269,6 +271,7 @@ export function playBed(id, { volume = 1 } = {}) {
 export function stopBed() {
   if (!playing) return;
   const { src, lfo, gain } = playing;
+  const audioCtx = audio.context();
   try {
     gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.6);
     setTimeout(() => { try { src.stop(); lfo.stop(); } catch { /* already */ } }, 700);

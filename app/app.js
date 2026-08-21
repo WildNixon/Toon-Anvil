@@ -14,6 +14,7 @@ import { derive } from './core/derive.js';
 import * as session from './core/session.js';
 import * as live from './core/live.js';
 import * as theme from './ui/theme.js';
+import * as audio from './core/audio.js';
 
 /**
  * TWO SHELLS. `shell` decides which app a mode belongs to, and the seat
@@ -867,6 +868,8 @@ onEvent((ev) => {
 async function boot() {
   // Theme first: everything below renders under it.
   theme.init();
+  // Sound: off until this device says otherwise, and never from a frame.
+  audio.install();
 
   // ?storage=memory boots an ephemeral session: nothing is written to disk or
   // to the server, and everything is gone on reload. The UI test tier uses it
