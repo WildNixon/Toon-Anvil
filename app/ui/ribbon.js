@@ -26,6 +26,11 @@ let deps = null;
 /** Which modes show the ribbon - passed in from the shell's MODES table. */
 let ribbonModes = new Set();
 
+// What the bar showed last time, so THIS render can tell a hit from a heal
+// from a redraw. Module-level because the ribbon renders twice per adjust
+// (the character lands, then the derived sheet): one latch, one flash.
+let last = { id: null, hp: null, max: null };
+
 export function mount(hostEl, dependencies) {
   host = hostEl;
   deps = dependencies;
@@ -78,8 +83,40 @@ function render() {
   const hp = derived.hp;
   const frac = hp.max ? Math.max(0, Math.min(1, hp.current / hp.max)) : 0;
   const tempFrac = hp.max ? Math.min(1, (hp.temp || 0) / hp.max) : 0;
+
+  // The juice. A hit washes the bar red and a heal green, once; the bar
+  // itself slides from where it was. Both live on the ribbon (outside
+  // <main>) and are motion only - the number beside the bar is still the
+  // meaning, so reduced-motion loses nothing but the slide.
+  const prev = last;
+  last = { id: character.id, hp: hp.current, max: hp.max };
+  const moved = prev.id === character.id && prev.hp !== null && prev.hp !== hp.current;
+  if (moved) {
+    const cls = hp.current < prev.hp ? 'rb-hit' : 'rb-heal';
+    // Only a MOVE touches the wash classes: the ribbon also re-renders for
+    // reasons that are not vitals (the roster, the mode), and clearing the
+    // wash on those would cut it short or race it away before it showed.
+    host.classList.remove('rb-hit', 'rb-heal');
+    // Force a style flush so re-adding the class restarts the animation.
+    void host.offsetWidth;
+    host.classList.add(cls);
+    const clear = () => host.classList.remove(cls);
+    host.addEventListener('animationend', clear, { once: true });
+    setTimeout(clear, 700);
+  }
+  // Persistent states, as classes: bloodied is half or less, down is zero.
+  host.classList.toggle('rb-bloodied', hp.current > 0 && hp.current <= (hp.max || 0) / 2);
+  host.classList.toggle('rb-down', hp.max > 0 && hp.current === 0);
+
   const bar = el('div', { class: 'hpbar', title: 'Hit points' });
-  bar.append(el('div', { class: 'fill', style: `width:${(frac * 100).toFixed(1)}%` }));
+  const fill = el('div', { class: 'fill', style: `width:${(frac * 100).toFixed(1)}%` });
+  if (moved && prev.max) {
+    // Start from the old width, flush, then let the CSS transition carry it.
+    const was = Math.max(0, Math.min(1, prev.hp / prev.max));
+    fill.style.width = `${(was * 100).toFixed(1)}%`;
+    requestAnimationFrame(() => { fill.style.width = `${(frac * 100).toFixed(1)}%`; });
+  }
+  bar.append(fill);
   if (tempFrac > 0) {
     bar.append(el('div', {
       class: 'temp',

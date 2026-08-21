@@ -2286,6 +2286,49 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- moments ---------------------------------------- */
+  {
+    id: 'moments',
+    title: 'Moments',
+    why: 'The app recorded a great deal and celebrated almost none of it. '
+       + 'The table from event to moment is pure so it can be asserted '
+       + 'whole: every row names a real event type, the dice sound follows '
+       + 'the roll flags rather than the separate crit event (or an attack '
+       + 'crit would ring twice), and an unknown event is nothing at all.',
+    scenarios: [
+      {
+        id: 'moment_for_event_is_total',
+        title: 'Every moment answers to a real event, and nothing else',
+        run(c, { moments, events }) {
+          c.feature('moments');
+          for (const t of moments.MOMENT_EVENTS) {
+            c.ok(t in events.EVENT_TYPES, `${t} is a real event type`);
+            c.ok(!!moments.momentFor({ type: t, payload: {} }),
+              `${t} yields a moment`);
+          }
+          c.eq(moments.momentFor({ type: 'roll', payload: { crit: true } })?.sting,
+            'crit', 'a natural twenty rings the crit');
+          c.eq(moments.momentFor({ type: 'roll', payload: { fumble: true } })?.sting,
+            'fumble', 'a natural one thuds');
+          c.eq(moments.momentFor({ type: 'roll', payload: {} })?.sting, 'dice',
+            'any other roll is just dice');
+          c.eq(moments.momentFor({ type: 'crit', payload: {} }), null,
+            'the separate crit event is silent, or an attack crit would ring twice');
+          const revive = moments.momentFor({ type: 'death_save', payload: { roll: 20 } });
+          c.eq(revive?.sting, 'revive', 'a twenty on a death save is the revive');
+          c.ok(!!revive?.title, 'and it is a moment with a card');
+          c.eq(moments.momentFor({ type: 'death_save', payload: { roll: 11 } })?.sting,
+            'death-tick', 'any other death save ticks');
+          c.ok(!!moments.momentFor({ type: 'downed', payload: {} })?.title,
+            'going down is a card, not just a sound');
+          c.eq(moments.momentFor({ type: 'no_such_event', payload: {} }), null,
+            'an unknown event is nothing');
+          c.eq(moments.momentFor(null), null, 'and so is no event');
+        },
+      },
+    ],
+  },
+
   /* ---------------- the table -------------------------------------- */
   {
     id: 'pregen',
@@ -5005,7 +5048,8 @@ export const BARS = {
   // And again (56 -> 57) when sound became a choice each device makes.
   // And again (57 -> 58) with the vendored sound-effects pack and its
   // licence trail.
-  minFeaturesCovered: 58,
+  // And again (58 -> 59) with the moments layer.
+  minFeaturesCovered: 59,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.

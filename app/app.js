@@ -9,12 +9,13 @@
 import { initDb, db, compendia, getDataSource, setDataSource, openRealStore }
   from './core/db.js';
 import { getState, setState, subscribe, watch, esc, el, $, toast } from './core/store.js';
-import { setContext, subscribe as onEvent } from './core/events.js';
+import { setContext } from './core/events.js';
 import { derive } from './core/derive.js';
 import * as session from './core/session.js';
 import * as live from './core/live.js';
 import * as theme from './ui/theme.js';
 import * as audio from './core/audio.js';
+import * as moments from './ui/moments.js';
 
 /**
  * TWO SHELLS. `shell` decides which app a mode belongs to, and the seat
@@ -838,28 +839,11 @@ watch('mode', renderMode);
 /* the level-up moment                                                 */
 /* ------------------------------------------------------------------ */
 
-// level_up finally has a listener. Same-tab: the player who took the level
-// sees the moment. The overlay's backdrop passes every click through
-// (pointer-events: none) - celebration must never block play, or the level-
-// up flow's own next step. Only the card itself is tappable, to dismiss.
-onEvent((ev) => {
-  if (ev.type !== 'level_up') return;
-  document.querySelector('.levelup-overlay')?.remove();
-  const wrap = el('div', { class: 'levelup-overlay', role: 'status' });
-  const card = el('div', { class: 'levelup-card', onClick: () => wrap.remove() });
-  card.append(el('div', { class: 'lu-burst' },
-    `Level ${ev.payload?.level ?? '?'}!`));
-  const gained = (getState().derived?.features || [])
-    .filter((f) => Number(f.level) === Number(ev.payload?.level))
-    .map((f) => f.name).filter(Boolean).slice(0, 6);
-  if (gained.length) {
-    card.append(el('div', { class: 'lu-features' }, gained.join(' · ')));
-  }
-  card.append(el('div', { class: 'welcome-fine' }, 'tap to dismiss'));
-  wrap.append(card);
-  document.body.append(wrap);
-  setTimeout(() => wrap.remove(), 7000);
-});
+// Every moment - the level-up card, going down, a natural twenty on a
+// death save, the sound of a die landing - has one listener, in
+// ui/moments.js. The level-up card used to be wired right here as a
+// one-off; now it is one row in a table the next ceremony can join.
+moments.install();
 
 /* ------------------------------------------------------------------ */
 /* boot                                                                */

@@ -121,7 +121,20 @@ export async function openBench({ players = 5 } = {}) {
     code: opened.code,
     seats,
     seat: (id) => seats.find((s) => s.id === id),
-    close: () => api('/api/table/close', { method: 'POST' }).catch(() => {}),
+    // Closing the bench takes its five characters with it. It used to leave
+    // them: after a few cycles the throwaway store held Kim, Ash and Rue
+    // many times over, and the quick-party flow found its forged heroes
+    // pushed off the claim list by ghosts - a failure that read as the
+    // app's until somebody looked at the names.
+    close: async () => {
+      for (const s of seats.slice(1)) {
+        // eslint-disable-next-line no-await-in-loop
+        await api(`/api/characters/${s.characterId}`, {
+          method: 'DELETE', token: dm.token,
+        }).catch(() => {});
+      }
+      await api('/api/table/close', { method: 'POST' }).catch(() => {});
+    },
   };
 }
 

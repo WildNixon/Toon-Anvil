@@ -797,6 +797,75 @@ export const FLOWS = [
   },
 
   {
+    id: 'vitals_juice',
+    title: 'Damage washes the ribbon, the bar slides, and zero hit points is a moment',
+    why: 'Damage and healing are the commonest thing a player does and had '
+       + 'no feedback beyond a number changing. The juice lives on the '
+       + 'ribbon and in the moments layer - both outside main, so the text '
+       + 'probes never see it - and every state here also exists as a '
+       + 'class or a number, so reduced motion loses nothing.',
+    async run(c, { doc }) {
+      c.feature('ui', 'ribbon', 'moments');
+      c.ok(await goToMode(doc, 'Play', 'Adjust HP'), 'the sheet opens');
+      const ribbon = doc.querySelector('#ribbon');
+      const amount = doc.querySelector('#ribbon .rb-adjust input');
+      const dmg = doc.querySelector('#ribbon .rb-adjust button[aria-label="Damage"]');
+      const heal = doc.querySelector('#ribbon .rb-adjust button[aria-label="Heal"]');
+      c.ok(!!ribbon && !!amount && !!dmg && !!heal, 'the ribbon and its controls exist');
+      if (!ribbon || !amount || !dmg || !heal) return;
+      const num = () => {
+        const m = /(\d+)\/(\d+)/.exec(doc.querySelector('#ribbon .rb-num')?.textContent || '');
+        return m ? { cur: Number(m[1]), max: Number(m[2]) } : null;
+      };
+      // Start whole, so the flow means the same thing every run.
+      setField(amount, '999'); heal.click();
+      await waitFor(() => (num() && num().cur === num().max ? true : null), { timeout: 5000 });
+      const before = num();
+      c.ok(!!before && before.max > 0, 'the character has hit points', JSON.stringify(before));
+      if (!before) return;
+
+      setField(amount, '1'); dmg.click();
+      const hit = await waitFor(() => (ribbon.classList.contains('rb-hit') ? true : null),
+        { timeout: 3000 });
+      c.ok(!!hit, 'a hit washes the ribbon');
+      const cleared = await waitFor(() => (!ribbon.classList.contains('rb-hit') ? true : null),
+        { timeout: 4000 });
+      c.ok(!!cleared, 'and the wash clears on its own');
+      c.ok(!ribbon.classList.contains('rb-bloodied'),
+        'one point of damage is not bloodied', String(num()?.cur));
+
+      // Down to half: bloodied, and the bar wears the warning colour.
+      const toHalf = Math.max(0, (num()?.cur ?? 0) - Math.floor(before.max / 2));
+      if (toHalf > 0) { setField(amount, String(toHalf)); dmg.click(); }
+      const bloodied = await waitFor(() => (ribbon.classList.contains('rb-bloodied') ? true : null),
+        { timeout: 4000 });
+      c.ok(!!bloodied, 'at half or less the ribbon is bloodied', String(num()?.cur));
+
+      // To zero: the moment, then gone on its own.
+      setField(amount, '999'); dmg.click();
+      const down = await waitFor(() => doc.querySelector('#moments .moment-downed') || null,
+        { timeout: 5000 });
+      c.ok(!!down, 'zero hit points is a moment in its own layer');
+      c.ok(/Down/.test(down?.textContent || ''), 'and the card says so in words');
+      c.ok(!doc.querySelector('main .moment'), 'never inside main');
+      const downClass = await waitFor(() => (ribbon.classList.contains('rb-down') ? true : null),
+        { timeout: 3000 });
+      c.ok(!!downClass, 'the ribbon carries the down state too');
+      const gone = await waitFor(() => (!doc.querySelector('#moments .moment-downed') ? true : null),
+        { timeout: 8000 });
+      c.ok(!!gone, 'the moment leaves on its own');
+
+      // Back to whole, so the flows after this one inherit a healthy hero.
+      setField(amount, '999'); heal.click();
+      const whole = await waitFor(() => (num() && num().cur === num().max ? true : null),
+        { timeout: 5000 });
+      c.ok(!!whole, 'a heal restores them');
+      c.ok(!ribbon.classList.contains('rb-bloodied') && !ribbon.classList.contains('rb-down'),
+        'and the ribbon drops both states');
+    },
+  },
+
+  {
     id: 'spellbook_pick_and_cast',
     title: 'A caster picks spells in Build and casts them by name in Play',
     async run(c, { doc }) {

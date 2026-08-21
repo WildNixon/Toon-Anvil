@@ -40,6 +40,11 @@ localStorage.getItem('toonanvil.role')==='dm'?'dm':'player'}catch(e){}</script>
 </div>
 <div id="toast" hidden></div>
 <div id="rollcards" aria-live="polite"></div>
+<!-- Moments: where a thing that just happened is marked. A sibling of
+     #rollcards on purpose - the gym reads the first .rollcard it finds
+     and prunes that stack; a card living inside it would be read as a
+     roll or evicted as one. -->
+<div id="moments" aria-live="polite"></div>
 <script type="module" src="./app.js"></script>
 </body>
 </html>

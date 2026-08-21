@@ -481,6 +481,10 @@ async function toggleCondition(cond) {
  * every other d20, and death_save is a notable event - the Chronicle
  * remembers the night the dice went quiet.
  */
+// The pips shown last time, so the one that JUST filled can be marked. A
+// redraw for any other reason draws the same pips and animates nothing.
+let lastPips = { s: 0, f: 0 };
+
 function deathPanel(d) {
   const ds = d.deathSaves || { successes: 0, failures: 0 };
   const wrap = el('div', { class: 'death-panel', role: 'group',
@@ -488,19 +492,21 @@ function deathPanel(d) {
   wrap.append(el('div', { class: 'eyebrow' }, 'Death saves'));
 
   const pips = el('div', { class: 'death-pips' });
-  const row = (label, n, cls) => {
+  const row = (label, n, cls, before) => {
     const r = el('div', { class: 'death-row' });
     r.append(el('span', { class: 'death-k' }, label));
     for (let i = 0; i < 3; i += 1) {
+      const fresh = i < n && i >= before;
       r.append(el('span', {
-        class: `pip ${cls}${i < n ? ' filled' : ''}`,
+        class: `pip ${cls}${i < n ? ' filled' : ''}${fresh ? ' just' : ''}`,
         'aria-hidden': 'true',
       }));
     }
     return r;
   };
-  pips.append(row('Successes', ds.successes, 'ok'));
-  pips.append(row('Failures', ds.failures, 'bad'));
+  pips.append(row('Successes', ds.successes, 'ok', lastPips.s));
+  pips.append(row('Failures', ds.failures, 'bad', lastPips.f));
+  lastPips = { s: ds.successes, f: ds.failures };
   wrap.append(pips);
 
   if (ds.failures >= 3) {
