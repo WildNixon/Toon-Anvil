@@ -424,6 +424,20 @@ button.rb-ac:hover { background: var(--chrome-hover); }
   background: transparent; color: var(--chrome-ink); cursor: pointer;
 }
 .rb-adjust button:hover { background: var(--chrome-hover); }
+/* The speaker: sound effects on/off for this device. Textless (an SVG with
+   an aria-label) so no text lookup can ever mistake it for another button.
+   aria-pressed carries the state; the icon merely illustrates it. */
+.sound-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0;
+  border: 1px solid var(--gold-soft); border-radius: 2px;
+  background: transparent; color: var(--chrome-ink); cursor: pointer;
+}
+.sound-toggle[aria-pressed="true"] { color: var(--gold); border-color: var(--gold); }
+.sound-toggle.compact { width: 26px; height: 26px; }
+.sound-toggle.compact svg { width: 15px; height: 15px; }
+main .sound-toggle { color: var(--ink); border-color: var(--etch); }
+main .sound-toggle[aria-pressed="true"] { color: var(--accent-text); border-color: var(--accent); }
 .rb-conds { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .rb-conds .rb-more { display: none; }
 .rb-switch select {
@@ -973,6 +987,7 @@ th {
   /* Fingers, not cursors: the taps a fight leans on grow to 44px. Text
      stays exactly what it was - the − and + are load-bearing strings. */
   .rb-adjust button { min-width: 44px; min-height: 44px; }
+  .rb-sound { min-width: 44px; min-height: 44px; }
   button.act.small { min-height: 44px; }
   .stat.clickable { min-height: 44px; }
 }

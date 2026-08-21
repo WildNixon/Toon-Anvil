@@ -270,6 +270,7 @@ mimetypes.add_type("application/json", ".json")
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 mimetypes.add_type("font/woff2", ".woff2")
 mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("audio/mpeg", ".mp3")
 
 
 def now_iso() -> str:

@@ -24,6 +24,8 @@ import {
 import { startSandbox, refreshChrome } from '../../app.js';
 import * as session from '../../core/session.js';
 import * as theme from '../../ui/theme.js';
+import { soundButton } from '../../ui/soundtoggle.js';
+import * as audio from '../../core/audio.js';
 import { VERSION } from '../../version.js';
 
 export const title = 'Settings';
@@ -236,8 +238,20 @@ function ambiencePanel() {
   panel.append(el('span', { class: 'lvl' }, 'Ambience'));
   panel.append(el('h3', {}, 'Sound with no key and no network'));
   panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
-    'Synthesised in the browser - not recordings, so there is nothing to '
-    + 'licence and nothing to download. Works offline.'));
+    'The beds are synthesised in the browser. The short sound effects - a '
+    + 'die landing, a crit, a clock striking - are CC0 recordings bundled '
+    + 'with the app (see ATTRIBUTION.md). Everything works offline.'));
+
+  // Sound effects are a choice THIS DEVICE makes: off until tapped on, and
+  // remembered here only. Five phones chiming at once is a problem.
+  const sfxRow = el('div', { class: 'btnrow', style: 'align-items:center;margin:4px 0 10px' });
+  sfxRow.append(soundButton());
+  sfxRow.append(el('span', { class: 'muted', style: 'font-size:13px' },
+    audio.chosen()
+      ? 'Sound effects are on for this device.'
+      : 'Sound effects are off on this device. Turn them on here or from the '
+        + 'speaker in the ribbon; the choice is remembered on this device only.'));
+  panel.append(sfxRow);
 
   const row = el('div', { class: 'btnrow' });
   const current = nowPlaying();

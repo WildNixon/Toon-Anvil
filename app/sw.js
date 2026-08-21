@@ -29,7 +29,7 @@
 const VERSION = 'toon-anvil-v2.0.0';
 
 /** Immutable between releases: safe to serve from cache without asking. */
-const IMMUTABLE = /\/(data\/fonts|data\/compendium|icons)\//;
+const IMMUTABLE = new RegExp('/(data/fonts|data/compendium|icons|assets/sfx)/');
 const SHELL = [
   './',
   './index.html',
@@ -111,6 +111,27 @@ const SHELL = [
   './data/fonts/alegreya-italic-400.woff2',
   './data/fonts/plex-mono-400.woff2',
   './data/fonts/plex-mono-600.woff2',
+  // The sound-effects pack: seventeen short MP3s and their manifest,
+  // under 400 KB together - smaller than one compendium file, and the
+  // difference between a table that chimes offline and one that does not.
+  './assets/sfx/manifest.json',
+  './assets/sfx/dice.mp3',
+  './assets/sfx/crit.mp3',
+  './assets/sfx/fumble.mp3',
+  './assets/sfx/hit.mp3',
+  './assets/sfx/heal.mp3',
+  './assets/sfx/downed.mp3',
+  './assets/sfx/death-tick.mp3',
+  './assets/sfx/revive.mp3',
+  './assets/sfx/your-turn.mp3',
+  './assets/sfx/round.mp3',
+  './assets/sfx/session-start.mp3',
+  './assets/sfx/table-closed.mp3',
+  './assets/sfx/level-up.mp3',
+  './assets/sfx/clock-tick.mp3',
+  './assets/sfx/clock-strike.mp3',
+  './assets/sfx/spell-cast.mp3',
+  './assets/sfx/rest-long.mp3',
 ];
 
 self.addEventListener('install', (event) => {

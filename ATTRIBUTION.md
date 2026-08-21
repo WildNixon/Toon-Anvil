@@ -10,6 +10,7 @@ the authoritative statement of what is covered by what:
 | Rules content | `app/data/compendium/` | CC-BY-4.0 (SRD 5.2.1) |
 | Typefaces | `app/data/fonts/` | SIL Open Font License 1.1 |
 | QR encoder | `app/ui/vendor/qrcodegen.js` | MIT (Project Nayuki) |
+| Sound effects | `app/assets/sfx/` | CC0-1.0 (Kenney.nl) - see "Sound effects" |
 | Comparison index | `library/_vectors.json` | measurements only — see below |
 
 Homebrew you create or import remains yours. Toon Anvil stores it locally and
@@ -118,3 +119,42 @@ vendored verbatim (compiled build) with its licence header intact plus a
 marked ES-module export shim at the end. It renders the join-a-table QR code
 on the DM's Setup screen. Vendored rather than fetched so the app stays fully
 offline.
+
+## Sound effects
+
+The short sounds the app plays at moments - a die landing, a crit, a clock
+striking - are recordings from **Kenney Vleugels (Kenney.nl)**, released under
+**Creative Commons Zero (CC0-1.0)**: <https://creativecommons.org/publicdomain/zero/1.0/>.
+Credit is not required by that licence; it is given here because it is true.
+The packs drawn from are [Casino Audio](https://kenney.nl/assets/casino-audio),
+[Impact Sounds](https://kenney.nl/assets/impact-sounds),
+[Interface Sounds](https://kenney.nl/assets/interface-sounds),
+[Music Jingles](https://kenney.nl/assets/music-jingles) and
+[RPG Audio](https://kenney.nl/assets/rpg-audio).
+
+Vendored rather than fetched so the app stays fully offline. Each clip was
+trimmed, had its leading silence removed, was loudness-normalised to -16 LUFS,
+given a 60 ms fade, and encoded as mono 44.1 kHz MP3 at 64 kbps by
+`tools/fetch_sfx.py`; `app/assets/sfx/manifest.json` carries the same list,
+and the gym refuses a sting whose file is not in it. 17 files,
+110,854 bytes together.
+
+| File | From | Length | Size |
+|---|---|---|---|
+| `dice.mp3` | casino-audio / `dice-throw-1.ogg` | 0.60s | 5,267 B |
+| `crit.mp3` | impact-sounds / `impactBell_heavy_000.ogg` | 1.48s | 12,372 B |
+| `fumble.mp3` | impact-sounds / `impactSoft_heavy_001.ogg` | 0.57s | 5,058 B |
+| `hit.mp3` | impact-sounds / `impactPunch_heavy_001.ogg` | 0.54s | 4,849 B |
+| `heal.mp3` | interface-sounds / `confirmation_004.ogg` | 0.49s | 4,431 B |
+| `downed.mp3` | impact-sounds / `impactPlate_heavy_002.ogg` | 0.49s | 4,431 B |
+| `death-tick.mp3` | impact-sounds / `impactSoft_heavy_000.ogg` | 0.53s | 4,849 B |
+| `revive.mp3` | music-jingles / `jingles_PIZZI12.ogg` | 0.98s | 8,402 B |
+| `your-turn.mp3` | interface-sounds / `question_001.ogg` | 0.49s | 4,431 B |
+| `round.mp3` | rpg-audio / `metalPot1.ogg` | 1.38s | 11,536 B |
+| `session-start.mp3` | music-jingles / `jingles_PIZZI03.ogg` | 1.14s | 9,656 B |
+| `table-closed.mp3` | interface-sounds / `minimize_004.ogg` | 0.42s | 3,804 B |
+| `level-up.mp3` | music-jingles / `jingles_PIZZI07.ogg` | 1.32s | 11,118 B |
+| `clock-tick.mp3` | rpg-audio / `metalLatch.ogg` | 0.25s | 2,550 B |
+| `clock-strike.mp3` | impact-sounds / `impactBell_heavy_002.ogg` | 0.70s | 6,103 B |
+| `spell-cast.mp3` | interface-sounds / `glass_004.ogg` | 0.69s | 6,103 B |
+| `rest-long.mp3` | rpg-audio / `doorClose_1.ogg` | 0.67s | 5,894 B |

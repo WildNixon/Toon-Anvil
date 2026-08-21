@@ -47,6 +47,17 @@ function read(key) {
   try { return localStorage.getItem(key); } catch { return null; }
 }
 
+/**
+ * What this device CHOSE - the stored preference, framed or not. The switch
+ * shows and toggles this. Whether sound may actually play is enabled(),
+ * which also refuses inside a frame; the two are different questions, and
+ * conflating them made the speaker unable to show "on" in a test frame and
+ * unable to turn off again.
+ */
+export function chosen() {
+  return read(SOUND_KEY) === 'on';
+}
+
 export function enabled() {
   return resolveEnabled(read(SOUND_KEY), isFramed());
 }
@@ -85,7 +96,7 @@ export function setEnabled(on) {
     const c = unlock();
     if (!c || c.state !== 'running') arm();
   }
-  return enabled();
+  return chosen();
 }
 
 /**

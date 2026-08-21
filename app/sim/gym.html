@@ -87,6 +87,7 @@ import * as dmGen from '../modes/dm/generators.js';
 import * as parseContent from '../homebrew/parse-content.js';
 import * as providers from '../core/providers.js';
 import * as audio from '../core/audio.js';
+import * as sfx from '../core/sfx.js';
 import { VERSION } from '../version.js';
 import * as session from '../core/session.js';
 import * as theme from '../ui/theme.js';
@@ -135,6 +136,7 @@ async function buildCtx() {
     content: { ...parseContent, compendiumWithCustom },
     providers,
     audio,
+    sfx,
     version: { VERSION },
     session,
     theme,

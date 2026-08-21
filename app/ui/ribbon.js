@@ -18,6 +18,7 @@
  */
 
 import { getState, watch, el } from '../core/store.js';
+import { soundButton } from './soundtoggle.js';
 
 let host = null;
 let deps = null;
@@ -151,6 +152,13 @@ function render() {
     });
     host.append(el('div', { class: 'rb-switch' }, sel));
   }
+
+  // The speaker, on every screen a player plays on. Outside <main>, so the
+  // gym's text probes and number counts never see it; textless, so no label
+  // lookup ever picks it up; 44px on a phone like the adjust buttons.
+  const sound = soundButton({ compact: true });
+  sound.classList.add('rb-sound');
+  host.append(sound);
 
   appendTry(ephemeral);
 }

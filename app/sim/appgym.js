@@ -2172,6 +2172,120 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- sound effects ---------------------------------- */
+  {
+    id: 'sfx',
+    title: 'Sound effects',
+    why: 'Seventeen short recordings, vendored CC0, played at moments. Two '
+       + 'things can go wrong with sound in a browser: it plays when nobody '
+       + 'asked (five phones chiming at once, or a test frame), and a file '
+       + 'ships without its licence trail. Both are asserted here; neither '
+       + 'needs a speaker.',
+    scenarios: [
+      {
+        id: 'stings_are_a_menu',
+        title: 'Every sting has a name, a file and a sane level',
+        run(c, { sfx }) {
+          c.feature('sfx');
+          const ids = Object.keys(sfx.STINGS);
+          c.ok(ids.length >= 14, 'enough stings for four bundles', String(ids.length));
+          for (const [id, st] of Object.entries(sfx.STINGS)) {
+            c.ok(typeof st.label === 'string' && st.label.length > 2,
+              `${id} has a readable name`);
+            c.ok(st.gain > 0 && st.gain < 0.5,
+              `${id} is mixed at a sane level`, String(st.gain));
+            c.ok(typeof st.file === 'string' && st.file.endsWith('.mp3'),
+              `${id} names an mp3 - the one format every phone plays`, String(st.file));
+            c.ok(id === id.toLowerCase() && !id.includes(' '), `${id} is a kebab id`);
+          }
+        },
+      },
+      {
+        id: 'unknown_sting_refused_before_webaudio',
+        title: 'A sting nobody defined is refused before Web Audio is touched',
+        why: 'The first gate is the cheapest: a typo is not a sound, and it '
+           + 'must not become a constructed context either.',
+        run(c, { sfx }) {
+          c.feature('sfx');
+          const calls = [];
+          const Spy = function SpyContext() { calls.push('constructed'); throw new Error('spy'); };
+          const saved = [window.AudioContext, window.webkitAudioContext];
+          window.AudioContext = Spy; window.webkitAudioContext = Spy;
+          try {
+            const r = sfx.play('no-such-sting');
+            c.ok(!r.ok, 'refused rather than thrown');
+            c.ok(String(r.reason).includes('no-such-sting'),
+              'and the reason names the id', String(r.reason));
+            c.eq(calls.length, 0, 'without constructing an audio context');
+          } finally {
+            window.AudioContext = saved[0]; window.webkitAudioContext = saved[1];
+          }
+        },
+      },
+      {
+        id: 'sound_is_off_by_default',
+        title: 'With nothing chosen, a real sting is refused in words and stays silent',
+        run(c, { sfx, audio }) {
+          c.feature('sfx', 'audio');
+          const key = audio.SOUND_KEY;
+          let had = null;
+          try { had = localStorage.getItem(key); localStorage.removeItem(key); } catch { /* fine */ }
+          const calls = [];
+          const Spy = function SpyContext() { calls.push('constructed'); throw new Error('spy'); };
+          const saved = [window.AudioContext, window.webkitAudioContext];
+          window.AudioContext = Spy; window.webkitAudioContext = Spy;
+          try {
+            const r = sfx.play('crit');
+            c.ok(!r.ok, 'a real sting is refused when sound is off');
+            c.ok(String(r.reason).includes('off'), 'and says sound is off', String(r.reason));
+            c.eq(calls.length, 0, 'no context was constructed');
+            c.eq(audio.context(), null, 'and none exists afterwards');
+          } finally {
+            window.AudioContext = saved[0]; window.webkitAudioContext = saved[1];
+            try { if (had !== null) localStorage.setItem(key, had); } catch { /* fine */ }
+          }
+        },
+      },
+      {
+        id: 'pack_manifest_matches_stings',
+        title: 'Every sting ships with its file, its licence trail, and a size',
+        why: 'A vendored recording with no source line is a licence problem '
+           + 'waiting for an audience. The manifest is the trail; this keeps '
+           + 'the code and the trail from drifting apart, and the pack small '
+           + 'enough that an installed phone keeps it offline.',
+        async run(c, { sfx }) {
+          c.feature('sfx', 'licence');
+          const m = await fetch('/assets/sfx/manifest.json').then((r) => r.json())
+            .catch(() => null);
+          c.ok(!!m && Array.isArray(m.files), 'the manifest is served');
+          if (!m) return;
+          const byFile = new Map(m.files.map((f) => [f.file, f]));
+          let total = 0;
+          for (const [id, st] of Object.entries(sfx.STINGS)) {
+            const row = byFile.get(st.file);
+            c.ok(!!row, `${id}: ${st.file} is in the manifest`);
+            if (!row) continue;
+            c.ok(typeof row.source === 'string' && row.source.startsWith('http'),
+              `${id} names its source`);
+            c.ok(typeof row.author === 'string' && row.author.length > 2,
+              `${id} names its author`);
+            c.ok(row.licence === 'CC0-1.0', `${id} is CC0`, String(row.licence));
+            c.ok(row.bytes > 0 && row.bytes <= 60000, `${id} is a small file`, String(row.bytes));
+            total += row.bytes || 0;
+            const head = await fetch(`/assets/sfx/${st.file}`, { method: 'HEAD' })
+              .catch(() => null);
+            c.ok(!!head && head.status === 200, `${id} is actually served`,
+              String(head && head.status));
+            c.ok(!!head && String(head.headers.get('content-type')).includes('audio/mpeg'),
+              `${id} is served as audio/mpeg`,
+              String(head && head.headers.get('content-type')));
+          }
+          c.ok(total <= 400000, 'the whole pack stays under the budget', `${total} bytes`);
+        },
+      },
+    ],
+  },
+
   /* ---------------- the table -------------------------------------- */
   {
     id: 'pregen',
@@ -4889,7 +5003,9 @@ export const BARS = {
   // the battle board, the cockpit, clocks.
   // And again (55 -> 56) when the app learned to say which version it is.
   // And again (56 -> 57) when sound became a choice each device makes.
-  minFeaturesCovered: 57,
+  // And again (57 -> 58) with the vendored sound-effects pack and its
+  // licence trail.
+  minFeaturesCovered: 58,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.

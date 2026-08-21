@@ -88,7 +88,7 @@ the connectors — is in the changelog, one dated entry per epic.
 | **Chronicle** | Event log with export to Markdown, printable HTML and raw JSON, plus open-thread tracking. |
 | **DM** | Seven tools: live encounter runner, party dashboard, treasure, improv generators, XP budgeter, bestiary, rules reference. All offline. |
 | **Sandbox** | Throwaway in-memory session with an export path back out. |
-| **Settings** | Storage mode, connector status, and local ambience. |
+| **Settings** | Storage mode, connector status, local ambience, and the sound-effects switch (off until you tap it; remembered per device). |
 
 **The old to-do list — every item shipped**
 
@@ -255,6 +255,13 @@ request.
 
 The cheapest thing to add is a local model: install Ollama, pull a model, and
 the writing assistant works with no key and no cost.
+
+**Sound.** The short sounds of play - a die landing, a crit, a clock striking,
+the session beginning - are seventeen CC0 recordings bundled with the app
+(see `ATTRIBUTION.md`), off until you tap the speaker in the ribbon or in
+Settings, and remembered on that device only. Nothing plays from a frame,
+nothing plays before you ask, and every moment also shows on screen for the
+devices that stay quiet.
 
 ### What a key buys, before you commit one
 

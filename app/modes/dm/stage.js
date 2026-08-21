@@ -25,6 +25,7 @@ import { partyPanel } from './party.js';
 import { diceRail } from '../../ui/components/dicerail.js';
 import { doneStrip } from '../../ui/components/liveside.js';
 import { BEDS, playBed, stopBed, nowPlaying } from '../../core/providers.js';
+import { soundButton } from '../../ui/soundtoggle.js';
 import { sheetPrompt } from '../../ui/kit.js';
 
 let box = null;
@@ -242,6 +243,8 @@ function ambiencePanel() {
   const panel = el('div', { class: 'panel rivets' });
   panel.append(el('span', { class: 'lvl' }, 'Ambience'));
   const row = el('div', { class: 'btnrow' });
+  // The DM's speaker first: effects for this machine, beds after it.
+  row.append(soundButton());
   const current = nowPlaying();
   for (const [id, bed] of Object.entries(BEDS)) {
     row.append(el('button', {

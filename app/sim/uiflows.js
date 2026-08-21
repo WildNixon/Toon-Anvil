@@ -1960,6 +1960,51 @@ export const FLOWS = [
   },
 
   {
+    id: 'sound_is_a_choice',
+    title: 'The speaker turns sound on for this device, and a framed copy stays mute',
+    why: 'Off by default, one tap on, remembered on the device - and the '
+       + 'tap is the gesture that unlocks audio. Asserted in a frame on '
+       + 'purpose: the core refuses to construct a context for a framed copy '
+       + 'of the app, which is what keeps this very flow silent.',
+    async run(c, { doc, win }) {
+      c.feature('ui', 'settings', 'sfx');
+      const calls = [];
+      const Spy = function SpyContext() { calls.push(1); throw new Error('spy'); };
+      const saved = [win.AudioContext, win.webkitAudioContext];
+      win.AudioContext = Spy; win.webkitAudioContext = Spy;
+      const key = 'toonanvil.sound';
+      const had = win.localStorage.getItem(key);
+      try {
+        win.localStorage.removeItem(key);
+        c.ok(await goToMode(doc, 'Settings', 'Ambience'),
+          'Settings opens on the ambience panel');
+        const toggle = await waitFor(() => doc.querySelector('main .sound-toggle') || null,
+          { timeout: 6000 });
+        c.ok(!!toggle, 'the speaker is offered');
+        if (!toggle) return;
+        c.eq(toggle.getAttribute('aria-pressed'), 'false', 'and starts off');
+        c.eq(toggle.textContent.trim(), '',
+          'it carries no text a label lookup could mistake');
+        toggle.click();
+        const on = await waitFor(() => (doc.querySelector('main .sound-toggle')
+          ?.getAttribute('aria-pressed') === 'true' ? true : null), { timeout: 4000 });
+        c.ok(!!on, 'one tap turns it on');
+        c.eq(win.localStorage.getItem(key), 'on', 'and the device remembers');
+        c.eq(calls.length, 0, 'but a framed copy constructed no audio context');
+        doc.querySelector('main .sound-toggle')?.click();
+        const off = await waitFor(() => (doc.querySelector('main .sound-toggle')
+          ?.getAttribute('aria-pressed') === 'false' ? true : null), { timeout: 4000 });
+        c.ok(!!off, 'and one more tap turns it off');
+        c.eq(win.localStorage.getItem(key), null, 'forgetting the choice');
+      } finally {
+        win.AudioContext = saved[0]; win.webkitAudioContext = saved[1];
+        if (had !== null) win.localStorage.setItem(key, had);
+        else win.localStorage.removeItem(key);
+      }
+    },
+  },
+
+  {
     id: 'theme_toggle',
     title: 'Choosing a theme applies it and survives the choice being stored',
     async run(c, { doc, win }) {
@@ -3590,8 +3635,8 @@ export async function runPhoneLayout(CheckClass) {
     check.eq(anyInput ? win.getComputedStyle(anyInput).fontSize : 'none',
       '16px', 'inputs are 16px - under that iOS zooms the page on focus');
 
-    const adjust = [...doc.querySelectorAll('.rb-adjust button')];
-    check.ok(adjust.length >= 2, 'the ribbon adjust buttons exist');
+    const adjust = [...doc.querySelectorAll('.rb-adjust button, .rb-sound')];
+    check.ok(adjust.length >= 3, 'the ribbon adjust buttons and the speaker exist');
     check.ok(adjust.every((b) => {
       const r = b.getBoundingClientRect();
       return r.width >= 44 && r.height >= 44;
