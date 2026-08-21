@@ -35,6 +35,8 @@ import { log } from '../../core/events.js';
 import { CONDITIONS } from '../../core/rules2024.js';
 import { db } from '../../core/db.js';
 import * as session from '../../core/session.js';
+import * as sfx from '../../core/sfx.js';
+import { show as showMoment, roundMoment } from '../../ui/moments.js';
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -61,6 +63,53 @@ export function reset() {
   state.round = 0;
   state.turn = 0;
   state.started = false;
+  lastBands.clear();
+  lastActiveId = null;
+  lastRound = 0;
+  syncFightMood();
+}
+
+/* ------------------------------------------------------------------ */
+/* ceremony                                                            */
+/* ------------------------------------------------------------------ */
+
+// What the last render showed, so THIS render can mark what changed: which
+// row just became active, whose band just crossed, which round began. One
+// set of latches for the module - the Stage and a player's rail on one
+// seat must fire once, the same reason wasMyTurn lives in liveside.js.
+let lastActiveId = null;
+let lastRound = 0;
+const lastBands = new Map();
+let sweepId = null;
+
+/**
+ * The fight's mood, as one attribute on the root. Transient by
+ * construction: it is re-derived from state.started on every reset, adopt
+ * and roll, never stored, and a player seat adopting an empty snapshot
+ * drops it along with the fight.
+ */
+export function syncFightMood() {
+  if (typeof document === 'undefined') return;
+  if (state.started) document.documentElement.dataset.fight = 'on';
+  else delete document.documentElement.dataset.fight;
+}
+
+/**
+ * Called once per render of the runner: notes the turn and the round so
+ * the rows can mark the new active combatant, and fires the round beat
+ * when the round has turned. Both seats pass through here - the player's
+ * read-only panel renders from the same adopted state.
+ */
+function noteTurn() {
+  const current = state.started ? state.combatants[state.turn] : null;
+  const id = current?.id || null;
+  sweepId = id && id !== lastActiveId ? id : null;
+  lastActiveId = id;
+  if (state.started && state.round > lastRound && (lastRound > 0 || state.round === 1)) {
+    showMoment(roundMoment(state.round));
+    sfx.play('round');
+  }
+  lastRound = state.started ? state.round : 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -104,6 +153,7 @@ export function adopt(record) {
       c.side = c.kind === 'pc' ? 'ally' : 'enemy';
     }
   }
+  syncFightMood();
   return true;
 }
 
@@ -357,6 +407,7 @@ export function rollInitiative() {
   state.round = 1;
   state.turn = 0;
   state.started = true;
+  syncFightMood();
 }
 
 export function sort() {
@@ -454,6 +505,9 @@ export function runnerPanel({ characters = [], sources, monsters = [], redraw,
   const panel = el('div', { class: 'panel rivets' });
   panel.append(el('span', { class: 'lvl' },
     readOnly ? 'The fight' : 'Encounter'));
+  // Once per render, before any row: which row just became active, and
+  // whether the round has turned.
+  noteTurn();
 
   if (readOnly) {
     if (!state.combatants.length) {
@@ -635,8 +689,6 @@ export function runnerPanel({ characters = [], sources, monsters = [], redraw,
 // What a band looks like when the number is withheld.
 const BAND_LABEL = { unhurt: 'Unhurt', hurt: 'Hurt', bloodied: 'Bloodied',
   down: 'Down' };
-const BAND_COLOUR = { unhurt: '', hurt: 'color:var(--warn)',
-  bloodied: 'color:var(--warn);font-weight:700', down: 'color:var(--bad)' };
 
 function combatantRow(c, index, redraw, { readOnly = false, mine = null } = {}) {
   const active = state.started && index === state.turn;
@@ -647,13 +699,24 @@ function combatantRow(c, index, redraw, { readOnly = false, mine = null } = {}) 
   // The seat's colour, when the table gave this character's owner one.
   // "Yours" keeps the accent - knowing which line is YOU outranks decor.
   const seat = c.kind === 'pc' ? session.colourOf(c.characterId) : null;
+  // Did this one's band just cross? The last render's band is the memory;
+  // a crossing into bloodied flashes, into down alarms - and on the DM's
+  // own screen, going down is also heard.
+  const b = band(c);
+  const was = lastBands.get(c.id);
+  lastBands.set(c.id, b);
+  const crossed = Boolean(was) && was !== b;
+  if (crossed && b === 'down' && !readOnly) sfx.play('downed');
+  // State as classes, never inline colour: the sweep, the flash and the
+  // alarm are CSS, and CSS cannot animate what it cannot select.
   const row = el('div', {
+    class: 'combatant' + (active ? ' is-active' : '') + (down ? ' is-down' : '')
+      + (c.id === sweepId ? ' turn-sweep' : '')
+      + (crossed && b === 'bloodied' ? ' just-bloodied' : '')
+      + (crossed && b === 'down' ? ' just-down' : ''),
     dataset: seat ? { colour: seat } : {},
-    style: 'border-bottom:1px solid var(--etch);padding:8px 0;'
-      + (active ? 'background:rgba(184,74,22,.12);' : '')
-      + (yours ? 'border-left:3px solid var(--accent);padding-left:8px;'
-        : seat ? `border-left:3px solid ${seat};padding-left:8px;` : '')
-      + (down ? 'opacity:.55;' : ''),
+    style: (yours ? 'border-left:3px solid var(--accent);padding-left:8px;'
+      : seat ? `border-left:3px solid ${seat};padding-left:8px;` : ''),
   });
 
   const top = el('div', {
@@ -684,17 +747,14 @@ function combatantRow(c, index, redraw, { readOnly = false, mine = null } = {}) 
 
   if (c.hpHidden) {
     // No number to show, and none was sent. A band is the whole answer.
-    const b = band(c);
     top.append(el('span', {
-      class: 'mono', style: `font-size:12px;${BAND_COLOUR[b] || ''}`,
+      class: `mono band-${b}`, style: 'font-size:12px',
     }, BAND_LABEL[b] || b));
   } else {
-    // HP, coloured, with temp shown separately so it is not mistaken for real.
-    const frac = c.hpMax ? c.hp / c.hpMax : 1;
+    // HP, coloured by band, with temp shown separately so it is not
+    // mistaken for real.
     top.append(el('span', {
-      class: 'mono',
-      style: `font-weight:700;${down ? 'color:var(--bad)'
-        : frac <= 0.5 ? 'color:var(--warn)' : ''}`,
+      class: `mono hp-${b}`, style: 'font-weight:700',
     }, `${c.hp}/${c.hpMax}${c.temp ? ` (+${c.temp})` : ''}`));
     // On the DM's screen, show what the players are seeing instead - so
     // "hidden" is a visible state rather than something you have to remember.
@@ -748,6 +808,7 @@ function combatantRow(c, index, redraw, { readOnly = false, mine = null } = {}) 
         + `save or lose ${c.concentrating}`, 'warn');
     }
     if (res?.downed) toast(`${c.name} is down`, 'bad');
+    sfx.play(mult < 0 ? 'hit' : 'heal');
     log(mult < 0 ? 'damage_dealt' : 'healed',
       { target: c.name, amount: Math.abs(n) });
     redraw();

@@ -34,6 +34,8 @@ import {
   CATEGORIES as SHELF_CATEGORIES, CATEGORY_LABELS,
 } from '../../core/shelf.js';
 import { dmData } from './shared.js';
+import * as sfx from '../../core/sfx.js';
+import { show as showMoment, strikeMoment } from '../../ui/moments.js';
 
 export const title = 'Deck';
 
@@ -169,18 +171,25 @@ function clocksPanel() {
           // any other fills up to it. A clock is dragged forwards more
           // often than back, and this is one tap for either.
           const want = (i + 1 === c.filled) ? i : i + 1;
+          sfx.play('clock-tick');
+          const strikes = want >= c.size && c.filled < c.size;
           save(clocks.map((x) => (x.id === c.id
             ? tickClock(x, want - x.filled) : x)),
-          want >= c.size && c.filled < c.size
+          strikes
             // The id, not the label. The event log is read by every seat,
             // and "the ritual completes" is the whole spoiler - the server
             // redacts it now, but a secret should not be written into a
             // shared log and then removed on the way out. Same rule as
-            // safeRollPayload: allow-list at the source.
-            ? () => log('clock_advanced', {
-              clockId: c.id, public: !!c.public,
-              filled: want, size: c.size, struck: true,
-            }, { campaignId: campaign.id })
+            // safeRollPayload: allow-list at the source. The MOMENT names
+            // the clock, because it is drawn on this screen and nowhere else.
+            ? () => {
+              showMoment(strikeMoment(c.label));
+              sfx.play('clock-strike');
+              return log('clock_advanced', {
+                clockId: c.id, public: !!c.public,
+                filled: want, size: c.size, struck: true,
+              }, { campaignId: campaign.id });
+            }
             : null);
         },
       }));
@@ -320,6 +329,9 @@ function dialsPanel() {
       await log('day_advanced', { day: campaign.day },
         { campaignId: campaign.id });
       for (const struck of ticked.struck) {
+        // One moment per clock that struck - advanceDayClocks already
+        // hands back only the ones that crossed to full THIS tick.
+        showMoment(strikeMoment(struck.label));
         // eslint-disable-next-line no-await-in-loop
         await log('clock_advanced', {
           clockId: struck.id, public: !!struck.public,
@@ -327,6 +339,7 @@ function dialsPanel() {
           struck: true, day: campaign.day,
         }, { campaignId: campaign.id });
       }
+      if (ticked.struck.length) sfx.play('clock-strike');
       toast(ticked.struck.length
         ? `Day ${campaign.day}: ${ticked.struck.map((s) => s.label).join(', ')}`
         : `Day ${campaign.day} dawns`, ticked.struck.length ? 'warn' : 'ok');

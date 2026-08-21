@@ -15,6 +15,7 @@ import * as session from './core/session.js';
 import * as live from './core/live.js';
 import * as theme from './ui/theme.js';
 import * as audio from './core/audio.js';
+import * as sfx from './core/sfx.js';
 import * as moments from './ui/moments.js';
 
 /**
@@ -501,7 +502,9 @@ async function watchTheTable() {
   // close signal below. A snapshot rather than reading session before the
   // refresh, because mode subscriptions share the session cache and whichever
   // callback refreshes first would blind the others to what just changed.
-  let seat = { open: session.isOpen(), seated: Boolean(session.me()) };
+  let seat = {
+    open: session.isOpen(), seated: Boolean(session.me()), started: session.started(),
+  };
 
   live.subscribe(['characters', 'table'], async ({ changes, gap }) => {
     const mine = getState().characterId;
@@ -526,10 +529,19 @@ async function watchTheTable() {
       // so the DM who pressed Close keeps their button's local toast and
       // never hears this one.
       const open = session.isOpen();
+      const seated = Boolean(session.me());
       if (seat.open && seat.seated && !open) {
         toast('The table was closed', 'warn');
+        sfx.play('table-closed');
       }
-      seat = { open, seated: Boolean(session.me()) };
+      // The session beginning, on every OTHER seat. This client's own start
+      // never arrives here (live.js drops its own writes), so the DM fires
+      // the same moment from the Start button in the lobby.
+      if (open && seated && !seat.started && session.started()) {
+        moments.show(moments.SESSION_MOMENT);
+        sfx.play('session-start');
+      }
+      seat = { open, seated, started: session.started() };
       renderNav();
       if (!visibleModes().some((m) => m.id === getState().mode)) await renderMode();
       // A table change can be a grant or the forge - the sheet's banner and

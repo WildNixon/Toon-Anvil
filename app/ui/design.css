@@ -1067,6 +1067,55 @@ th {
 .pip.filled.just { animation: pip-fill .35s ease-out; }
 @keyframes pip-fill { from { transform: scale(.4); } 60% { transform: scale(1.3); } to { transform: none; } }
 
+/* Table-wide cues: your turn pulses twice (a laptop has no buzz), a roll
+   that just landed on the shared rail rises in, the session card wears the
+   table's second colour. */
+.your-turn { animation: rollcard-in .18s ease-out, your-turn-pulse 1.6s ease-in-out 2; }
+@keyframes your-turn-pulse { 50% { box-shadow: 0 0 0 6px rgba(138, 106, 36, .28); } }
+.dice-row.fresh { animation: rollcard-in .25s ease-out; }
+.moment-session .moment-card { border-color: var(--accent-2); }
+.moment-session .moment-title { color: var(--accent-2); }
+.moment-round .moment-card { padding: 10px 22px; top: 22%; }
+.moment-round .moment-title { font-size: clamp(18px, 4vw, 26px); }
+
+/* The fight, as classes the DM's runner used to paint inline. The sweep
+   marks the row that just became active; a band crossing into bloodied
+   flashes, into down alarms. Meaning stays in the text ("(down)", the
+   band word, the numbers) and in the persistent classes. */
+.combatant { border-bottom: 1px solid var(--etch); padding: 8px 0; }
+.combatant.is-active { background: rgba(184, 74, 22, .12); }
+.combatant.is-down { opacity: .55; }
+.combatant.turn-sweep { animation: turn-sweep .35s ease-out; }
+.combatant.just-bloodied { animation: band-flash .8s ease-out; }
+.combatant.just-down { animation: down-alarm .45s ease-in-out 2; }
+@keyframes turn-sweep { from { transform: translateX(-8px); opacity: .6; } to { transform: none; opacity: 1; } }
+@keyframes band-flash { 25% { box-shadow: inset 0 0 0 100vmax rgba(146, 96, 15, .22); } }
+@keyframes down-alarm { 50% { box-shadow: inset 0 0 0 100vmax rgba(158, 43, 23, .30); } }
+.band-hurt, .hp-hurt { color: var(--warn); }
+.band-bloodied, .hp-bloodied { color: var(--warn); font-weight: 700; }
+.band-down, .hp-down { color: var(--bad); }
+
+/* The fight's mood: while a fight is running the chrome warms a little.
+   Chrome only, theme-invariant, no text and no layout - one attribute on
+   the root that the runner sets and clears with the fight. */
+:root[data-fight='on'] { --chrome-raised: #3a2214; --gold-soft: rgba(212, 150, 60, .45); }
+:root[data-fight='on'] .topbar { position: relative; }
+:root[data-fight='on'] .topbar::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 120%, rgba(255, 150, 60, .18), transparent 60%);
+  animation: candle 3.2s ease-in-out infinite alternate;
+}
+@keyframes candle { from { opacity: .55; } to { opacity: 1; } }
+.moment-strike .moment-card { border-color: var(--warn); }
+.moment-strike .moment-title { color: var(--warn); }
+
+/* Progression: each gained feature rises on its own beat; a long rest is a
+   chapter break in the second colour. */
+.lu-feature { display: inline-block; animation: moment-rise .4s ease-out both; animation-delay: calc(var(--i, 0) * 120ms); }
+@keyframes moment-rise { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.moment-rest .moment-card { border-color: var(--accent-2); }
+.moment-rest .moment-title { color: var(--accent-2); }
+
 /* ------------------------------------------------------------------ */
 /* sandbox (ephemeral session)                                         */
 /* ------------------------------------------------------------------ */

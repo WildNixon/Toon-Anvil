@@ -57,6 +57,9 @@ export function momentFor(ev) {
       return { kind: 'cast', sting: 'spell-cast' };
     case 'level_up':
       return { kind: 'level', sting: 'level-up' };
+    case 'rest_long':
+      return { kind: 'rest', sting: 'rest-long', ms: 3000,
+        title: 'A long rest.', line: 'A new day. Spent and wounded things come back.' };
     default:
       return null;
   }
@@ -64,7 +67,23 @@ export function momentFor(ev) {
 
 /** The event types momentFor answers for - asserted against the taxonomy. */
 export const MOMENT_EVENTS = ['roll', 'damage_taken', 'healed', 'downed',
-  'death_save', 'spell_cast', 'level_up'];
+  'death_save', 'spell_cast', 'level_up', 'rest_long'];
+
+/**
+ * Moments that are not events but edges - the table starting, a round
+ * turning - named here so the seats that derive them fire the same card.
+ */
+export const SESSION_MOMENT = {
+  kind: 'session', ms: 3000,
+  title: 'The session begins', line: 'Everyone to their screens.',
+};
+export const roundMoment = (n) => ({
+  kind: 'round', ms: 1400, title: `Round ${n}`,
+});
+// The DM's own screen only: the label is the spoiler the log never carries.
+export const strikeMoment = (label) => ({
+  kind: 'strike', ms: 3000, title: label, line: 'The clock strikes.',
+});
 
 let host = null;
 
@@ -111,7 +130,14 @@ function levelUp(ev) {
     .filter((f) => Number(f.level) === Number(ev.payload?.level))
     .map((f) => f.name).filter(Boolean).slice(0, 6);
   if (gained.length) {
-    card.append(el('div', { class: 'lu-features' }, gained.join(' · ')));
+    // Each feature rises on its own beat. The joined text reads exactly as
+    // it did - "A · B · C" - so anything reading the card sees no change.
+    const list = el('div', { class: 'lu-features' });
+    gained.forEach((name, i) => {
+      if (i) list.append(document.createTextNode(' · '));
+      list.append(el('span', { class: 'lu-feature', style: `--i:${i}` }, name));
+    });
+    card.append(list);
   }
   card.append(el('div', { class: 'welcome-fine' }, 'tap to dismiss'));
   wrap.append(card);

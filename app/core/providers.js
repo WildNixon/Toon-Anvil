@@ -280,3 +280,17 @@ export function stopBed() {
 }
 
 export function nowPlaying() { return playing?.id || null; }
+
+/**
+ * Which bed suits a day's sky, or null when none does. Pure; the Deck's
+ * weather is the input (core/weather.js: precip, wind, terrain). OFFERED,
+ * never auto-played - the Stage shows one chip and the DM decides.
+ */
+export function bedForSky(sky) {
+  if (!sky) return null;
+  if (['downpour', 'rain', 'drizzle'].includes(sky.precip)) return 'rain';
+  if (sky.wind === 'gale') return 'wind';
+  if (sky.terrain === 'coast') return 'sea';
+  if (sky.terrain === 'underdark' || sky.terrain === 'cave') return 'cave';
+  return null;
+}

@@ -574,6 +574,11 @@ export const FLOWS = [
       button(doc, 'Long rest')?.click();
       const rested = await waitFor(() => (hp() === start ? hp() : null), { timeout: 6000 });
       c.ok(rested !== null, 'a long rest restores the displayed HP');
+      // And it is a chapter break: a moment in its own layer, never in main.
+      const restMoment = await waitFor(() => doc.querySelector('#moments .moment-rest') || null,
+        { timeout: 4000 });
+      c.ok(!!restMoment, 'a long rest is a moment');
+      c.ok(!doc.querySelector('main .moment'), 'outside main');
     },
   },
 
@@ -1134,6 +1139,37 @@ export const FLOWS = [
   },
 
   {
+    id: 'deeds_on_the_chronicle',
+    title: 'The Chronicle lists deeds the record earned, in words',
+    why: 'By now this frame has rested, rolled and levelled, so the deeds '
+       + 'panel has something to say - and every word of it must be a word: '
+       + 'the phone gym counts digits, and a panel of dates would spend the '
+       + 'budget for nothing.',
+    async run(c, { doc }) {
+      c.feature('ui', 'chronicle', 'deeds');
+      c.ok(await ensureSeat(doc, 'player'), 'the player shell is on');
+      // The Chronicle is scoped to the ACTIVE character, and earlier flows
+      // swap who that is - so this character takes its own long rest first.
+      c.ok(await goToMode(doc, 'Play', 'Adjust HP'), 'the sheet opens');
+      button(doc, 'Long rest')?.click();
+      await waitUntilSettled(doc);
+      c.ok(await goToMode(doc, 'Chronicle', 'recorded events'), 'the Chronicle opens');
+      const panel = [...doc.querySelectorAll('main .panel')]
+        .find((p) => p.querySelector('.lvl')?.textContent.trim() === 'Deeds');
+      c.ok(!!panel, 'a Deeds panel is there');
+      if (!panel) return;
+      const text = panel.textContent.replace(/\s+/g, ' ');
+      c.ok(!/[0-9]/.test(text), 'and not one digit in it', text.slice(0, 120));
+      c.ok(/earned/.test(text), 'it says how many were earned, in words');
+      // A long rest was taken earlier in this frame (play_damage_and_rest).
+      c.ok(/Well rested/.test(text), 'the long rest just taken earned Well rested');
+      c.ok(/earned the /.test(text), 'each deed is dated, in words');
+      c.ok(/First blood is a solo deed/.test(text),
+        'and the fine print says what a table cannot earn, rather than faking it');
+    },
+  },
+
+  {
     id: 'dm_run_a_fight',
     title: 'Run a fight through the encounter runner',
     async run(c, { doc }) {
@@ -1171,6 +1207,15 @@ export const FLOWS = [
       start?.click();
       await waitUntilSettled(doc);
       c.ok(/Round 1/.test(mainText(doc)), 'the fight starts on round 1');
+      // The ceremony: the chrome warms, one row is the turn, and the round
+      // beat is a card in the moments layer - never text inside main.
+      c.eq(doc.documentElement.dataset.fight, 'on', 'a running fight lights the mood');
+      c.eq(doc.querySelectorAll('main .combatant.is-active').length, 1,
+        'exactly one row is the active turn');
+      c.ok(!!doc.querySelector('#moments .moment-round')
+        || !doc.querySelector('main .moment'),
+      'the round beat, if shown, lives outside main');
+      const activeBefore = doc.querySelector('main .combatant.is-active');
 
       // Hit the first combatant and watch its HP move on screen.
       const hpBefore = /(\d+)\/(\d+)/.exec(mainText(doc));
@@ -1182,6 +1227,8 @@ export const FLOWS = [
       const moved = await waitForChange(() => mainText(doc),
         mainText(doc), { timeout: 1000 }) || true;
       c.ok(!!hpBefore, 'HP is shown as current/max');
+      c.ok(!!doc.querySelector('main .hp-hurt, main .hp-bloodied, main .hp-down'),
+        'a hit combatant wears its band as a class');
 
       const next = button(doc, 'Next turn');
       c.ok(!!next, 'turns can be advanced');
@@ -1189,6 +1236,9 @@ export const FLOWS = [
       next?.click();
       await waitUntilSettled(doc);
       c.ok(mainText(doc) !== roundBefore, 'advancing a turn changes the screen');
+      const activeAfter = doc.querySelector('main .combatant.is-active');
+      c.ok(!!activeAfter && activeAfter.textContent !== activeBefore?.textContent,
+        'and the active row moved to the next combatant');
 
       // Concentration in the shared fight: set it, hit them, get asked for
       // the save - the thing every hand-run table forgets.
@@ -1580,6 +1630,18 @@ export const FLOWS = [
         return r && r.querySelectorAll('.clock-seg.on').length === 4 ? true : null;
       }, { timeout: 8000 });
       c.ok(!!ticked, 'the day carries the clock forward one segment');
+
+      // Filling the last segment strikes: a moment naming the clock, on
+      // the DM's own screen and nowhere else (the log keeps the id).
+      const lastSeg = [...doc.querySelectorAll('main .clock-row')]
+        .find((x) => x.textContent.includes('Gym Ritual'))
+        ?.querySelectorAll('.clock-seg')[5];
+      lastSeg?.click();
+      const struck = await waitFor(() => doc.querySelector('#moments .moment-strike') || null,
+        { timeout: 6000 });
+      c.ok(!!struck, 'filling the last segment is a moment');
+      c.ok(/Gym Ritual/.test(struck?.textContent || ''), 'that names the clock');
+      c.ok(!doc.querySelector('main .moment'), 'outside main');
 
       // Clean up: the flows after this one do not need a gym clock.
       const gone = [...doc.querySelectorAll('main .clock-row')]
@@ -2742,6 +2804,9 @@ export async function runLevelUpFlow(CheckClass) {
     check.ok(!!moment, 'the level-up moment appears');
     check.ok(/Level 3!/.test(moment?.textContent || ''),
       'named for the level reached', (moment?.textContent || '').slice(0, 60));
+    const feats = moment?.querySelector('.lu-features');
+    check.ok(!feats || feats.querySelectorAll('.lu-feature').length >= 1,
+      'the features gained, when there are any, are separate rising lines');
     const momentGone = await waitFor(() => (!doc.querySelector('.levelup-overlay')
       ? true : null), { timeout: 10000 });
     check.ok(!!momentGone, 'and dismisses itself');
@@ -3133,6 +3198,28 @@ export async function runPlayerView(CheckClass) {
     await goToMode(doc, 'Play');
     check.ok(!codeShape.test(doc.documentElement.innerHTML),
       'nor on the player\'s own sheet', opened.body.code);
+
+    // The session beginning, heard on a seat that is NOT in the lobby: the
+    // DM starts (over HTTP, from another client id, so the event travels),
+    // and this player's moments layer says so without moving her anywhere.
+    await api('/api/table/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Toon-Token': dmToken },
+      body: JSON.stringify({ started: true }),
+    });
+    const began = await waitFor(() => doc.querySelector('#moments .moment-session') || null,
+      { timeout: 10000 });
+    check.ok(!!began, 'the session beginning is a moment on a player parked on her sheet');
+    check.ok(/session begins/i.test(began?.textContent || ''), 'and it says so in words');
+    check.ok(!doc.querySelector('main .moment'), 'never inside main');
+    // The table change repaints the sheet (the act bar and the grants read
+    // it), so main is briefly "Loading" - and this player may have no
+    // character on her sheet at all. The claim is about the MODE: she is
+    // still on the sheet, wherever the lobby's latch sent the others.
+    const stayed = await waitFor(() => (doc.querySelector('main')?.dataset.rendered === 'sheet'
+      && !/Loading/.test(mainText(doc)) ? true : null), { timeout: 8000 });
+    check.ok(!!stayed, 'and she was not moved off her sheet',
+      String(doc.querySelector('main')?.dataset.rendered));
 
     // The close signal, from the seat it was built for. Found at a real
     // table: a player parked on her sheet learned nothing when the DM

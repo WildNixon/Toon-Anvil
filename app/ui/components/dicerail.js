@@ -8,9 +8,17 @@
  * anything a screen was trusted to keep quiet.
  */
 
-import { el } from '../../core/store.js';
+import { el, getState } from '../../core/store.js';
 import { db } from '../../core/db.js';
 import { colourOf, current } from '../../core/session.js';
+import * as sfx from '../../core/sfx.js';
+
+// The newest roll the rail has shown, so the next build can tell a fresh
+// landing from a redraw. Module-level: the Stage and a sheet rail on one
+// seat must echo one crit once, the same reason wasMyTurn lives in
+// liveside.js rather than in each screen.
+let topId = null;
+let primed = false;
 
 /** The only keys a roll event may carry. Everything else is dropped. */
 export const SAFE_ROLL_KEYS = [
@@ -73,10 +81,21 @@ export function diceRail(characters = []) {
         'No rolls yet. The first d20 lands here.'));
       return;
     }
+    // Did a roll just land? The rail is rebuilt on every events change, so
+    // "new" is the top row's id changing since the last build. Somebody
+    // ELSE's crit gets a quieter echo of the roller's sting - the roller
+    // already heard the loud one from their own roll card.
+    const fresh = primed && rows[0].id !== topId;
+    if (fresh && rows[0].crit && rows[0].characterId !== getState().characterId) {
+      sfx.play('crit', { gain: 0.5 });
+    }
+    topId = rows[0].id;
+    primed = true;
     for (const r of rows) {
       const seat = colourOf(r.characterId);
       const row = el('div', {
-        class: `dice-row${r.crit ? ' crit' : ''}${r.fumble ? ' fumble' : ''}`,
+        class: `dice-row${r.crit ? ' crit' : ''}${r.fumble ? ' fumble' : ''}`
+          + (fresh && r.id === topId ? ' fresh' : ''),
         dataset: seat ? { colour: seat } : {},
         style: seat ? `border-left:3px solid ${seat};padding-left:7px` : '',
       });

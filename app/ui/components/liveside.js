@@ -19,6 +19,7 @@
 import { getState, el, sign } from '../../core/store.js';
 import { rollHistory, onRoll } from './rollcard.js';
 import * as session from '../../core/session.js';
+import * as sfx from '../../core/sfx.js';
 import { runnerPanel, adopt, pull } from '../../modes/dm/runner.js';
 import { diceRail } from './dicerail.js';
 import { activeCampaign, currentRegion } from '../../core/campaign.js';
@@ -80,6 +81,10 @@ export function turnBanner() {
   const mine = isMyTurn();
   if (mine && !wasMyTurn) {
     try { navigator.vibrate?.(160); } catch { /* not on this device */ }
+    // The same edge, for ears and for laptops: a sting where sound is on,
+    // and the tab title carries the cue until the next screen paints it.
+    sfx.play('your-turn');
+    try { document.title = '● Your turn · Toon Anvil'; } catch { /* fine */ }
   }
   wasMyTurn = mine;
   if (!mine) return null;

@@ -29,6 +29,9 @@ import { qrSvg } from '../../ui/qr.js';
 import { listCampaigns, activeCampaign, setActive } from '../../core/campaign.js';
 import { listShelf, uploadPdf, verdictLine } from '../../core/shelf.js';
 import { campaignStartBlock, deckBooks } from '../dm/founding.js';
+import { log } from '../../core/events.js';
+import * as sfx from '../../core/sfx.js';
+import { show as showMoment, SESSION_MOMENT } from '../../ui/moments.js';
 import { go, refreshChrome, selectCharacter } from '../../app.js';
 
 export const title = 'Lobby';
@@ -529,6 +532,17 @@ function dmControls(status, started) {
       // Every other seat is watching the same flag and leaves the queue on
       // its own - nobody has to be told to navigate.
       toast(started ? 'Back to the lobby' : 'Session started', 'ok');
+      if (!started) {
+        // The DM's own write never comes back over the wire, so the moment
+        // every other seat gets from the table edge is fired here - and the
+        // start goes on the record as a real event, for the Chronicle and
+        // for anything that counts sessions.
+        showMoment(SESSION_MOMENT);
+        sfx.play('session-start');
+        const campaignId = session.current()?.campaignId;
+        await log('session_start', { at: new Date().toISOString(), via: 'lobby' },
+          campaignId ? { campaignId } : {}).catch(() => {});
+      }
       draw();
       if (!started) go('dm-stage');
     },

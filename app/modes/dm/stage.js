@@ -14,9 +14,11 @@
  */
 
 import { getState, el, toast } from '../../core/store.js';
-import { db } from '../../core/db.js';
+import { db, dataFile } from '../../core/db.js';
 import { go } from '../../app.js';
 import * as session from '../../core/session.js';
+import { weatherFor } from '../../core/weather.js';
+import { currentRegion } from '../../core/campaign.js';
 import {
   runnerPanel, publish, state as fight, addMonsters, setTokenPosition,
 } from './runner.js';
@@ -24,8 +26,22 @@ import { mapView } from '../../ui/map.js';
 import { partyPanel } from './party.js';
 import { diceRail } from '../../ui/components/dicerail.js';
 import { doneStrip } from '../../ui/components/liveside.js';
-import { BEDS, playBed, stopBed, nowPlaying } from '../../core/providers.js';
+import { BEDS, playBed, stopBed, nowPlaying, bedForSky } from '../../core/providers.js';
 import { soundButton } from '../../ui/soundtoggle.js';
+
+// dm-tables.json, for today's sky. Fetched once, lazily, and the screen
+// redraws when it lands - the lobby's shelf listing does the same.
+let dmTables = null;
+let tablesFetching = false;
+function ensureTables() {
+  if (dmTables !== null || tablesFetching) return;
+  tablesFetching = true;
+  dataFile('dm-tables.json', null).then((t) => {
+    tablesFetching = false;
+    dmTables = t || false;
+    if (box?.dataset.rendered === 'dm-stage' || box?.isConnected) draw();
+  });
+}
 import { sheetPrompt } from '../../ui/kit.js';
 
 let box = null;
@@ -260,6 +276,24 @@ function ambiencePanel() {
     class: 'act small dark', onClick: () => { stopBed(); draw(); },
   }, 'Quiet'));
   panel.append(row);
+
+  // Today's sky, as one offer. Never auto-played: the Deck computes the
+  // weather, this names the bed that fits it, and the DM taps or does not.
+  if (campaign) {
+    if (dmTables === null) ensureTables();
+    const sky = dmTables ? weatherFor(dmTables, {
+      seed: campaign.seed, day: campaign.day, region: currentRegion(campaign),
+    }) : null;
+    const fit = bedForSky(sky);
+    if (fit && nowPlaying() !== fit) {
+      panel.append(el('div', { class: 'btnrow', style: 'margin-top:6px' },
+        el('button', {
+          class: 'act small ghost',
+          title: sky?.summary || 'The bed that fits today in the Deck',
+          onClick: () => { playBed(fit); draw(); },
+        }, `${BEDS[fit].label} for today's sky`)));
+    }
+  }
   panel.append(el('p', { class: 'welcome-fine', style: 'margin-top:6px' },
     'Plays on this machine\'s speakers only.'));
   return panel;

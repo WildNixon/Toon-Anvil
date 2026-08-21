@@ -1503,6 +1503,64 @@ export const SUITES = [
        + 'from its seed, fails at the table where it cannot be debugged.',
     scenarios: [
       {
+        id: 'bands_become_classes',
+        title: 'The runner marks the active row and every band as classes, not inline colour',
+        why: 'CSS cannot animate what it cannot select. The turn sweep, the '
+           + 'bloodied flash and the down alarm all hang off these classes; '
+           + 'the band names themselves stay what the wire has always '
+           + 'carried (bands_agree_across_the_wire).',
+        run(c, { dm, sources }) {
+          c.feature('dm', 'runner', 'fightmood');
+          const r = dm.runner;
+          r.reset();
+          r.addCustom({ name: 'Whole', ac: 12, hp: 10, initMod: 5 });
+          r.addCustom({ name: 'Bloody', ac: 12, hp: 10, initMod: 3 });
+          r.addCustom({ name: 'Flat', ac: 12, hp: 10, initMod: 1 });
+          const ids = r.state.combatants.map((x) => x.id);
+          r.applyTo(ids[1], -6);
+          r.applyTo(ids[2], -99);
+          r.rollInitiative();
+          const panel = r.runnerPanel({ characters: [], sources, monsters: [], redraw() {} });
+          c.eq(panel.querySelectorAll('.combatant').length, 3, 'three rows');
+          c.eq(panel.querySelectorAll('.combatant.is-active').length, 1,
+            'exactly one row is the active turn');
+          c.ok(!!panel.querySelector('.combatant.is-down'), 'the one at zero is marked down');
+          c.ok(!!panel.querySelector('.hp-bloodied'), 'half or less wears the bloodied class');
+          c.ok(!!panel.querySelector('.hp-down'), 'zero wears the down class');
+          c.ok(![...panel.querySelectorAll('.combatant span')]
+            .some((s) => /color:/.test(s.getAttribute('style') || '')),
+          'no hit-point span carries an inline colour any more');
+          r.reset();
+        },
+      },
+      {
+        id: 'fight_mood_follows_started',
+        title: 'The fight mood is one root attribute that lives and dies with the fight',
+        why: 'Candlelight while a fight runs is chrome, not state: derived '
+           + 'from started on every reset, adopt and roll, never stored, so '
+           + 'it cannot outlive the fight on any seat.',
+        run(c, { dm }) {
+          c.feature('fightmood');
+          const r = dm.runner;
+          r.reset();
+          c.ok(!document.documentElement.dataset.fight, 'no fight, no mood');
+          r.addCustom({ name: 'Mood', ac: 10, hp: 5, initMod: 0 });
+          r.rollInitiative();
+          c.eq(document.documentElement.dataset.fight, 'on', 'rolling initiative lights it');
+          r.reset();
+          c.ok(!document.documentElement.dataset.fight, 'and clearing the fight puts it out');
+          r.adopt({ combatants: [{ id: 'c9', name: 'Remote', hp: 3, hpMax: 3, ac: 10,
+            kind: 'monster', side: 'enemy', init: 4, conditions: [] }],
+          round: 2, turn: 0, started: true });
+          c.eq(document.documentElement.dataset.fight, 'on',
+            'a player seat adopting a running fight lights it too');
+          r.adopt({ combatants: [], round: 0, turn: 0, started: false });
+          c.ok(!document.documentElement.dataset.fight,
+            'and adopting the empty snapshot after a clear puts it out');
+          r.reset();
+        },
+      },
+      {
         id: 'hoards_are_legal',
         title: 'Hoards are legal and scale at every CR band',
         run(c, { tables, magicItems, dm }) {
@@ -2150,6 +2208,33 @@ export const SUITES = [
         },
       },
       {
+        id: 'bed_for_sky',
+        title: 'The Deck\'s weather names one bed, or none - never plays one',
+        why: 'Rain in the Deck and a rain bed on the Stage were two things '
+           + 'that never met. This is the whole mapping, pure, so the Stage '
+           + 'can offer one chip and nothing is ever auto-played.',
+        run(c, { providers }) {
+          c.feature('sfx', 'weather');
+          const b = providers.bedForSky;
+          c.eq(b({ precip: 'rain', wind: 'calm', terrain: 'forest' }), 'rain', 'rain is rain');
+          c.eq(b({ precip: 'downpour', wind: 'gale', terrain: 'coast' }), 'rain',
+            'a downpour outranks the gale and the coast');
+          c.eq(b({ precip: 'dry', wind: 'gale', terrain: 'coast' }), 'wind',
+            'a gale outranks the coast');
+          c.eq(b({ precip: 'dry', wind: 'breeze', terrain: 'coast' }), 'sea', 'a calm coast is the sea');
+          c.eq(b({ precip: 'dry', wind: 'calm', terrain: 'underdark' }), 'cave',
+            'the underdark drips');
+          c.eq(b({ precip: 'dry', wind: 'calm', terrain: 'forest' }), null,
+            'a dry calm forest day offers nothing');
+          c.eq(b({ precip: 'snow', wind: 'breeze', terrain: 'arctic' }), null,
+            'snow has no bed, and says so with null rather than the wrong one');
+          c.eq(b(null), null, 'no sky, no bed');
+          for (const id of ['rain', 'wind', 'sea', 'cave']) {
+            c.ok(id in providers.BEDS, `${id} is a bed that exists`);
+          }
+        },
+      },
+      {
         id: 'audio_is_off_until_asked',
         title: 'Sound is a choice this device makes, and a framed copy never makes it',
         why: 'Five phones chiming at once is a problem, and a test frame that '
@@ -2324,6 +2409,90 @@ export const SUITES = [
           c.eq(moments.momentFor({ type: 'no_such_event', payload: {} }), null,
             'an unknown event is nothing');
           c.eq(moments.momentFor(null), null, 'and so is no event');
+          c.eq(moments.momentFor({ type: 'level_up', payload: { level: 3 } })?.sting,
+            'level-up', 'a level gained has its fanfare');
+          const rest = moments.momentFor({ type: 'rest_long', payload: {} });
+          c.eq(rest?.sting, 'rest-long', 'a long rest has its sound');
+          c.ok(!!rest?.title, 'and is a chapter break with a card');
+        },
+      },
+    ],
+  },
+
+  /* ---------------- deeds ------------------------------------------ */
+  {
+    id: 'deeds',
+    title: 'Deeds',
+    why: 'An achievement is a claim about the past, and the only honest '
+       + 'source for that is the record. Every deed here is earned by a '
+       + 'specific event and stamped with that event\'s own time; nothing is '
+       + 'inferred, nothing is teased, and nothing is printed as a digit.',
+    scenarios: [
+      {
+        id: 'deeds_come_only_from_recorded_events',
+        title: 'A deed is earned by one event, at that event\'s time, in order',
+        run(c, { deeds }) {
+          c.feature('deeds');
+          const at = (i) => `2026-08-21T10:${String(i).padStart(2, '0')}:00.000Z`;
+          const ev = (type, payload = {}, i = 0) => ({ id: `e${i}`, ts: at(i), type, payload });
+          c.eq(deeds.earnedDeeds([]).length, 0, 'an empty record earns nothing');
+          const one = deeds.earnedDeeds([ev('roll', { crit: true }, 7)]);
+          c.eq(one.length, 1, 'a natural twenty earns one deed');
+          c.eq(one[0]?.id, 'natural_twenty', 'the right one');
+          c.eq(one[0]?.earnedAt, at(7), 'stamped with the event\'s own time');
+          // Order matters: healed BEFORE downed is not standing back up.
+          c.eq(deeds.earnedDeeds([ev('healed', {}, 1), ev('downed', {}, 2)]).length, 0,
+            'healed before going down earns nothing');
+          const up = deeds.earnedDeeds([ev('downed', {}, 1), ev('healed', {}, 2)]);
+          c.eq(up[0]?.id, 'stood_back_up', 'healed after going down is standing back up');
+          c.eq(up[0]?.earnedAt, at(2), 'at the time of the heal, not the fall');
+          // Counts: the twenty-fourth cast is not the twenty-fifth.
+          const casts = (n) => Array.from({ length: n }, (_, i) => ev('spell_cast', {}, i));
+          c.ok(!deeds.earnedDeeds(casts(24)).some((d) => d.id === 'spellslinger'),
+            'twenty-four spells is not spellslinger');
+          const slinger = deeds.earnedDeeds(casts(25)).find((d) => d.id === 'spellslinger');
+          c.ok(!!slinger, 'twenty-five is');
+          c.eq(slinger?.earnedAt, at(24), 'stamped at the twenty-fifth cast');
+          // Sessions come from the seat-wide list, not the character's.
+          const five = Array.from({ length: 5 }, (_, i) => ev('session_start', {}, i));
+          c.ok(deeds.earnedDeeds([], { sessions: five }).some((d) => d.id === 'regular'),
+            'five session starts make a regular');
+          c.ok(!deeds.earnedDeeds(five).some((d) => d.id === 'regular'),
+            'but only through the seat-wide list the caller passes');
+          // Every deed in the table has a title, a line and an earn function.
+          for (const d of deeds.DEEDS) {
+            c.ok(typeof d.title === 'string' && typeof d.line === 'string'
+              && typeof d.earn === 'function', `${d.id} is a complete deed`);
+          }
+        },
+      },
+      {
+        id: 'deeds_speak_in_words',
+        title: 'Dates and counts come out as words, never digits',
+        why: 'The phone gym counts distinct numbers on a screen and vetoes '
+           + 'a screen that carries too many. A panel of earned dates would '
+           + 'spend that budget for nothing, so it speaks in words.',
+        run(c, { deeds }) {
+          c.feature('deeds');
+          const stamps = ['2026-08-21T10:00:00Z', '2025-01-01T00:00:00Z', '2024-12-31T23:59:59Z',
+            '2026-02-03T12:00:00Z', '2000-06-15T12:00:00Z', '2005-03-09T12:00:00Z',
+            '2031-11-30T12:00:00Z', '2026-08-02T12:00:00Z', '2026-08-12T12:00:00Z',
+            '2026-08-20T12:00:00Z', '2026-08-23T12:00:00Z', '1999-07-04T12:00:00Z'];
+          for (const s of stamps) {
+            const w = deeds.dateInWords(s);
+            c.ok(!/[0-9]/.test(w), `${s} in words carries no digit`, w);
+            c.ok(/ of /.test(w), 'and reads as a date');
+          }
+          c.eq(deeds.dateInWords('2026-08-21T12:00:00Z').startsWith('the twenty-first of August'), true,
+            'the twenty-first of August');
+          for (let n = 0; n <= 40; n += 1) {
+            c.ok(!/[0-9]/.test(deeds.countInWords(n)), `${n} in words carries no digit`);
+          }
+          c.eq(deeds.countInWords(0), 'none', 'zero is none');
+          c.eq(deeds.countInWords(3), 'three', 'three is three');
+          c.eq(deeds.countInWords(21), 'twenty-one', 'twenty-one is hyphenated');
+          c.eq(deeds.countInWords(40), 'many', 'past thirty is many');
+          c.ok(!/[0-9]/.test(deeds.dateInWords('not a date')), 'an undated stamp still has no digit');
         },
       },
     ],
@@ -5049,7 +5218,9 @@ export const BARS = {
   // And again (57 -> 58) with the vendored sound-effects pack and its
   // licence trail.
   // And again (58 -> 59) with the moments layer.
-  minFeaturesCovered: 59,
+  // And again (59 -> 60) with the fight's mood and its weather-linked bed.
+  // And again (60 -> 61) with deeds earned only from the record.
+  minFeaturesCovered: 61,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.

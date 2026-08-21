@@ -15,11 +15,15 @@ import {
   query, openThreads, summarise, bySession, EVENT_TYPES, CATEGORIES, log,
 } from '../../core/events.js';
 import { fromCopper } from '../../core/rules2024.js';
+import { earnedDeeds, dateInWords, countInWords } from '../../core/deeds.js';
 
 export const title = 'Chronicle';
 
 let container = null;
 let events = [];
+// Session starts the whole seat can see - the DM marks them, so they do not
+// carry this character's id and the scoped query above would miss them.
+let sessions = [];
 let filter = { cat: null, notableOnly: false };
 
 export async function render(root) {
@@ -30,12 +34,14 @@ export async function render(root) {
 async function reload() {
   const { characterId } = getState();
   events = await query(characterId ? { characterId } : {});
+  sessions = await query({ type: 'session_start' }).catch(() => []);
   draw();
 }
 
 function draw() {
   container.innerHTML = '';
   container.append(summaryPanel());
+  container.append(deedsPanel());
   container.append(threadsPanel());
   container.append(journalPanel());
   container.append(timelinePanel());
@@ -74,6 +80,45 @@ function summaryPanel() {
   row.append(el('button', { class: 'act ghost', onClick: () => exportAs('json') },
     'Raw JSON'));
   panel.append(row);
+  return panel;
+}
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * Deeds: achievements, earned only by what the record says. No locked rows
+ * to want, no numbers at all (dates and counts come out as words, on
+ * purpose - the phone gym counts the digits on a screen).
+ */
+function deedsPanel() {
+  const earned = earnedDeeds(events, { sessions });
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Deeds'));
+  panel.append(el('h3', {}, earned.length
+    ? `${countInWords(earned.length)} earned`
+    : 'none earned yet'));
+
+  if (!earned.length) {
+    panel.append(el('p', { class: 'muted', style: 'font-size:14px' },
+      'Deeds come from what actually happened: a first kill, a natural '
+      + 'twenty, a promise kept, a long rest taken. Play, and they arrive.'));
+  }
+  for (const d of earned) {
+    const row = el('div', {
+      style: 'display:flex;gap:10px;align-items:flex-start;padding:8px 0;'
+        + 'border-bottom:1px solid var(--etch)',
+    });
+    row.append(el('span', { class: 'chip accent' }, d.title));
+    const info = el('div', { style: 'flex:1' });
+    info.append(el('div', {}, d.line));
+    info.append(el('div', { class: 'mono muted', style: 'font-size:11px' },
+      `earned ${dateInWords(d.earnedAt)}`));
+    row.append(info);
+    panel.append(row);
+  }
+  panel.append(el('p', { class: 'welcome-fine', style: 'margin-top:8px' },
+    'Earned only, never teased. At a table nobody logs a kill - the runner '
+    + 'records damage, not deaths - so First blood is a solo deed for now.'));
   return panel;
 }
 
