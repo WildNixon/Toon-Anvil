@@ -24,6 +24,7 @@ import {
 import { startSandbox, refreshChrome } from '../../app.js';
 import * as session from '../../core/session.js';
 import * as theme from '../../ui/theme.js';
+import { VERSION } from '../../version.js';
 
 export const title = 'Settings';
 
@@ -83,6 +84,10 @@ function storagePanel() {
   const panel = el('div', { class: 'panel rivets accent' });
   panel.append(el('span', { class: 'lvl accent' }, 'Storage'));
   panel.append(el('h3', {}, 'Where your work is kept'));
+  // The one place the app says which version it is. Mirrored from /VERSION;
+  // run.py --check and the gym refuse the mirrors drifting apart.
+  panel.append(el('p', { class: 'mono muted', style: 'font-size:11px;margin:0 0 8px' },
+    `Toon Anvil ${VERSION}`));
 
   const { dataSource, ephemeral } = getState();
   panel.append(el('p', { class: 'muted', style: 'font-size:14px' },

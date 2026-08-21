@@ -1958,6 +1958,40 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- release ---------------------------------------- */
+  {
+    id: 'release',
+    title: 'Release',
+    why: 'For ninety-nine commits the app said v1.0 everywhere it said '
+       + 'anything, while the changelog-shaped truth lived only in commit '
+       + 'titles. A version is a claim the app makes about itself, and a '
+       + 'claim made in four places is four chances to lie.',
+    scenarios: [
+      {
+        id: 'version_agrees_everywhere',
+        title: 'One version, stated the same way everywhere it is stated',
+        why: 'VERSION at the root is the truth. app/version.js is what the '
+           + 'browser says, /api/health is what the server says, and the '
+           + 'service worker cache name is what installed phones keep - a '
+           + 'bump that forgets the cache name ships the old app to every '
+           + 'installed device under the new number. run.py --check covers '
+           + 'the CHANGELOG half, which the gym cannot reach from app/.',
+        async run(c, { version }) {
+          c.feature('version');
+          const v = version.VERSION;
+          c.ok(/^\d+\.\d+\.\d+$/.test(String(v)),
+            'the app states a semantic version', String(v));
+          const health = await fetch('/api/health').then((r) => r.json())
+            .catch(() => ({}));
+          c.eq(health.version, v, 'the server states the same one');
+          const sw = await fetch('/sw.js').then((r) => r.text()).catch(() => '');
+          c.ok(sw.includes(`'toon-anvil-v${v}'`),
+            'and the offline cache is named for it, so a bump busts the cache');
+        },
+      },
+    ],
+  },
+
   /* ---------------- connectors ------------------------------------- */
   {
     id: 'connectors',
@@ -4833,7 +4867,8 @@ export const BARS = {
   // pass, the dice feed, death saves, seat colours.
   // And again (52 -> 55) with the strategy-DM epic: prepared encounters,
   // the battle board, the cockpit, clocks.
-  minFeaturesCovered: 55,
+  // And again (55 -> 56) when the app learned to say which version it is.
+  minFeaturesCovered: 56,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.

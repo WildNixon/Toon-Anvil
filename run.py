@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import socket
 import sys
@@ -26,6 +27,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 APP = ROOT / "app"
+
+
+def app_version() -> str:
+    """The release number from VERSION at the root - the one file that is the
+    truth for it. A checkout without it is not broken, just unlabelled."""
+    try:
+        return (ROOT / "VERSION").read_text(encoding="utf-8").strip() or "0.0.0+unknown"
+    except OSError:
+        return "0.0.0+unknown"
 
 GREEN = "\033[32m"
 RED = "\033[31m"
@@ -102,6 +112,39 @@ def run_checks() -> Check:
                f"Run this from inside the project folder. Looked in {APP}")
     else:
         c.ok("App files")
+
+    # --- version -----------------------------------------------------------
+    # VERSION at the root is the truth; app/version.js, the service worker's
+    # cache name and the CHANGELOG's top released entry mirror it. A mirror
+    # that drifts is how an update ships under last month's number - or under
+    # a cache name that never busts, so installed phones keep the old app.
+    version_file = ROOT / "VERSION"
+    if not version_file.exists():
+        c.fail("VERSION file missing",
+               "Create VERSION at the repo root holding the release number, e.g. 2.0.0")
+    else:
+        truth = version_file.read_text(encoding="utf-8").strip()
+        mirrors: dict[str, str | None] = {}
+
+        def _grab(path: Path, pattern: str) -> str | None:
+            try:
+                m = re.search(pattern, path.read_text(encoding="utf-8"), re.MULTILINE)
+            except OSError:
+                return None
+            return m.group(1) if m else None
+
+        mirrors["app/version.js"] = _grab(APP / "version.js", r"VERSION\s*=\s*'([^']+)'")
+        mirrors["app/sw.js"] = _grab(APP / "sw.js", r"'toon-anvil-v([^']+)'")
+        # The first RELEASED heading: [Unreleased] has no digits and is skipped.
+        mirrors["CHANGELOG.md"] = _grab(ROOT / "CHANGELOG.md", r"^## \[(\d+\.\d+\.\d+)\]")
+        drift = {k: v for k, v in mirrors.items() if v != truth}
+        if drift:
+            c.fail(f"Version drift: VERSION says {truth}",
+                   "These disagree: " + ", ".join(
+                       f"{k} says {v or 'nothing'}" for k, v in drift.items())
+                   + "\n        Bump every mirror in the same commit as VERSION, then tag.")
+        else:
+            c.ok(f"Version {truth}", "VERSION, app/version.js, sw.js and CHANGELOG agree")
 
     # --- bundled rules data ------------------------------------------------
     meta = APP / "data" / "compendium" / "_meta.json"
@@ -237,7 +280,7 @@ def main() -> int:
 
     width = shutil.get_terminal_size((70, 20)).columns
     print("\n" + "=" * min(62, width))
-    print("  TOON ANVIL")
+    print(f"  TOON ANVIL {app_version()}")
     print("  Drop in homebrew. Get back a balanced subclass, a sheet, a plan.")
     print("=" * min(62, width))
 
@@ -272,6 +315,7 @@ def main() -> int:
             print(f"{YELLOW}Toon Anvil is ALREADY running on "
                   f"http://127.0.0.1:{port}{OFF}")
             print(f"{DIM}  data: {mine.get('dataDir', '?')}{OFF}")
+            print(f"{DIM}  version: {mine.get('version', '?')}{OFF}")
             print(f"{DIM}  Opening that one. Close its window first if you "
                   f"wanted a fresh start.{OFF}")
             print()

@@ -18,11 +18,15 @@
  * between "installed" and "actually usable on a train".
  */
 
-// v9: compendium files are cached as IMMUTABLE, so a regenerated
-// backgrounds.json never reaches an installed app without a version bump -
-// the repaired background fields ride this one. spell-mechanics.json joins
-// the shell for the spellbook.
-const VERSION = 'toon-anvil-v9';
+// The cache name IS the release version, mirrored from /VERSION at the repo
+// root (this is a classic worker, so it cannot import app/version.js; module
+// workers are still missing on older Android WebViews, and the pitch is
+// phones on the couch). Bumping the release busts the cache. run.py --check
+// and the gym's release suite refuse a sw.js that disagrees with VERSION.
+//
+// History: this used to be a hand-bumped counter (it reached nine, when the
+// compendium went IMMUTABLE and spell-mechanics.json joined the shell).
+const VERSION = 'toon-anvil-v2.0.0';
 
 /** Immutable between releases: safe to serve from cache without asking. */
 const IMMUTABLE = /\/(data\/fonts|data\/compendium|icons)\//;

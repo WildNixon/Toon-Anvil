@@ -67,10 +67,12 @@ raw JSON, and a play guide — every line tagged with where it came from:
 
 ---
 
-## Status: v1.0
+## Status: v2.0.0 (see [CHANGELOG.md](CHANGELOG.md))
 
-Everything below was exercised by hand before release — not "it renders", but
-"it does the thing".
+The tables below are the 1.0 release notes, kept as they were: everything in
+them was exercised by hand before that release — not "it renders", but "it
+does the thing". Everything since — the table half, the lobby, the cockpit,
+the connectors — is in the changelog, one dated entry per epic.
 
 **Working**
 
@@ -607,6 +609,18 @@ python run.py --no-browser  # serve without opening a window
 python tools/grade.py       # grade a sweep
 python tools/charts.py      # render the report
 ```
+
+### Versions
+
+Toon Anvil uses semantic versions from 2.0.0 on. `VERSION` at the repo root
+is the truth; `app/version.js`, the service-worker cache name in `app/sw.js`,
+and the top released entry of `CHANGELOG.md` mirror it, and both
+`python run.py --check` and the gym's `release` suite fail when any of them
+disagree. Work lands in small commits under **Unreleased**. When an epic ends,
+bump the minor (2.1.0, 2.2.0), date the entry, move the mirrors in one commit,
+and tag it `vX.Y.Z`. A patch bump is for a fix shipped between epics; the
+major is for a new app on the old one, which is what 2.0 was. Commits before
+`v2.0.0` carry no version and stay as they are.
 
 Two harnesses run in the browser once the server is up:
 

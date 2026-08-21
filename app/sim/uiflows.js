@@ -1948,6 +1948,9 @@ export const FLOWS = [
       c.ok(/Tavern murmur|Fireside|Rain/i.test(t),
         'local ambience is offered with no key');
 
+      // And the app says which version it is, where a person would look.
+      c.ok(/Toon Anvil \d+\.\d+\.\d+/.test(t), 'Settings states the version');
+
       // And no key is ever typed here.
       const fields = [...doc.querySelectorAll('main input')];
       c.ok(!fields.some((i) => /key|token|secret|password/i.test(

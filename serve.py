@@ -33,6 +33,13 @@ from urllib.parse import urlparse, parse_qs, unquote
 ROOT = Path(__file__).resolve().parent
 APP = ROOT / "app"
 DATA = ROOT / "data"
+# The release number, from the one file that is the truth for it. A copy
+# of the repo without it still boots - it just says so in /api/health
+# rather than inventing a number.
+try:
+    VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip() or "0.0.0+unknown"
+except OSError:
+    VERSION = "0.0.0+unknown"
 
 KINDS = {"characters", "campaigns", "homebrew", "npcs", "shops", "encounters", "maps",
          # Content ingested from a dropped PDF or written by hand. Kept apart
@@ -1246,7 +1253,8 @@ class Handler(SimpleHTTPRequestHandler):
         if parts == ["api", "health"]:
             counts = {k: len(list(kind_dir(k).glob("*.json"))) for k in sorted(KINDS)}
             return self._send_json({
-                "ok": True, "app": "toon-anvil", "time": now_iso(),
+                "ok": True, "app": "toon-anvil", "version": VERSION,
+                "time": now_iso(),
                 "dataDir": str(DATA), "counts": counts,
                 "events": EVENT_LOG.stat().st_size if EVENT_LOG.exists() else 0,
             })
