@@ -90,6 +90,28 @@ const SHELL = [
   './modes/settings/settings.js',
   './modes/table/table.js',
   './core/providers.js',
+  // The runtime modules that had grown up unlisted - found by diffing every
+  // app/**/*.js import against this shell, the same way chart.js and
+  // pricing.js were found missing when the Deck landed. Network-first like
+  // all source (see the header): a pulled fix must be the code that runs on
+  // the next load, so none of these is IMMUTABLE.
+  './core/audio.js',
+  './core/sfx.js',
+  './core/speak.js',
+  './core/deeds.js',
+  './core/pregen.js',
+  './version.js',
+  './audio/voice-worklet.js',
+  './ui/soundtoggle.js',
+  './ui/moments.js',
+  './ui/qr.js',
+  './ui/vendor/qrcodegen.js',
+  './ui/components/dicerail.js',
+  './ui/components/liveside.js',
+  './ui/components/rollcard.js',
+  './modes/dm/founding.js',
+  './modes/lobby/lobby.js',
+  './modes/settings/connectors-panel.js',
   './homebrew/parse-content.js',
   './data/dm-tables.json',
   './data/srd-effects.json',

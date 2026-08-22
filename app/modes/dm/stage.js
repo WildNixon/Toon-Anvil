@@ -28,6 +28,7 @@ import { diceRail } from '../../ui/components/dicerail.js';
 import { doneStrip } from '../../ui/components/liveside.js';
 import { BEDS, playBed, stopBed, nowPlaying, bedForSky } from '../../core/providers.js';
 import { soundButton } from '../../ui/soundtoggle.js';
+import * as speak from '../../core/speak.js';
 
 // dm-tables.json, for today's sky. Fetched once, lazily, and the screen
 // redraws when it lands - the lobby's shelf listing does the same.
@@ -47,11 +48,15 @@ import { sheetPrompt } from '../../ui/kit.js';
 let box = null;
 let ctx = null;
 let campaign = null;
+let npcs = [];
+let onCampaign = null;
 
-export function render(root, context, activeCamp = null) {
+export function render(root, context, activeCamp = null, extra = {}) {
   box = root;
   ctx = context;
   campaign = activeCamp;
+  npcs = extra.npcs || [];
+  onCampaign = extra.onCampaign || null;
   draw();
 }
 
@@ -112,6 +117,7 @@ function draw() {
   }
   if (campaign) rail.append(fold('Prepared', preparedPanel()));
   rail.append(fold('Ambience', ambiencePanel()));
+  rail.append(fold('Voice', voicePanel()));
 
   cockpit.append(main, rail);
   box.append(cockpit);
@@ -296,6 +302,187 @@ function ambiencePanel() {
   }
   panel.append(el('p', { class: 'welcome-fine', style: 'margin-top:6px' },
     'Plays on this machine\'s speakers only.'));
+  return panel;
+}
+
+/* ------------------------------------------------------------------ */
+/* Voice - the DM speaks as an NPC or a monster, and saves it to them   */
+/* ------------------------------------------------------------------ */
+
+/** A saved-timbre ref back to a name the DM will recognise, real case
+ *  and all - a combatant in the fight names it best, since the ref itself
+ *  is lowercased for stable matching. */
+function labelForRef(ref) {
+  if (!ref) return ref;
+  const inFight = (fight.combatants || []).find((c) => speak.refFor(c) === ref);
+  if (inFight?.name) return inFight.name;
+  if (ref.startsWith('monster:')) {
+    const id = ref.slice(8);
+    return (ctx.monsters || []).find((m) => m.id === id)?.name || id;
+  }
+  if (ref.startsWith('npc:')) {
+    const id = ref.slice(4);
+    return npcs.find((n) => n.id === id)?.name || id;
+  }
+  if (ref.startsWith('custom:')) return ref.slice(7);
+  return ref;
+}
+
+/** The combatants in the current fight that CAN carry a voice, de-duped. */
+function voiceableCombatants() {
+  const seen = new Set();
+  const out = [];
+  for (const c of fight.combatants || []) {
+    const ref = speak.refFor(c);
+    if (!ref || seen.has(ref)) continue;
+    seen.add(ref);
+    out.push({ ref, name: c.name });
+  }
+  return out;
+}
+
+function voicePanel() {
+  const panel = el('div', { class: 'panel rivets' });
+  panel.append(el('span', { class: 'lvl' }, 'Voice'));
+  const st = speak.status();
+
+  // The gesture. One label, always - a lookup by text must stay stable -
+  // and the state rides aria-pressed and a class. Release listeners live on
+  // the document, because a player's roll redraws this whole rail and the
+  // button can be swapped out from under the DM's finger mid-press.
+  const status = el('p', { class: 'muted', style: 'font-size:13px;margin:6px 0' });
+  const paintStatus = () => {
+    const s = speak.status();
+    status.textContent = s.reason
+      || (s.latched ? 'Latched - tap to release'
+        : s.speaking ? 'Speaking' : 'Press and hold to speak; double-tap to latch.');
+  };
+  const hold = el('button', {
+    class: 'act speak-hold', type: 'button',
+    'aria-label': 'Hold to speak', 'aria-pressed': String(st.speaking),
+    style: 'width:100%;min-height:56px',
+  }, 'Hold to speak');
+  const onUp = async () => {
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onUp);
+    speak.release();
+    hold.setAttribute('aria-pressed', String(speak.status().speaking));
+    hold.classList.toggle('latched', speak.status().latched);
+    paintStatus();
+  };
+  hold.addEventListener('pointerdown', async (e) => {
+    e.preventDefault();
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+    await speak.press();
+    hold.setAttribute('aria-pressed', String(speak.status().speaking));
+    hold.classList.toggle('latched', speak.status().latched);
+    paintStatus();
+  });
+  if (st.latched) hold.classList.add('latched');
+  panel.append(hold);
+  paintStatus();
+  panel.append(status);
+
+  // Speak as: follow the turn, then the presets, then every saved voice -
+  // from the campaign AND this machine's fallback, so a voice saved with no
+  // campaign open still appears.
+  const saved = speak.savedTimbres(campaign);
+  const speakAs = el('select', { 'aria-label': 'Speak as' });
+  speakAs.append(el('option', { value: 'follow' }, 'Follow the turn'));
+  for (const [id, p] of Object.entries(speak.PRESETS)) {
+    speakAs.append(el('option', { value: `preset:${id}` }, p.label));
+  }
+  for (const ref of Object.keys(saved)) {
+    speakAs.append(el('option', { value: `ref:${ref}` }, `${labelForRef(ref)} (saved)`));
+  }
+  speakAs.value = st.choice && (st.choice === 'follow'
+    || [...speakAs.options].some((o) => o.value === st.choice)) ? st.choice : 'follow';
+
+  const settingsFor = (choiceKey) => {
+    if (choiceKey === 'follow') {
+      const active = (fight.combatants || [])[fight.turn || 0];
+      const ref = speak.refFor(active);
+      return speak.timbreFor(ref, campaign) || speak.PRESETS.plain.settings;
+    }
+    if (choiceKey.startsWith('preset:')) {
+      return speak.PRESETS[choiceKey.slice(7)]?.settings || speak.PRESETS.plain.settings;
+    }
+    if (choiceKey.startsWith('ref:')) {
+      return speak.timbreFor(choiceKey.slice(4), campaign) || speak.PRESETS.plain.settings;
+    }
+    return speak.PRESETS.plain.settings;
+  };
+
+  const pitch = el('input', {
+    type: 'range', min: '-12', max: '12', step: '1',
+    'aria-label': 'Pitch', style: 'width:100%',
+  });
+  const cur = speak.normalize(st.settings);
+  pitch.value = String(cur.pitch);
+  pitch.title = `${cur.pitch} semitones`;
+
+  speakAs.addEventListener('change', () => {
+    const s = speak.normalize(settingsFor(speakAs.value));
+    speak.choose(speakAs.value, s);
+    pitch.value = String(s.pitch);
+    pitch.title = `${s.pitch} semitones`;
+  });
+  pitch.addEventListener('input', () => {
+    const s = speak.normalize({ ...speak.status().settings, pitch: Number(pitch.value) });
+    speak.choose(speak.status().choice, s);
+    pitch.title = `${s.pitch} semitones`;
+  });
+  panel.append(el('label', { class: 'field', style: 'font-size:12px' }, 'Speak as'));
+  panel.append(speakAs);
+  panel.append(el('label', { class: 'field', style: 'font-size:12px;margin-top:6px' }, 'Pitch'));
+  panel.append(pitch);
+
+  // Save to: the fight's monsters and customs, then the campaign's NPCs.
+  const targets = voiceableCombatants();
+  for (const n of npcs) targets.push({ ref: `npc:${n.id}`, name: n.name });
+  if (targets.length) {
+    const saveTo = el('select', { 'aria-label': 'Save to' });
+    saveTo.append(el('option', { value: '' }, 'Save this voice to...'));
+    const seen = new Set();
+    for (const t of targets) {
+      if (seen.has(t.ref)) continue;
+      seen.add(t.ref);
+      saveTo.append(el('option', { value: t.ref }, t.name));
+    }
+    if (st.choice?.startsWith('ref:')) {
+      saveTo.append(el('option', { value: `forget:${st.choice.slice(4)}` }, 'Forget this voice'));
+    }
+    saveTo.addEventListener('change', () => {
+      const v = saveTo.value;
+      if (!v) return;
+      if (v.startsWith('forget:')) {
+        const r = speak.forgetTimbre(v.slice(7), campaign);
+        if (r.campaign && onCampaign) onCampaign(r.campaign);
+        else { toast('Voice forgotten', 'ok'); draw(); }
+        return;
+      }
+      const r = speak.saveTimbre(v, speak.status().settings, campaign);
+      toast(`${labelForRef(v)} speaks like this now`, 'ok');
+      if (r.campaign && onCampaign) onCampaign(r.campaign);
+      else draw();
+    });
+    panel.append(el('label', { class: 'field', style: 'font-size:12px;margin-top:6px' }, 'Save to'));
+    panel.append(saveTo);
+  }
+
+  if (st.mic === 'open') {
+    panel.append(el('div', { class: 'btnrow', style: 'margin-top:8px' },
+      el('button', {
+        class: 'act ghost small',
+        onClick: () => { speak.releaseMic(); draw(); },
+      }, 'Release the mic')));
+  }
+
+  panel.append(el('p', { class: 'welcome-fine', style: 'margin-top:6px' },
+    'Plays on this machine\'s speakers only - wear headphones or use an '
+    + 'external speaker, or the microphone hears itself. Nothing you say '
+    + 'leaves this machine.'));
   return panel;
 }
 

@@ -13,6 +13,7 @@
  */
 
 import { el } from '../../core/store.js';
+import { db } from '../../core/db.js';
 import * as live from '../../core/live.js';
 import { activeCampaign } from '../../core/campaign.js';
 import { pull, adopt } from './runner.js';
@@ -24,6 +25,7 @@ export const title = 'Stage';
 let container = null;
 let unsubscribe = null;
 let campaign = null;
+let npcs = [];
 
 export async function render(root) {
   container = root;
@@ -31,6 +33,10 @@ export async function render(root) {
   const shared = await pull();
   if (shared) adopt(shared);
   campaign = await activeCampaign();
+  // The campaign's NPCs, so the DM can save a voice to one from the Stage -
+  // the first DM-side use of the npcs kind. Best-effort: an offline solo
+  // Stage still runs.
+  npcs = await db.list('npcs').catch(() => []);
   draw();
 
   if (unsubscribe) unsubscribe();
@@ -43,6 +49,7 @@ export async function render(root) {
       unsubscribe?.(); unsubscribe = null; return;
     }
     campaign = await activeCampaign();
+    npcs = await db.list('npcs').catch(() => []);
     draw();
   });
 }
@@ -51,5 +58,10 @@ function draw() {
   container.innerHTML = '';
   const box = el('div', {});
   container.append(box);
-  stage.render(box, makeCtx({ redraw: draw }), campaign);
+  stage.render(box, makeCtx({ redraw: draw }), campaign, {
+    npcs,
+    // The Voice fold saves to the campaign; give it a way to persist and
+    // re-adopt exactly as saveTemplates does.
+    onCampaign: async (next) => { await db.put('campaigns', next); campaign = next; draw(); },
+  });
 }

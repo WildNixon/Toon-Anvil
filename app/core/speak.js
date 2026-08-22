@@ -274,6 +274,16 @@ export function timbreFor(ref, campaign = null) {
 }
 
 /**
+ * Every saved timbre this DM can reach, keyed by ref - the machine's own
+ * plus the campaign's, the campaign winning a tie. The picker lists exactly
+ * what timbreFor can resolve, so a voice saved with no campaign open still
+ * shows up in the menu.
+ */
+export function savedTimbres(campaign = null) {
+  return { ...localTimbres(), ...(campaign?.timbres || {}) };
+}
+
+/**
  * Save a timbre. With a campaign it writes the campaign (the server keeps it
  * from players); without one it writes this machine. Returns the campaign
  * record when it changed, so the caller can persist and adopt it.

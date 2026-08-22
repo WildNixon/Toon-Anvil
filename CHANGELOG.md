@@ -15,6 +15,17 @@ and are left as they are.
 
 ## [Unreleased]
 
+### Added
+- **A voice changer for the DM.** A hold-to-speak button on the Stage runs
+  the microphone through an original pitch/character engine (an AudioWorklet
+  written for the app) out of the DM's own speakers - eight presets from
+  Ogre to Ghost, a live pitch slider, and a double-tap latch for a
+  monologue. Save a voice to a monster or an NPC and it comes back with the
+  turn. It runs entirely on the DM's machine, sends nothing anywhere, and a
+  device without a microphone (a player's phone) is told so in words.
+- The offline shell now precaches the runtime modules it had grown to need,
+  so a reload with no network keeps every screen.
+
 ## [2.1.0] - 2026-08-21
 
 The gamified table: sound, moments, ceremony, deeds.

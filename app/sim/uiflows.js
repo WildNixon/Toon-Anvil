@@ -1280,6 +1280,127 @@ export const FLOWS = [
   },
 
   {
+    id: 'speak_as_on_the_stage',
+    title: 'The Voice fold offers a hold-to-speak, asks for the mic once, and saves',
+    why: 'A framed copy can never make a sound (the audio core refuses to '
+       + 'construct in a frame), so this cannot hear the voice - but it can '
+       + 'prove everything around it: the fold renders, the mic is asked for '
+       + 'exactly once and only after a press, nothing constructs an audio '
+       + 'context, the refusal is worded, a voice saves to a combatant, and '
+       + 'a machine with no microphone is told so.',
+    async run(c, { doc, win }) {
+      c.feature('ui', 'dm', 'stage', 'speak');
+      c.ok(await ensureSeat(doc, 'dm'), "the DM's shell is on");
+      c.ok(await goToMode(doc, 'Stage', 'Encounter'), 'the Stage opens');
+
+      // A custom combatant, so "Save to" has somebody to save to.
+      const cName = [...doc.querySelectorAll('main input[type=text]')]
+        .find((i) => i.placeholder === 'Name');
+      c.ok(!!cName, 'the custom-combatant name field is there');
+      if (cName) {
+        setField(cName, 'Gym Ogre');
+        [...doc.querySelectorAll('main button')]
+          .find((b) => b.textContent.trim() === 'Add')?.click();
+        await waitUntilSettled(doc);
+      }
+
+      const voiceFold = [...doc.querySelectorAll('main .cockpit-rail > .rail-fold')]
+        .find((f) => f.querySelector('summary')?.textContent.trim() === 'Voice');
+      c.ok(!!voiceFold, 'a Voice fold sits in the rail');
+      if (!voiceFold) return;
+      const hold = [...voiceFold.querySelectorAll('button')]
+        .find((b) => b.textContent.trim() === 'Hold to speak');
+      c.ok(!!hold, 'with a hold-to-speak button');
+      c.ok(!!voiceFold.querySelector('select[aria-label="Speak as"]'), 'a Speak-as picker');
+      c.ok(!!voiceFold.querySelector('input[type=range][aria-label="Pitch"]'), 'a pitch slider');
+      c.ok(!voiceFold.querySelector('input[type=number]'),
+        'and no number input, so command_stage keeps its damage field');
+
+      // Save/restore everything we patch, and record every mic ask.
+      const asked = [];
+      const spyCalls = [];
+      const Spy = function SpyContext() { spyCalls.push(1); throw new Error('spy'); };
+      const savedAC = [win.AudioContext, win.webkitAudioContext];
+      const savedMd = Object.getOwnPropertyDescriptor(win.navigator, 'mediaDevices');
+      const hadTimbres = win.localStorage.getItem('toonanvil.timbres');
+      win.AudioContext = Spy; win.webkitAudioContext = Spy;
+      Object.defineProperty(win.navigator, 'mediaDevices', {
+        configurable: true,
+        value: { getUserMedia: async (con) => { asked.push(con); return new win.MediaStream(); } },
+      });
+      try {
+        win.localStorage.removeItem('toonanvil.timbres');
+
+        // Press and hold: pointerdown on the button, pointerup on the
+        // document (where the release listener lives, so a redraw cannot
+        // strand it). A framed copy has sound off, so the honest outcome is
+        // the "sound is off" refusal - reached only AFTER the mic was asked.
+        hold.dispatchEvent(new win.PointerEvent('pointerdown', { bubbles: true, pointerId: 1, isPrimary: true }));
+        doc.dispatchEvent(new win.PointerEvent('pointerup', { bubbles: true, pointerId: 1, isPrimary: true }));
+        const refused = await waitFor(() => (/[Ss]ound is off/.test(voiceFold.textContent) ? true : null),
+          { timeout: 6000 });
+        c.ok(!!refused, 'the fold says sound is off on this device', voiceFold.textContent.slice(0, 90));
+        c.eq(asked.length, 1, 'the microphone was asked for exactly once');
+        c.eq(asked[0]?.audio?.echoCancellation, true, 'with echo cancellation, against feedback');
+        c.eq(spyCalls.length, 0, 'and a framed copy constructed no audio context');
+
+        // A second press does not re-prompt: the stream is cached.
+        hold.dispatchEvent(new win.PointerEvent('pointerdown', { bubbles: true, pointerId: 1, isPrimary: true }));
+        doc.dispatchEvent(new win.PointerEvent('pointerup', { bubbles: true, pointerId: 1, isPrimary: true }));
+        await waitUntilSettled(doc);
+        c.eq(asked.length, 1, 'a second press reuses the microphone, not a new prompt');
+
+        // Save the current voice to the Ogre.
+        const saveTo = voiceFold.querySelector('select[aria-label="Save to"]');
+        c.ok(!!saveTo, 'a Save-to picker lists the fight');
+        const opt = saveTo && [...saveTo.options].find((o) => o.textContent.trim() === 'Gym Ogre');
+        c.ok(!!opt, 'the custom combatant is a target', [...(saveTo?.options || [])].map((o) => o.textContent).join(', '));
+        if (opt) {
+          setField(saveTo, opt.value);
+          const saved = await waitFor(() => {
+            try { return JSON.parse(win.localStorage.getItem('toonanvil.timbres') || '{}')['custom:gym ogre'] || null; }
+            catch { return null; }
+          }, { timeout: 6000 });
+          c.ok(!!saved, 'saving writes the voice to this machine (no campaign open)');
+          const fold2 = [...doc.querySelectorAll('main .cockpit-rail > .rail-fold')]
+            .find((f) => f.querySelector('summary')?.textContent.trim() === 'Voice');
+          c.ok([...(fold2?.querySelectorAll('select[aria-label="Speak as"] option') || [])]
+            .some((o) => /Gym Ogre \(saved\)/.test(o.textContent)),
+          'and the saved voice joins the Speak-as menu');
+        }
+
+        // A machine with no microphone at all (a phone on --lan) is told so.
+        Object.defineProperty(win.navigator, 'mediaDevices', { configurable: true, value: undefined });
+        const fold3 = [...doc.querySelectorAll('main .cockpit-rail > .rail-fold')]
+          .find((f) => f.querySelector('summary')?.textContent.trim() === 'Voice');
+        const hold3 = [...(fold3?.querySelectorAll('button') || [])]
+          .find((b) => b.textContent.trim() === 'Hold to speak');
+        hold3?.dispatchEvent(new win.PointerEvent('pointerdown', { bubbles: true, pointerId: 1, isPrimary: true }));
+        doc.dispatchEvent(new win.PointerEvent('pointerup', { bubbles: true, pointerId: 1, isPrimary: true }));
+        const noMic = await waitFor(() => (/No microphone on this device/.test(fold3?.textContent || '') ? true : null),
+          { timeout: 6000 });
+        c.ok(!!noMic, 'no microphone is a sentence, not a crash');
+
+        // command_stage's contract still holds after all of this.
+        const titles = [...doc.querySelectorAll('main .cockpit-rail > .rail-fold > summary')]
+          .map((s) => s.textContent.trim());
+        c.ok(titles.includes('The party') && titles.includes('Ambience'),
+          'the other rail folds are untouched');
+        const numIn = doc.querySelector('main input[type=number]');
+        c.ok(!numIn || !!numIn.closest('.cockpit-main'),
+          'the first number input is still inside the fight, not the rail');
+      } finally {
+        win.AudioContext = savedAC[0]; win.webkitAudioContext = savedAC[1];
+        if (savedMd) Object.defineProperty(win.navigator, 'mediaDevices', savedMd);
+        else delete win.navigator.mediaDevices;
+        try { const s = await import('../core/speak.js'); s.releaseMic(); } catch { /* fine */ }
+        if (hadTimbres !== null) win.localStorage.setItem('toonanvil.timbres', hadTimbres);
+        else win.localStorage.removeItem('toonanvil.timbres');
+      }
+    },
+  },
+
+  {
     id: 'command_stage',
     title: 'The Stage is one cockpit: the fight centre, the rail beside it',
     async run(c, { doc }) {

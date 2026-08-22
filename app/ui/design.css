@@ -438,6 +438,11 @@ button.rb-ac:hover { background: var(--chrome-hover); }
 .sound-toggle.compact svg { width: 15px; height: 15px; }
 main .sound-toggle { color: var(--ink); border-color: var(--etch); }
 main .sound-toggle[aria-pressed="true"] { color: var(--accent-text); border-color: var(--accent); }
+
+/* Hold to speak: the DM's voice-changer gesture. State rides aria-pressed
+   and .latched; the label never changes so a lookup by text stays stable. */
+.speak-hold[aria-pressed="true"] { background: var(--accent); color: var(--zinc); }
+.speak-hold.latched { background: var(--accent); color: var(--zinc); box-shadow: inset 0 0 0 2px var(--gold); }
 .rb-conds { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .rb-conds .rb-more { display: none; }
 .rb-switch select {
