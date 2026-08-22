@@ -67,7 +67,7 @@ raw JSON, and a play guide — every line tagged with where it came from:
 
 ---
 
-## Status: v2.1.0 (see [CHANGELOG.md](CHANGELOG.md))
+## Status: v2.2.0 (see [CHANGELOG.md](CHANGELOG.md))
 
 The tables below are the 1.0 release notes, kept as they were: everything in
 them was exercised by hand before that release — not "it renders", but "it
@@ -210,7 +210,7 @@ working with no network.
 
 | Screen | What it shows |
 |---|---|
-| **Stage** | The cockpit: the fight holds the middle (one initiative list, party and monsters together, resistances applied by the engine, **ally/foe sides**, concentration that actually asks for the save), and one foldable rail beside it carries the **battle board** (tokens on the campaign map, dragged by the DM and watched by the players), party vitals, the **dice rail**, the **prepared-encounter drawer**, and one-tap ambience. Plus the DM's levers: the forge, per-character and party-wide level-up grants, assigning characters. |
+| **Stage** | The cockpit: the fight holds the middle (one initiative list, party and monsters together, resistances applied by the engine, **ally/foe sides**, concentration that actually asks for the save), and one foldable rail beside it carries the **battle board** (tokens on the campaign map, dragged by the DM and watched by the players), party vitals, the **dice rail**, the **prepared-encounter drawer**, one-tap ambience, and a **voice changer** - hold to speak through a pitch shifter, saved per monster and NPC, all on the DM's own machine. Plus the DM's levers: the forge, per-character and party-wide level-up grants, assigning characters. |
 | **Deck** | The campaign as a control panel. The in-game **day** and its **weather** (computed from the campaign's seed — deterministic, so every screen derives the same sky and any day is recomputable), **clocks** (pressure that fills a segment at a time — tie one to the calendar and every day advances it; public ones show on the players' strip, secret ones are stripped by the server), the **interactive map** (drop the setting's image; pan, zoom, pin locations, factions, quests and the party; reveal pins one by one), **factions** with standing sliders, public toggles and SECRET agendas plus a standing-over-days chart, and the **economy**: a price dial per region that the players' Market actually charges — turn it and their open screens re-price, live. Also ingests a setting document: split by headings, file each section as a region, faction, NPC or lore with one click. |
 | **World** | The prep: bestiary, encounter builder, treasure hoards, improv generators, rules reference — behind sub-tabs, each with its own search. Nothing here redraws off the live feed, so a half-typed search survives a player's die roll. |
 | **Story** | The whole party's event log as it happens — every roll, purchase and promise with the character's name on it — plus the open threads: promises unkept, secrets unused, NPCs met once. Read-only: the story is what the table did. |

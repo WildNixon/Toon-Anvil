@@ -15,6 +15,10 @@ and are left as they are.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-08-21
+
+The DM's voice changer, saved per NPC and monster.
+
 ### Added
 - **A voice changer for the DM.** A hold-to-speak button on the Stage runs
   the microphone through an original pitch/character engine (an AudioWorklet
@@ -84,7 +88,8 @@ The table half. Toon Anvil 1.0 measured homebrew; 2.0 also hosts the game.
 The workshop: ingest, map, simulate, grade, balance, emit. See the `v1.0.0`
 tag and the README's status tables, which are the 1.0 release notes.
 
-[Unreleased]: https://github.com/WildNixon/Toon-Anvil/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/WildNixon/Toon-Anvil/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/WildNixon/Toon-Anvil/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/WildNixon/Toon-Anvil/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/WildNixon/Toon-Anvil/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/WildNixon/Toon-Anvil/releases/tag/v1.0.0
