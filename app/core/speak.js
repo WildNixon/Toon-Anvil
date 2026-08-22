@@ -215,6 +215,93 @@ export async function buildChain(ctx, settings) {
 }
 
 /* ------------------------------------------------------------------ */
+/* the home - a saved timbre per NPC and per monster                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A timbre is DM-only prep, so it lives on the campaign record - which the
+ * server redacts for players - exactly as prepared encounters do. NOT on
+ * the npcs record (a shared kind with no redactor: every seated player
+ * could read it, and monsters would have nowhere to live) and NOT on the
+ * combatant (snapshot() sends it over the wire to every seat). With no
+ * campaign open - a solo DM mid-fight - it falls back to this machine's own
+ * localStorage, which is the right scope anyway: the microphone and the
+ * speakers are this machine's.
+ */
+
+const LOCAL_KEY = 'toonanvil.timbres';
+
+/** How a thing is addressed: a monster by its kind, a custom by its name,
+ *  an NPC by its id. PCs never carry a timbre (a DM decision) -> null. */
+export function refFor(thing) {
+  if (!thing) return null;
+  if (typeof thing.id === 'string' && thing.id.startsWith('npc-')) return `npc:${thing.id}`;
+  if (thing.kind === 'monster' && thing.monsterId) return `monster:${thing.monsterId}`;
+  if (thing.kind === 'custom' && thing.name) return `custom:${String(thing.name).trim().toLowerCase()}`;
+  return null;
+}
+
+/** The campaign record, with one timbre set. Pure - returns a new record. */
+export function withTimbre(campaign, ref, settings) {
+  if (!campaign || !ref) return campaign;
+  return { ...campaign, timbres: { ...(campaign.timbres || {}), [ref]: normalize(settings) } };
+}
+
+/** The campaign record, with one timbre removed. Pure. */
+export function withoutTimbre(campaign, ref) {
+  if (!campaign || !ref || !campaign.timbres) return campaign;
+  const timbres = { ...campaign.timbres };
+  delete timbres[ref];
+  return { ...campaign, timbres };
+}
+
+/** The timbre a campaign holds for a ref, or null. Pure. */
+export function timbreIn(campaign, ref) {
+  const s = campaign?.timbres?.[ref];
+  return s ? normalize(s) : null;
+}
+
+function localTimbres() {
+  try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}') || {}; }
+  catch { return {}; }
+}
+
+/** The campaign first, then this machine's fallback. */
+export function timbreFor(ref, campaign = null) {
+  if (!ref) return null;
+  return timbreIn(campaign, ref) || (localTimbres()[ref]
+    ? normalize(localTimbres()[ref]) : null);
+}
+
+/**
+ * Save a timbre. With a campaign it writes the campaign (the server keeps it
+ * from players); without one it writes this machine. Returns the campaign
+ * record when it changed, so the caller can persist and adopt it.
+ */
+export function saveTimbre(ref, settings, campaign = null) {
+  if (!ref) return { ok: false, reason: 'that one cannot carry a voice' };
+  if (campaign) return { ok: true, campaign: withTimbre(campaign, ref, settings) };
+  try {
+    const all = localTimbres();
+    all[ref] = normalize(settings);
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(all));
+  } catch { /* storage denied - the voice still works this session */ }
+  return { ok: true, campaign: null };
+}
+
+/** Forget a timbre, from whichever home holds it. */
+export function forgetTimbre(ref, campaign = null) {
+  if (!ref) return { ok: false };
+  if (campaign) return { ok: true, campaign: withoutTimbre(campaign, ref) };
+  try {
+    const all = localTimbres();
+    delete all[ref];
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(all));
+  } catch { /* fine */ }
+  return { ok: true, campaign: null };
+}
+
+/* ------------------------------------------------------------------ */
 /* the live path                                                       */
 /* ------------------------------------------------------------------ */
 

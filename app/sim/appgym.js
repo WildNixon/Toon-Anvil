@@ -2527,6 +2527,47 @@ export const SUITES = [
           c.eq(audio.context(), null, 'built on the offline context, never the app\'s');
         },
       },
+      {
+        id: 'timbres_have_one_home_and_none_on_the_wire',
+        title: 'A voice is addressed, saved and forgotten - and never on a combatant',
+        run(c, { speak, dm }) {
+          c.feature('speak', 'timbres');
+          // Addressing: monster by kind, custom by name, NPC by id, PC never.
+          c.eq(speak.refFor({ kind: 'monster', monsterId: 'goblin' }), 'monster:goblin',
+            'a monster is addressed by its kind');
+          c.eq(speak.refFor({ kind: 'custom', name: 'The Whisperer' }), 'custom:the whisperer',
+            'a custom by its name, lowercased');
+          c.eq(speak.refFor({ id: 'npc-mayor', name: 'Mayor' }), 'npc:npc-mayor',
+            'an NPC by its id');
+          c.eq(speak.refFor({ kind: 'pc', characterId: 'c1' }), null,
+            'a player character carries no voice');
+          c.eq(speak.refFor(null), null, 'and nothing is nothing');
+
+          // Round-trip on a campaign record, without mutating the original.
+          const camp = { id: 'c', name: 'C', timbres: { 'monster:orc': { pitch: -2 } } };
+          const before = JSON.stringify(camp);
+          const set = speak.withTimbre(camp, 'monster:goblin', { pitch: 6, gain: 9 });
+          c.eq(JSON.stringify(camp), before, 'withTimbre does not touch the original');
+          c.eq(set.timbres['monster:goblin'].pitch, 6, 'the new voice is saved');
+          c.eq(set.timbres['monster:goblin'].gain, 2, 'normalised on the way in');
+          c.eq(set.timbres['monster:orc'].pitch, -2, 'and the old one is kept');
+          c.eq(speak.timbreIn(set, 'monster:goblin')?.pitch, 6, 'and read back');
+          const gone = speak.withoutTimbre(set, 'monster:goblin');
+          c.eq(speak.timbreIn(gone, 'monster:goblin'), null, 'and forgotten');
+          c.eq(speak.timbreIn(gone, 'monster:orc')?.pitch, -2, 'without taking the others');
+
+          // The campaign is read before the machine's fallback.
+          c.eq(speak.timbreFor('monster:orc', set)?.pitch, -2, 'the campaign wins when it has one');
+          c.eq(speak.timbreFor('monster:nobody', set), null, 'and a miss is null, not a throw');
+
+          // And nothing voice-shaped ever rides a combatant to the players.
+          dm.runner.reset();
+          dm.runner.addCustom({ name: 'Gym Ogre', ac: 12, hp: 10, initMod: 0 });
+          c.ok(!JSON.stringify(dm.runner.snapshot()).includes('timbre'),
+            'the fight snapshot carries no voice');
+          dm.runner.reset();
+        },
+      },
     ],
   },
 
@@ -3662,6 +3703,49 @@ export const SUITES = [
             'while the DM keeps every word');
 
           await table.del('campaigns', 'gym-camp', dm.token);
+          await table.close();
+        },
+      },
+      {
+        id: 'timbres_stay_on_the_server',
+        title: 'A saved voice is DM prep: the players never receive it',
+        why: 'A timbre says which monster sounds like what - mild, but it is '
+           + 'the DM\'s, and it rides the campaign record, which is read-open '
+           + 'to seated players. The redactor must strip it exactly as it '
+           + 'strips prepared encounters, on the single route AND the list.',
+        async run(c, { table }) {
+          c.feature('campaign', 'speak', 'security');
+          await table.close();
+          const dm = await table.open('Gym DM');
+          const kim = await table.join(dm.code, 'Kim');
+          if (!kim.ok) { c.ok(false, 'the player joined'); return; }
+
+          const record = {
+            id: 'gym-voice-camp', name: 'Gym Voice', active: true, day: 1, seed: 7,
+            regions: [], factions: [], lore: [],
+            timbres: {
+              'monster:goblin-warrior': { pitch: 6, grain: 0.03, gain: 1 },
+              'custom:the whisperer': { pitch: -4, reverb: 0.8, gain: 0.9 },
+            },
+          };
+          const put = await table.put('campaigns', 'gym-voice-camp', record, dm.token);
+          c.eq(put.status, 200, 'the DM writes the campaign with voices');
+
+          const mine = await table.get('campaigns', 'gym-voice-camp', kim.token);
+          c.ok(!('timbres' in mine), 'the player receives no voices at all',
+            JSON.stringify(Object.keys(mine)));
+          c.ok(!JSON.stringify(mine).includes('whisperer'),
+            'not even a name of one');
+
+          const listed = await fetch('/api/campaigns', {
+            headers: { 'X-Toon-Token': kim.token } }).then((r) => r.json());
+          const fromList = listed.find((x) => x.id === 'gym-voice-camp');
+          c.ok(fromList && !('timbres' in fromList), 'the list route strips them too');
+
+          const asDm = await table.get('campaigns', 'gym-voice-camp', dm.token);
+          c.eq(Object.keys(asDm.timbres || {}).length, 2, 'while the DM keeps both');
+
+          await table.del('campaigns', 'gym-voice-camp', dm.token);
           await table.close();
         },
       },
@@ -5332,7 +5416,8 @@ export const BARS = {
   // And again (59 -> 60) with the fight's mood and its weather-linked bed.
   // And again (60 -> 61) with deeds earned only from the record.
   // And again (61 -> 62) with the DM's voice, measured rather than heard.
-  minFeaturesCovered: 62,
+  // And again (62 -> 63) with saved voices that live only on the server.
+  minFeaturesCovered: 63,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.

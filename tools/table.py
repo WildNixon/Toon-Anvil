@@ -577,6 +577,10 @@ def redact_campaign(record: dict, profile: dict | None) -> dict:
         c for c in (record.get("clocks") or [])
         if isinstance(c, dict) and c.get("public")
     ]
+    # Saved voices are DM prep - which monster sounds like what - and live
+    # here for the same reason prepared encounters do: the campaign is
+    # read-open to seated players, so a field that stays must be stripped.
+    out.pop("timbres", None)
     return out
 
 
