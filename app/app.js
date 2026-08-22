@@ -8,7 +8,8 @@
 
 import { initDb, db, compendia, getDataSource, setDataSource, openRealStore }
   from './core/db.js';
-import { getState, setState, subscribe, watch, esc, el, $, toast } from './core/store.js';
+import { getState, setState, subscribe, watch, esc, el, $, toast, onListenerTime }
+  from './core/store.js';
 import { setContext } from './core/events.js';
 import { derive } from './core/derive.js';
 import * as session from './core/session.js';
@@ -17,6 +18,7 @@ import * as theme from './ui/theme.js';
 import * as audio from './core/audio.js';
 import * as sfx from './core/sfx.js';
 import * as moments from './ui/moments.js';
+import * as perf from './core/perf.js';
 
 /**
  * TWO SHELLS. `shell` decides which app a mode belongs to, and the seat
@@ -263,6 +265,14 @@ export async function selectCharacter(id) {
 
 let currentMode = null;
 let renderSeq = 0;
+// The last mode that actually reached the screen. NOT currentMode, which is
+// assigned before the awaits and is therefore also set by renders that lose
+// the sequence race and paint nothing - at boot that is the common case, and
+// classifying by it filed the app's very first paint as a repaint.
+let paintedMode = null;
+// Which mode modules have been imported at least once, so a sample can
+// say whether its moduleMs paid for a fetch or hit the module map.
+const loadedModes = new Set();
 
 async function renderMode() {
   // Renders await module imports, and two calls can be in flight when the
@@ -282,9 +292,11 @@ async function renderMode() {
     setState({ mode: entry.id });
     if (location.hash.replace('#', '') !== entry.id) location.hash = `#${entry.id}`;
   }
-  if (currentMode === entry.id && view.dataset.rendered === entry.id) {
-    // Already mounted; modes re-render themselves via their own subscriptions.
-  }
+  // Arriving at a screen you were not on is a different thing from
+  // repainting the one you are looking at, and they are timed apart.
+  const kind = paintedMode === entry.id ? 'repaint' : 'mount';
+  const warm = loadedModes.has(entry.id);
+  const t0 = performance.now();
   currentMode = entry.id;
   view.dataset.rendered = entry.id;
   // The screen's own nameplate: the nav label again, plus one sentence on
@@ -304,9 +316,44 @@ async function renderMode() {
   try {
     const mod = await entry.load();
     if (seq !== renderSeq) return;
+    const moduleMs = performance.now() - t0;
+    loadedModes.add(entry.id);
+    const t1 = performance.now();
     view.innerHTML = '';
+    // Paint is WATCHED, not awaited. A mode may put its screen up in one frame
+    // and resolve seconds later - settings paints, then probes every connector
+    // - so the watcher starts here, before the render, and stops at the first
+    // frame with content on it. Timing to the resolve instead would report
+    // that paint as three seconds, and would hide the whole point of making a
+    // screen paint before its data arrives.
+    //
+    // The converse is not a flaw: a mode that appends nothing until its data
+    // lands - today that is every DM screen except settings - reports the whole
+    // wait as paint, because that is exactly what the DM sits through.
+    const alive = () => seq === renderSeq;
+    const paint = perf.watchPaint(view, alive, t1);
     await mod.render(view);
-    if (seq !== renderSeq) return;
+    if (seq !== renderSeq) { paint.stop(); return; }
+    // This render won, so this mode is now the one on the screen. Set here and
+    // nowhere earlier: a render that returned above put nothing on the glass.
+    paintedMode = entry.id;
+    // Not awaited, so nothing below waits on a frame; both callbacks re-check
+    // the sequence, so a render superseded before the frame is dropped.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (seq !== renderSeq) { paint.stop(); return; }
+      const painted = paint.ms ?? paint.seen;
+      paint.stop();
+      perf.record({
+        mode: entry.id,
+        kind,
+        warm,
+        moduleMs: Math.round(moduleMs),
+        // null means the screen was still empty when its render resolved -
+        // rare, real, and not something to paper over with a zero.
+        paintMs: painted === null ? null : Math.round(painted),
+        settleMs: Math.round(performance.now() - t1),
+      });
+    }));
   } catch (err) {
     console.error(`[app] mode "${entry.id}" failed`, err);
     view.innerHTML = `<div class="panel accent rivets">
@@ -873,6 +920,16 @@ async function boot() {
   // real chronicle. It is per-load and never stored as a preference.
   const params = new URLSearchParams(location.search);
   const prefer = params.get('storage') === 'memory' ? 'memory' : undefined;
+
+  // The render ring is always on - it is a read-only diagnostic and the gym
+  // drives fourteen frames. ?perf=1 adds the console voice and the store's
+  // listener tap, which costs two clock reads per listener and is therefore
+  // never on by default.
+  perf.install();
+  if (params.get('perf')) {
+    perf.setLoud(true);
+    onListenerTime(perf.noteListener);
+  }
 
   // ?code= arrives from the join link/QR on the DM's Setup screen. Remember
   // it for the join gate, then scrub it from the address bar straight away

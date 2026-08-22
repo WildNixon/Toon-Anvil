@@ -5486,11 +5486,17 @@ export function grade(suites, ui = null) {
   for (const row of metricRows) {
     if (!Number.isFinite(row.value)) continue;
     const m = metrics[row.name] || (metrics[row.name] = {
-      n: 0, sum: 0, min: Infinity, max: -Infinity, unit: row.unit, values: [],
+      n: 0, sum: 0, min: Infinity, max: -Infinity, unit: row.unit,
+      values: [], ofs: [],
     });
     m.n += 1;
     m.sum += row.value;
     m.values.push(row.value);
+    // `of` names the subject - which screen, which pitch. Kept beside the
+    // value for the same reason `values` is kept whole: a per-subject budget
+    // cannot be recovered from a pooled distribution any more than an IQR
+    // can be recovered from a mean.
+    m.ofs.push(row.of ?? null);
     if (row.value < m.min) m.min = row.value;
     if (row.value > m.max) m.max = row.value;
   }

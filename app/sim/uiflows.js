@@ -43,7 +43,55 @@ async function shelfHash(bytes) {
  * `empty` is not decoration: a flow that asserted nothing is NOT a pass, and
  * saying so is the whole reason this shape carries `total` beside `ok`.
  */
-export function flowResult(check, { id, title, error = null, t0 = 0 }) {
+/**
+ * Drain a frame's render ring into metric rows.
+ *
+ * Straight into the returned array, never through Check.metric: that stores
+ * into a Map keyed `name@of`, so a flow that visits Play three times would
+ * keep one sample and silently discard two. A percentile over a distribution
+ * with the repeats deleted is not a percentile.
+ */
+// Standalone runners tear their frames down in a finally that runs BEFORE
+// flowResult, so they hand their samples over here first. Anything left
+// behind by a flow that threw is swept up by the next flowResult rather than
+// being attributed to a run that never happened.
+let stashed = [];
+
+/** Take a frame's samples before it is removed. Safe on a dead frame. */
+export function drainFrom(frameEl) {
+  try {
+    const rows = frameEl?.contentWindow?.__perf?.drain?.();
+    if (rows?.length) stashed.push(...rows);
+  } catch { /* the frame is already gone; nothing to take */ }
+}
+
+function renderMetrics(win) {
+  let rows = stashed;
+  stashed = [];
+  try { rows = rows.concat(win?.__perf?.drain?.() || []); } catch { /* gone */ }
+  const out = [];
+  for (const r of rows) {
+    const paint = r.kind === 'repaint' ? 'repaint_ms' : 'paint_ms';
+    // A null paintMs means the screen was still empty when its render
+    // resolved. Dropped rather than emitted: a metric row must carry a
+    // measurement, and a zero here would read as "instant".
+    if (Number.isFinite(r.paintMs)) {
+      out.push({ name: paint, value: r.paintMs, unit: 'ms', of: r.mode });
+    }
+    // Settle is reported for mounts only and never gated. It is the distance
+    // between a screen appearing and a screen finishing, which is a property
+    // of how a mode chooses to load, not of how fast the app is.
+    if (r.kind === 'mount' && Number.isFinite(r.settleMs)) {
+      out.push({ name: 'settle_ms', value: r.settleMs, unit: 'ms', of: r.mode });
+    }
+    if (r.kind === 'mount' && Number.isFinite(r.moduleMs)) {
+      out.push({ name: 'module_ms', value: r.moduleMs, unit: 'ms', of: r.mode });
+    }
+  }
+  return out;
+}
+
+export function flowResult(check, { id, title, error = null, t0 = 0, win = null }) {
   return {
     id,
     title,
@@ -51,7 +99,7 @@ export function flowResult(check, { id, title, error = null, t0 = 0 }) {
     total: check.total,
     failures: check.failures,
     features: [...check.touched],
-    metrics: [...check.metrics.values()],
+    metrics: [...check.metrics.values(), ...renderMetrics(win)],
     error,
     empty: !error && check.total === 0,
     ok: !error && check.total > 0 && check.failures.length === 0,
@@ -2695,6 +2743,7 @@ export async function runRoleGate(CheckClass) {
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {
+    drainFrom(frame);
     frame?.remove();
   }
   return flowResult(check, {
@@ -2808,6 +2857,7 @@ export async function runJoinGate(CheckClass) {
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {
+    drainFrom(frame);
     frame?.remove();
     try {
       await api('/api/characters/gym-gate-probe', {
@@ -2950,6 +3000,7 @@ export async function runLevelUpFlow(CheckClass) {
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {
+    drainFrom(frame);
     frame?.remove();
     try {
       await api('/api/characters/gym-lvl-probe', {
@@ -3038,6 +3089,7 @@ export async function runTwoClient(CheckClass) {
   } finally {
     if (realRole === null) localStorage.removeItem('toonanvil.role');
     else localStorage.setItem('toonanvil.role', realRole);
+    for (const f of frames) drainFrom(f);
     for (const f of frames) f.remove();
     // Always, even on the throw paths above.
     try { await api(`/api/characters/${PROBE_ID}`, { method: 'DELETE' }); }
@@ -3360,6 +3412,7 @@ export async function runPlayerView(CheckClass) {
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {
+    for (const f of frames) drainFrom(f);
     for (const f of frames) f.remove();
     try {
       if (dmToken) {
@@ -3494,6 +3547,7 @@ export async function runJoinDeeplink(CheckClass) {
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {
+    drainFrom(frame);
     frame?.remove();
     try {
       await api('/api/table/close', { method: 'POST' });
@@ -3736,6 +3790,7 @@ export async function runQuickParty(CheckClass) {
       }
       await api('/api/table/close', { method: 'POST' });
     } catch { /* the server went away */ }
+    for (const f of frames) drainFrom(f);
     for (const f of frames) f.remove();
   }
   return flowResult(check, {
@@ -3834,6 +3889,7 @@ export async function runLobbyHostFlow(CheckClass) {
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {
+    drainFrom(frame);
     frame?.remove();
     try {
       await api('/api/table/close', { method: 'POST' });
@@ -3929,6 +3985,7 @@ export async function runPhoneLayout(CheckClass) {
   } catch (err) {
     error = `${err.name}: ${err.message}`;
   } finally {
+    drainFrom(frame);
     frame?.remove();
   }
   return flowResult(check, {
@@ -3981,11 +4038,12 @@ export async function runFlows(CheckClass, { onProgress = () => {} } = {}) {
           detail: errors.slice(before).join(' | ').slice(0, 200) });
       }
       results.push(flowResult(check, {
-        id: flow.id, title: flow.title, error, t0,
+        id: flow.id, title: flow.title, error, t0, win,
       }));
       onProgress({ flow: flow.id });
     }
   } finally {
+    drainFrom(frame);
     frame.remove();
   }
 

@@ -15,6 +15,16 @@ and are left as they are.
 
 ## [Unreleased]
 
+### Added
+- **The app measures how long its screens take to arrive.** A render ring
+  (`app/core/perf.js`) records every screen that reaches the glass: how long
+  its module took, when it first had content on it, and when it stopped
+  changing. Mounts and repaints are kept apart, the gym drains the ring into
+  every run's metrics, and `window.__perf.table()` prints the same numbers in
+  devtools. `?perf=1` adds a console line per render and a tap that attributes
+  time to the state key that woke each listener. Nothing is gated on the
+  numbers yet - this commit is the baseline the rest is measured against.
+
 ## [2.2.0] - 2026-08-21
 
 The DM's voice changer, saved per NPC and monster.

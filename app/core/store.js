@@ -40,14 +40,27 @@ export function setState(patch) {
 
   for (const key of changed) {
     const subs = keyListeners.get(key);
-    if (subs) for (const fn of subs) safely(fn, state, prev);
+    if (subs) for (const fn of subs) safely(fn, key, state, prev);
   }
-  for (const fn of listeners) safely(fn, state, prev);
+  for (const fn of listeners) safely(fn, '*', state, prev);
   return state;
 }
 
-function safely(fn, ...args) {
+// A diagnostic tap on the fan-out, armed by ?perf=1 and null otherwise. Two
+// clock reads per listener per state change is real cost added to the thing
+// being measured, so the default path pays one null check and nothing else.
+// setState already knows which key woke each listener, so attribution is free.
+let tap = null;
+export function onListenerTime(fn) { tap = fn; }
+
+function safely(fn, key, ...args) {
+  if (!tap) {
+    try { fn(...args); } catch (err) { console.error('[store] listener threw', err); }
+    return;
+  }
+  const t0 = performance.now();
   try { fn(...args); } catch (err) { console.error('[store] listener threw', err); }
+  finally { tap(key, performance.now() - t0); }
 }
 
 /** Subscribe to any change. Returns an unsubscribe function. */
