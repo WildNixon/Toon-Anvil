@@ -1487,7 +1487,14 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 tools_on_path()
                 import connectors                          # noqa: PLC0415
-                return self._send_json(connectors.describe())
+                # ?fresh=1 is the Settings screen's "Check again": re-probe the
+                # local services instead of reading a recent answer. Every
+                # other caller takes the cached one, which is what keeps this
+                # endpoint off the critical path of both the screen and of
+                # every model call that has to pick a provider.
+                fresh = parse_qs(urlparse(self.path).query).get("fresh", ["0"])[0]
+                return self._send_json(
+                    connectors.describe(fresh=fresh not in ("0", "", "false")))
             except Exception as exc:                       # noqa: BLE001
                 return self._send_json({
                     "available": False,

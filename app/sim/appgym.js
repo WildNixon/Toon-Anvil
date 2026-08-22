@@ -2191,6 +2191,39 @@ export const SUITES = [
         },
       },
       {
+        id: 'the_local_probe_is_not_paid_on_every_visit',
+        title: 'Only an explicit re-check re-probes the local services',
+        async run(c, { providers }) {
+          c.feature('connectors', 'performance');
+          // Probing a local service that is NOT running costs the whole
+          // timeout - measured at 1.5 s each on a machine whose firewall drops
+          // packets to closed ports rather than refusing them. Two of those,
+          // serially, on every Settings visit AND before every model call, was
+          // three seconds. What keeps it off that path is this contract: only
+          // a person asking ("Check again") sends fresh=1, and everything else
+          // is happy with a recent answer. Asserted on the REQUEST, not on a
+          // stopwatch - a timing assertion here would measure the machine.
+          const seen = [];
+          const real = window.fetch;
+          window.fetch = (url, ...rest) => { seen.push(String(url)); return real(url, ...rest); };
+          try {
+            providers.forget();
+            await providers.capabilities();
+            c.ok(seen.length === 1 && !/fresh=/.test(seen[0]),
+              'arriving at the screen does not ask for a re-probe', seen.join(' | '));
+            await providers.capabilities();
+            c.eq(seen.length, 1, 'and looking again does not reach the server at all');
+            await providers.capabilities({ refresh: true });
+            c.ok(seen.length === 2 && /fresh=1/.test(seen[1]),
+              'only an explicit re-check asks the server to really look',
+              seen.join(' | '));
+          } finally {
+            window.fetch = real;
+            providers.forget();
+          }
+        },
+      },
+      {
         id: 'local_ambience',
         title: 'Ambience needs no key and no network',
         run(c, { providers }) {

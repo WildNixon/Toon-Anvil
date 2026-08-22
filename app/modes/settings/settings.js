@@ -38,7 +38,11 @@ let testing = null;
 export async function render(root) {
   container = root;
   draw();
-  caps = await capabilities({ refresh: true });
+  // NOT a refresh: arriving at the screen should not re-probe services that
+  // were probed a moment ago. Probing a local service that is not running
+  // costs a real wait, and this screen used to spend three seconds of it on
+  // every single visit. "Check again" below is the button that asks properly.
+  caps = await capabilities();
   draw();
   // Second, and separately: what has actually been spent. Slower and less
   // important than the catalogue, so it must not hold the screen up.

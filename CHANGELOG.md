@@ -15,6 +15,16 @@ and are left as they are.
 
 ## [Unreleased]
 
+### Fixed
+- **The Settings screen no longer takes three seconds to finish.** Asking the
+  server what is connected probed the two local services - Ollama and a local
+  Stable Diffusion - one after the other, and a probe of a service that is not
+  running costs the full timeout. Both probes now run at once and the answer is
+  remembered for a minute, so the screen settles in about 30 ms instead of
+  3,000. "Check again" still really looks. This was not only the Settings
+  screen: choosing a model for any writing or picture task asked the same
+  question first, and paid the same three seconds.
+
 ### Added
 - **The app measures how long its screens take to arrive.** A render ring
   (`app/core/perf.js`) records every screen that reaches the glass: how long

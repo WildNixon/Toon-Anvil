@@ -30,8 +30,11 @@ key, and work on a train - which is the rest of this project's posture too.
 """
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
+import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -135,8 +138,18 @@ def _sd_base() -> str:
 
 
 def _reachable(url: str, timeout: float = 1.5) -> bool:
-    """Is a LOCAL service up? Only used for local endpoints, where a fast
-    negative is better than making the user guess why nothing happens."""
+    """Is a LOCAL service up?
+
+    A service that IS up answers in a millisecond or two, so the timeout only
+    ever costs anything when the service is down - and then it costs all of
+    it. This used to be documented as "a fast negative", which assumed the
+    operating system refuses a connection to a closed local port immediately.
+    That assumption does not survive consumer antivirus: measured on the
+    development machine, a TCP connect to a closed 127.0.0.1 port is DROPPED
+    rather than refused, and takes the full timeout. Hence the caching and the
+    concurrency below - the timeout is not the bug, paying it twice in a row
+    on every call was.
+    """
     try:
         req = urllib.request.Request(url, method="GET")
         with urllib.request.urlopen(req, timeout=timeout):
@@ -145,13 +158,65 @@ def _reachable(url: str, timeout: float = 1.5) -> bool:
         return False
 
 
-def describe() -> dict:
-    """What is configured. Reports presence only - never a key's value."""
+# How long a probe's answer is trusted. Long enough that clicking around the
+# app never pays for one twice, short enough that starting Ollama and coming
+# back is noticed without being told. "Check again" on the Settings screen
+# passes fresh=True, which is the one path that must always really look.
+_PROBE_TTL = 60.0
+_probe_cache: dict[str, tuple[float, bool]] = {}
+_probe_lock = threading.Lock()
+
+
+def _reachable_all(urls: list[str], *, fresh: bool = False) -> dict[str, bool]:
+    """Probe several local endpoints at once, remembering the answers.
+
+    Serial probing was the whole cost of /api/providers: two down services at
+    1.5 s each is three seconds, paid by the Settings screen on every visit
+    AND by _pick_llm before every single model call.
+
+    The lock covers the cache, never the probing - holding it across the
+    network wait would just move the queue. Two callers that miss at the same
+    moment both probe, which is harmless: the probe has no side effects and
+    they write the same answer.
+    """
+    now = time.monotonic()
+    out: dict[str, bool] = {}
+    todo: list[str] = []
+    with _probe_lock:
+        for url in urls:
+            hit = _probe_cache.get(url)
+            if not fresh and hit and now - hit[0] < _PROBE_TTL:
+                out[url] = hit[1]
+            else:
+                todo.append(url)
+    if todo:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(todo)) as pool:
+            fresh_answers = dict(zip(todo, pool.map(_reachable, todo)))
+        stamped = time.monotonic()
+        with _probe_lock:
+            for url, ok in fresh_answers.items():
+                _probe_cache[url] = (stamped, ok)
+        out.update(fresh_answers)
+    return out
+
+
+def describe(*, fresh: bool = False) -> dict:
+    """What is configured. Reports presence only - never a key's value.
+
+    `fresh` forces the two local probes to actually run instead of reading a
+    recent answer. The Settings screen's "Check again" button is the only
+    caller that sets it: everywhere else, a sixty-second-old answer about
+    whether Ollama is running is a better trade than a stall.
+    """
+    up = _reachable_all(
+        [f"{_ollama_base()}/api/tags", f"{_sd_base()}/sdapi/v1/sd-models"],
+        fresh=fresh,
+    )
     providers = {
         "ollama": {
             "label": "Local model (Ollama)",
             "kind": "llm",
-            "configured": _reachable(f"{_ollama_base()}/api/tags"),
+            "configured": up[f"{_ollama_base()}/api/tags"],
             "note": f"No key needed. Looking at {_ollama_base()} - start Ollama "
                     "and pull a model to enable this.",
         },
@@ -170,7 +235,7 @@ def describe() -> dict:
         "sd-local": {
             "label": "Local Stable Diffusion",
             "kind": "image",
-            "configured": _reachable(f"{_sd_base()}/sdapi/v1/sd-models"),
+            "configured": up[f"{_sd_base()}/sdapi/v1/sd-models"],
             "note": f"No key needed. Looking at {_sd_base()} (Automatic1111 API). "
                     "Hosted image providers are deliberately not wired up.",
         },

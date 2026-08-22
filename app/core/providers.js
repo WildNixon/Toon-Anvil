@@ -38,7 +38,11 @@ let cached = null;
 export async function capabilities({ refresh = false } = {}) {
   if (cached && !refresh) return cached;
   try {
-    const res = await fetch(`${serverBase()}/api/providers`);
+    // `refresh` means the person asked, so it goes all the way through: the
+    // server re-probes the local services rather than answering from its own
+    // short-lived cache. Every other call takes the cheap path, because
+    // probing a service that is not running costs a real wait.
+    const res = await fetch(`${serverBase()}/api/providers${refresh ? '?fresh=1' : ''}`);
     if (!res.ok) throw new Error(String(res.status));
     cached = await res.json();
   } catch {
