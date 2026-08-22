@@ -15,6 +15,35 @@ and are left as they are.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-08-21
+
+The gamified table: sound, moments, ceremony, deeds.
+
+### Added
+- **Sound, off until you ask.** A vendored pack of seventeen short CC0
+  recordings (Kenney.nl) for the moments of play, one audio core that owns
+  the context and the unlock, and a speaker in the ribbon, in Settings and
+  on the Stage. Off by default, one tap on, remembered per device; a framed
+  copy of the app is silent by construction.
+- **Roll and vitals juice.** The dice tumble on the roll card, a crit flares
+  twice, a hit washes the ribbon red and a heal green, the bar slides,
+  bloodied and down are states the ribbon keeps, a death-save pip grows in,
+  and zero hit points is a moment in its own layer.
+- **Table-wide cues.** The session beginning reaches every seat, your turn
+  pings and pulses (and names the tab), a round turning is a beat, the table
+  closing has a tone, and somebody else's natural twenty echoes on the rail.
+- **The fight's ceremony.** The runner marks the active row with a sweep,
+  flashes a combatant crossing into bloodied and alarms one going down,
+  warms the chrome while a fight runs, ticks and strikes the Deck's clocks,
+  and offers the bed that fits today's sky.
+- **Progression and deeds.** Level-up features rise one by one with a
+  fanfare, a long rest is a chapter break, and the Chronicle lists deeds
+  earned only from the record - dated in words, never teased.
+- **Versions.** VERSION at the root, mirrored into the app, the server and
+  the service-worker cache name, with run.py --check and the gym refusing
+  drift.
+
+
 ## [2.0.0] - 2026-08-21
 
 The table half. Toon Anvil 1.0 measured homebrew; 2.0 also hosts the game.
@@ -44,6 +73,7 @@ The table half. Toon Anvil 1.0 measured homebrew; 2.0 also hosts the game.
 The workshop: ingest, map, simulate, grade, balance, emit. See the `v1.0.0`
 tag and the README's status tables, which are the 1.0 release notes.
 
-[Unreleased]: https://github.com/WildNixon/Toon-Anvil/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/WildNixon/Toon-Anvil/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/WildNixon/Toon-Anvil/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/WildNixon/Toon-Anvil/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/WildNixon/Toon-Anvil/releases/tag/v1.0.0

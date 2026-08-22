@@ -67,7 +67,7 @@ raw JSON, and a play guide — every line tagged with where it came from:
 
 ---
 
-## Status: v2.0.0 (see [CHANGELOG.md](CHANGELOG.md))
+## Status: v2.1.0 (see [CHANGELOG.md](CHANGELOG.md))
 
 The tables below are the 1.0 release notes, kept as they were: everything in
 them was exercised by hand before that release — not "it renders", but "it
@@ -85,7 +85,7 @@ the connectors — is in the changelog, one dated entry per epic.
 | **Combat** | Encounters, initiative order, adding your character, SRD monsters, or custom combatants. |
 | **Market** | Generates shop stock at SRD prices with per-shop variance. |
 | **Roleplay** | Structured beats — promises, secrets, choices, people met — recorded through an in-app form. |
-| **Chronicle** | Event log with export to Markdown, printable HTML and raw JSON, plus open-thread tracking. |
+| **Chronicle** | Event log with export to Markdown, printable HTML and raw JSON, open-thread tracking, and Deeds - achievements earned only from the record, dated in words, never teased. |
 | **DM** | Seven tools: live encounter runner, party dashboard, treasure, improv generators, XP budgeter, bestiary, rules reference. All offline. |
 | **Sandbox** | Throwaway in-memory session with an export path back out. |
 | **Settings** | Storage mode, connector status, local ambience, and the sound-effects switch (off until you tap it; remembered per device). |

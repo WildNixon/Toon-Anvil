@@ -26,7 +26,7 @@
 //
 // History: this used to be a hand-bumped counter (it reached nine, when the
 // compendium went IMMUTABLE and spell-mechanics.json joined the shell).
-const VERSION = 'toon-anvil-v2.0.0';
+const VERSION = 'toon-anvil-v2.1.0';
 
 /** Immutable between releases: safe to serve from cache without asking. */
 const IMMUTABLE = new RegExp('/(data/fonts|data/compendium|icons|assets/sfx)/');
