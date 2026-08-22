@@ -2419,6 +2419,117 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- speak ------------------------------------------ */
+  {
+    id: 'speak',
+    title: 'The DM\'s voice',
+    why: 'A pitch shifter that is only ever heard cannot be graded, so the '
+       + 'chain is built on an offline context here and its output is '
+       + 'MEASURED: a known tone goes in, the fundamental that comes out is '
+       + 'read by autocorrelation, and the ruler is proven on a plain sine '
+       + 'before anything is asked of it. Nothing in this suite makes a sound.',
+    scenarios: [
+      {
+        id: 'presets_are_a_menu',
+        title: 'Every preset is complete, in range, and named for what it does',
+        run(c, { speak }) {
+          c.feature('speak');
+          const ids = Object.keys(speak.PRESETS);
+          c.ok(ids.length >= 6, 'enough voices to choose from', ids.join(', '));
+          c.eq(ids[0], 'plain', 'your own voice comes first');
+          for (const [id, p] of Object.entries(speak.PRESETS)) {
+            c.ok(typeof p.label === 'string' && p.label.length > 2, `${id} has a name`);
+            c.ok(typeof p.line === 'string' && p.line.length > 10, `${id} says what it sounds like`);
+            c.eq(JSON.stringify(speak.normalize(p.settings)), JSON.stringify(
+              { ...speak.DEFAULTS, ...p.settings }), `${id} is already in range`);
+            c.ok(p.settings.gain <= 1.2, `${id} cannot blast the room`, String(p.settings.gain));
+          }
+          const junk = speak.normalize({ pitch: 40, tone: 'loud', drive: -3, gain: 9 });
+          c.eq(junk.pitch, 12, 'pitch is clamped');
+          c.eq(junk.tone, 0, 'junk becomes the default');
+          c.eq(junk.drive, 0, 'a negative drive is zero');
+          c.eq(junk.gain, 2, 'gain is capped');
+          c.eq(speak.normalize(null).grain, 0.04, 'nothing at all is the defaults');
+          c.near(speak.ratioFor(-12), 0.5, 1e-9, 'twelve down halves');
+          c.near(speak.ratioFor(0), 1, 1e-9, 'zero is untouched');
+          c.near(speak.ratioFor(12), 2, 1e-9, 'twelve up doubles');
+        },
+      },
+      {
+        id: 'chain_shifts_pitch_as_told',
+        title: 'A tone through the chain comes out at the octave it was told',
+        why: 'The ruler first, then the thing. If the meter cannot read a '
+           + 'bare sine, nothing it says about the shifter means anything.',
+        async run(c, { speak, audio }) {
+          c.feature('speak', 'audio');
+          const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+          c.ok(!!Offline, 'this browser can render audio offline');
+          if (!Offline) return;
+
+          // The fundamental, by autocorrelation: the first lag whose
+          // correlation peaks above half the energy, refined parabolically.
+          const fundamentalHz = (d, sr) => {
+            const minLag = Math.floor(sr / 1200);
+            const maxLag = Math.floor(sr / 80);
+            const acf = (lag) => {
+              let s = 0;
+              for (let i = 0; i + lag < d.length; i += 1) s += d[i] * d[i + lag];
+              return s;
+            };
+            const r0 = acf(0) || 1;
+            let prev = acf(minLag - 1);
+            let cur = acf(minLag);
+            for (let lag = minLag; lag < maxLag; lag += 1) {
+              const next = acf(lag + 1);
+              if (cur > prev && cur >= next && cur > 0.5 * r0) {
+                const denom = prev - 2 * cur + next;
+                const delta = denom ? (0.5 * (prev - next)) / denom : 0;
+                return sr / (lag + delta);
+              }
+              prev = cur; cur = next;
+            }
+            return NaN;
+          };
+
+          const render = async (pitch) => {
+            const ctx = new Offline(1, 44100, 44100);
+            const osc = ctx.createOscillator();
+            osc.frequency.value = 440;
+            if (pitch === null) {
+              osc.connect(ctx.destination);
+            } else {
+              const built = await speak.buildChain(ctx, speak.normalize({ pitch }));
+              if (!built.ok) throw new Error(built.reason);
+              osc.connect(built.chain.input);
+              built.chain.output.connect(ctx.destination);
+              built.chain.output.gain.value = 1;
+            }
+            osc.start(0);
+            const buf = await ctx.startRendering();
+            const d = buf.getChannelData(0);
+            // The last half second: the ring has filled and the ramps are done.
+            return fundamentalHz(d.subarray(d.length >> 1), buf.sampleRate);
+          };
+
+          const plain = await render(null);
+          c.near(plain, 440, 2, 'the ruler reads a plain sine right');
+          c.metric('pitch_hz', plain, { unit: 'Hz', of: 'plain' });
+          for (const [pitch, want] of [[-12, 220], [0, 440], [12, 880]]) {
+            // eslint-disable-next-line no-await-in-loop
+            const got = await render(pitch);
+            // Within 3% - half a semitone - so it is unambiguously THIS
+            // octave and not a neighbour, while leaving the granular
+            // shifter its warble. Relative, not absolute Hz: 8 Hz is a
+            // third of a semitone at 220 but a twelfth of one at 880.
+            c.near(got, want, want * 0.03, `${pitch} semitones lands on the ${want} Hz octave`);
+            c.metric('pitch_hz', got, { unit: 'Hz', of: String(pitch) });
+          }
+          c.eq(audio.context(), null, 'built on the offline context, never the app\'s');
+        },
+      },
+    ],
+  },
+
   /* ---------------- deeds ------------------------------------------ */
   {
     id: 'deeds',
@@ -5220,7 +5331,8 @@ export const BARS = {
   // And again (58 -> 59) with the moments layer.
   // And again (59 -> 60) with the fight's mood and its weather-linked bed.
   // And again (60 -> 61) with deeds earned only from the record.
-  minFeaturesCovered: 61,
+  // And again (61 -> 62) with the DM's voice, measured rather than heard.
+  minFeaturesCovered: 62,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.
