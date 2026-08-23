@@ -211,23 +211,82 @@ def _open_when_ready(port: int, url: str, timeout: float = 60.0) -> None:
     print(f"{DIM}  If it comes up later, open {url} yourself.{OFF}")
 
 
-def already_running(port: int) -> dict | None:
+def already_running(port: int, timeout: float = 1.5) -> dict | None:
     """Is a Toon Anvil ALREADY serving here?
 
     Without this, a second launch silently drifts to the next free port and
     you end up with two servers, two data dirs in play and a bookmark that
     points at whichever one you started first. Saying so is far kinder than
     picking a different port and hoping.
+
+    `timeout` is short for sweeps. A server that is up answers a local health
+    check in single-digit milliseconds; the timeout only ever gets spent on a
+    port where nothing is listening, and on a machine whose firewall DROPS
+    packets to closed local ports rather than refusing them - which is what
+    consumer antivirus does - that is the full wait, once per port.
     """
     import json as _json                                       # noqa: PLC0415
     import urllib.request                                      # noqa: PLC0415
     try:
         with urllib.request.urlopen(
-                f"http://127.0.0.1:{port}/api/health", timeout=1.5) as r:
+                f"http://127.0.0.1:{port}/api/health", timeout=timeout) as r:
             body = _json.loads(r.read().decode() or "{}")
         return body if body.get("app") == "toon-anvil" else None
     except Exception:                                          # noqa: BLE001
         return None
+
+
+def stop_running(port: int) -> int:
+    """Stop every Toon Anvil in the launcher's port range, and say so.
+
+    The whole range, not just one port, because that is where the strays come
+    from: a launch whose preferred port was busy drifts to the next free one,
+    so "a few things still running" is usually 7801 AND 7802 AND whatever came
+    after. Stopping the one you named would leave exactly the ones you had
+    forgotten about.
+    """
+    import concurrent.futures                                  # noqa: PLC0415
+    import urllib.request                                      # noqa: PLC0415
+    ports = list(range(port, port + 12))
+    # All twelve at once. A port with nothing on it costs the whole timeout
+    # here (see already_running), so asking in series meant a five-second wait
+    # to be told there was nothing to do - for the command people will reach
+    # for when they are already annoyed about stray processes.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(ports)) as pool:
+        seen = list(pool.map(lambda p: already_running(p, timeout=0.6), ports))
+    found = [(p, mine) for p, mine in zip(ports, seen) if mine]
+    if not found:
+        print(f"\n{DIM}Nothing of ours is running on ports "
+              f"{port}-{port + 11}.{OFF}\n")
+        return 0
+    stopped, stubborn = [], []
+    for p, mine in found:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{p}/api/quit", data=b"", method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+        except Exception as exc:                               # noqa: BLE001
+            print(f"{RED}  port {p}: could not stop it - {exc}{OFF}")
+            stubborn.append(p)
+            continue
+        # It answers before it stops, so the reply is not the proof. Ask again
+        # until the port goes quiet rather than reporting a shutdown nobody
+        # has actually seen.
+        for _ in range(4):
+            time.sleep(0.3)
+            if not already_running(p, timeout=0.4):
+                break
+        else:
+            stubborn.append(p)
+            print(f"{YELLOW}  port {p}: asked, but it still answers{OFF}")
+            continue
+        stopped.append(p)
+        print(f"{GREEN}  port {p}: stopped Toon Anvil "
+              f"{mine.get('version', '?')}{OFF}")
+        print(f"{DIM}      data: {mine.get('dataDir', '?')}{OFF}")
+    print()
+    return 1 if stubborn else 0
 
 
 def free_port(port: int, host: str = "127.0.0.1") -> bool:
@@ -269,6 +328,8 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=7801)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--check", action="store_true", help="run checks and exit")
+    ap.add_argument("--stop", action="store_true",
+                    help="stop any Toon Anvil already running and exit")
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--keep-alive", action="store_true",
                     help="keep serving after the browser closes "
@@ -283,6 +344,11 @@ def main() -> int:
     print(f"  TOON ANVIL {app_version()}")
     print("  Drop in homebrew. Get back a balanced subclass, a sheet, a plan.")
     print("=" * min(62, width))
+
+    # Before the checks: stopping is not a launch, and refusing to stop a
+    # stray server because some unrelated file is missing would be perverse.
+    if args.stop:
+        return stop_running(args.port)
 
     c = run_checks()
 
@@ -355,6 +421,8 @@ def main() -> int:
         f"code out, or play on your own.{OFF}",
         f"{DIM}  Closing the app stops this server too, unless players "
         f"are seated (--keep-alive to always stay up).{OFF}",
+        f"{DIM}  Left one running? `python run.py --stop` ends any that "
+        f"still are.{OFF}",
     ]
     if args.lan:
         notes += [

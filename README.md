@@ -616,10 +616,20 @@ No build step, no npm. Vanilla ES modules and a Python stdlib server.
 
 ```bash
 python run.py --check       # health check only
+python run.py --stop        # stop anything of ours still running
 python run.py --no-browser  # serve without opening a window
 python tools/grade.py       # grade a sweep
 python tools/charts.py      # render the report
 ```
+
+Closing the app stops its server too: the launcher and the server are one
+process, and it exits about two minutes after the last browser goes away. A
+table with players seated gets a longer grace, so a DM closing their own tab
+never ends everybody else's game — but not an unlimited one, or a table left
+open on disk would keep the server alive for good. `python run.py --stop` is
+the deliberate version, and it sweeps the whole launch port range rather than
+one port, because a launch whose preferred port was busy moves to the next
+free one and that is where forgotten servers hide.
 
 ### Versions
 

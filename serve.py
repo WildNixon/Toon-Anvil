@@ -707,6 +707,30 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
 
+        if parsed.path == "/api/quit":
+            # Stopping is something the app can ASK for, so that closing it
+            # can actually close it. Without this the only way out was the
+            # idle watchdog, which does not exist at all unless the launcher
+            # armed it - a server started as `python serve.py` ran until
+            # somebody found it in Task Manager.
+            #
+            # Body drained before judging, like every route here: an early
+            # return that leaves it unread poisons the keep-alive socket and
+            # the NEXT request parses as '{"...":...}POST'.
+            self._read_bytes()
+            # Loopback only, and deliberately not something a join code can
+            # open. --lan puts this app on a shared network, and "anyone here
+            # may stop the game" is a bad door to leave in it; a phone at the
+            # table must not be able to end the DM's session.
+            if not self._is_local():
+                return self._send_json(
+                    {"error": "only this machine can stop the server"}, 403)
+            # Answer FIRST, then stop: shutdown() ends serve_forever, and a
+            # caller that got no reply cannot tell "stopped" from "crashed".
+            self._send_json({"ok": True, "stopping": True})
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
+            return
+
         if parsed.path == "/api/shelf":
             # A book arrives: detect what it is, file it under
             # library/shelf/<category>/, extract it. Raw PDF body + X-Filename
@@ -1906,6 +1930,19 @@ def _players_seated() -> bool:
         return True
 
 
+def _should_stop(quiet: float, seconds: float,
+                 seated: bool, ceiling: float) -> bool:
+    """Has the app gone? Pure, so the rule can be read instead of timed.
+
+    `quiet` is how long since any real request. A seated table buys a longer
+    grace than an empty one - but not an unlimited one, because "seated" is
+    read off disk and can outlive the session that wrote it.
+    """
+    if quiet < seconds:
+        return False
+    return (not seated) or quiet >= ceiling
+
+
 def _idle_watch(srv, seconds: float) -> None:
     """Stop when the app has gone, so the server does not outlive it.
 
@@ -1915,17 +1952,29 @@ def _idle_watch(srv, seconds: float) -> None:
 
       - the app polls while any tab is open, so "idle" really does mean
         nobody is looking;
-      - a table with players seated NEVER idles out, because the DM closing
-        their own tab must not end everyone else's session.
+      - a table with players seated does not idle out on the usual timer,
+        because the DM closing their own tab must not end everyone else's
+        session, and a phone with its screen locked stops polling.
+
+    That second guard used to have no upper bound, which is how the server
+    came to outlive the app anyway: `open` lives in data/table.json and stays
+    true until a table is explicitly closed, so one session where a player
+    joined and nobody pressed the button left EVERY later run unable to stop
+    itself. The unreadable case does the same, because it answers "assume
+    somebody is there". So the guard now expires: half an hour of complete
+    silence means nobody is on a break, they have gone home.
     """
+    ceiling = max(seconds * 15, 1800)
     while True:
         time.sleep(5)
-        if time.time() - LAST_SEEN < seconds:
-            continue
-        if _players_seated():
+        quiet = time.time() - LAST_SEEN
+        if not _should_stop(quiet, seconds, _players_seated(), ceiling):
             continue
         print()
-        print(f"no browser for {seconds:.0f}s and nobody seated - stopping")
+        why = (f"no browser for {quiet:.0f}s"
+               if quiet < ceiling
+               else f"nothing at all for {quiet:.0f}s, seated or not")
+        print(f"{why} - stopping")
         threading.Thread(target=srv.shutdown, daemon=True).start()
         return
 

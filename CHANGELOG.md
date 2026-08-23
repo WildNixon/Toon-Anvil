@@ -15,6 +15,20 @@ and are left as they are.
 
 ## [Unreleased]
 
+### Fixed
+- **Closing the app now really does stop everything it started.** The server
+  was meant to stop about two minutes after the last browser went away, but
+  the rule that protects a live table - "never exit while players are seated" -
+  read the seats off disk, and a table stays open there until somebody
+  explicitly closes it. So a single session where a player joined left every
+  later run unable to stop itself, and the servers piled up. Seated players
+  still get a long grace, because a phone with its screen locked stops calling
+  home and a break is not the end of a game; it just is not an unlimited one
+  any more. There is also a deliberate way out now: `python run.py --stop`
+  ends any Toon Anvil still running, and it sweeps the whole launch port range
+  rather than one port, because a launch whose port was busy moves to the next
+  free one and that is exactly where a forgotten server hides.
+
 ## [2.3.0] - 2026-08-22
 
 The release that measured itself first. The app was reported as sluggish; the

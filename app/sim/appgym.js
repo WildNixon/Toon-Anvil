@@ -2169,6 +2169,29 @@ export const SUITES = [
         },
       },
       {
+        id: 'stopping_is_not_something_a_link_can_do',
+        title: 'The server cannot be stopped by fetching a URL',
+        why: 'Closing the app now really does stop the server, which means '
+           + 'there is an endpoint that ends the process - and an endpoint '
+           + 'like that must be reachable only on purpose. A GET is what a '
+           + 'link, a prefetch, an <img src> or anything crawling the app '
+           + 'will perform, so a GET must do nothing at all.',
+        async run(c) {
+          c.feature('transport', 'safety');
+          // This scenario NEVER posts. The gym runs against a real server and
+          // a POST here would end the run it is part of - so what is checked
+          // is the half that is safe to check, and the rest is verified by
+          // hand against a server started for the purpose.
+          const res = await fetch('/api/quit', { cache: 'no-store' });
+          c.ok(res.status >= 400, 'a GET to the stop endpoint is refused',
+            String(res.status));
+          const alive = await fetch('/api/health', { cache: 'no-store' })
+            .then((r) => r.json()).catch(() => null);
+          c.ok(alive?.ok === true,
+            'and the server is still serving afterwards', JSON.stringify(alive));
+        },
+      },
+      {
         id: 'already_compressed_is_left_alone',
         title: 'A font is not compressed a second time',
         async run(c) {
