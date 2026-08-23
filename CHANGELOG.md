@@ -16,6 +16,13 @@ and are left as they are.
 ## [Unreleased]
 
 ### Fixed
+- **The offline cache stops re-downloading what cannot change.** Fonts, icons,
+  sound effects and the SRD compendium - about 1.7 MB - were served from the
+  cache and then fetched all over again in the background, on every single
+  load, overwriting the stored bytes with identical ones. The cache is named
+  for the release and is emptied whenever that changes, so a stored copy was
+  already the current one and there was never anything to find. A cache hit is
+  now simply the answer.
 - **The Settings screen no longer takes three seconds to finish.** Asking the
   server what is connected probed the two local services - Ollama and a local
   Stable Diffusion - one after the other, and a probe of a service that is not

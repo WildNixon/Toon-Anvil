@@ -212,20 +212,25 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Fonts, icons and the compendium do not change except at release, and they
-  // are the expensive ones. Serve them from cache and refresh behind the back.
+  // Fonts, icons, sfx and the compendium do not change except at release, so
+  // here the cache IS the answer: no request goes out at all, not even a
+  // conditional one.
+  //
+  // This used to return the cached copy and then re-fetch the file in the
+  // background to "stay fresh". That was ~1.7 MB of SRD JSON and fonts pulled
+  // on EVERY load, forever, to overwrite bytes with identical bytes. It could
+  // not have found anything: the cache name IS the release version and
+  // `activate` deletes every cache that is not the current one, so a hit here
+  // provably came from this release. There was nothing to refresh.
+  //
+  // If one of these files really does change without a release, there are two
+  // ways back and both already exist: any query string skips this branch and
+  // re-fetches (see the cache-buster above), and bumping VERSION drops the
+  // whole cache on the next activate.
   if (IMMUTABLE.test(url.pathname)) {
     event.respondWith((async () => {
       const cached = await caches.match(request, { ignoreSearch: true });
-      if (cached) {
-        event.waitUntil((async () => {
-          try {
-            const fresh = await fetch(request);
-            if (fresh.ok) (await caches.open(VERSION)).put(request, fresh.clone());
-          } catch { /* offline: keep what we have */ }
-        })());
-        return cached;
-      }
+      if (cached) return cached;
       const response = await fetch(request);
       if (response.ok) (await caches.open(VERSION)).put(request, response.clone());
       return response;

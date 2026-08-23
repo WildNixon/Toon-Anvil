@@ -2047,6 +2047,46 @@ export const SUITES = [
             'and the offline cache is named for it, so a bump busts the cache');
         },
       },
+      {
+        id: 'answering_from_cache_starts_no_download',
+        title: 'An immutable hit is answered from cache, with nothing fetched behind it',
+        why: 'Fonts, icons, sfx and the compendium are about 1.7 MB and change '
+           + 'only at release. The worker used to answer them from cache AND '
+           + 're-fetch each one in the background on every single load, which '
+           + 'overwrote bytes with identical bytes: the cache name IS the '
+           + 'release version and activate deletes every other cache, so a hit '
+           + 'already came from this release and there was nothing to find. '
+           + 'Asserted on the source, because a worker cannot be driven from '
+           + 'here - this page has none, and a gym that registered one would '
+           + 'start serving the app under test out of a cache.',
+        async run(c) {
+          c.feature('version', 'offline', 'performance');
+          const sw = await fetch('/sw.js').then((r) => r.text()).catch(() => '');
+          c.ok(sw.length > 500, 'the worker source is readable', String(sw.length));
+
+          // waitUntil is right in install and activate - they must keep the
+          // worker alive while they precache and sweep. In the FETCH handler it
+          // means work continuing after the answer has been given, which is
+          // exactly the background download this scenario exists to keep out.
+          const at = sw.indexOf("addEventListener('fetch'");
+          c.ok(at > 0, 'the fetch handler is findable');
+          const answering = sw.slice(at);
+          c.ok(!/waitUntil/.test(answering),
+            'answering a request never leaves a download running behind it');
+
+          const start = answering.indexOf('IMMUTABLE.test(');
+          c.ok(start > 0, 'the immutable branch is findable');
+          c.ok(/if \(cached\) return cached;/.test(answering.slice(start, start + 400)),
+            'a cache hit is simply returned');
+
+          // Removing the refresh must not strand a file that really did change,
+          // so both ways back are asserted here rather than left to a comment.
+          c.ok(/url\.search/.test(sw),
+            'a query string still bypasses the cache');
+          c.ok(/caches\.delete/.test(sw),
+            'and a version bump still drops the whole cache');
+        },
+      },
     ],
   },
 
