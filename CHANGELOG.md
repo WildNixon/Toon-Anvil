@@ -15,6 +15,12 @@ and are left as they are.
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-08-22
+
+A stray-process fix. The server has always been meant to stop when you close
+the app; on any machine where a table had once been opened, it never did. This
+is older than 2.3.0 - it is just the first release to notice.
+
 ### Fixed
 - **Closing the app now really does stop everything it started.** The server
   was meant to stop about two minutes after the last browser went away, but
@@ -154,7 +160,8 @@ The table half. Toon Anvil 1.0 measured homebrew; 2.0 also hosts the game.
 The workshop: ingest, map, simulate, grade, balance, emit. See the `v1.0.0`
 tag and the README's status tables, which are the 1.0 release notes.
 
-[Unreleased]: https://github.com/WildNixon/Toon-Anvil/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/WildNixon/Toon-Anvil/compare/v2.3.1...HEAD
+[2.3.1]: https://github.com/WildNixon/Toon-Anvil/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/WildNixon/Toon-Anvil/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/WildNixon/Toon-Anvil/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/WildNixon/Toon-Anvil/compare/v2.0.0...v2.1.0
