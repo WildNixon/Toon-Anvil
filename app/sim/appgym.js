@@ -2090,6 +2090,114 @@ export const SUITES = [
     ],
   },
 
+  /* ---------------- transport -------------------------------------- */
+  {
+    id: 'transport',
+    title: 'How the bytes reach the browser',
+    why: 'A cold boot into the Stage moved 2,462 KB in 69 requests and not one '
+       + 'byte of it was reusable: every response said no-store, which forbids '
+       + 'keeping the bytes and so forbids the conditional request that would '
+       + 'have saved them. Three properties hold this together - a stored copy '
+       + 'is never reused without asking, the asking is cheap, and compression '
+       + 'is spent only where it pays. What is tested is the MECHANISM: the '
+       + 'gym must not write into app/, so there is no "edit a file and watch '
+       + 'the new bytes arrive" here. That one is a human check, and it is in '
+       + 'the commit message.',
+    scenarios: [
+      {
+        id: 'etag_is_a_validator_not_a_hope',
+        title: 'A file carries a validator, and the validator decides',
+        async run(c) {
+          c.feature('transport', 'caching');
+          // cache:'no-store' on every request here so the browser's own cache
+          // cannot answer for the server: without it a 304 is turned into a
+          // 200 from cache before JavaScript ever sees it, and this scenario
+          // would be asserting on the browser rather than on us.
+          const url = `/core/perf.js?t=${Date.now()}`;
+          const first = await fetch(url, { cache: 'no-store' });
+          const tag = first.headers.get('ETag');
+          c.ok(Boolean(tag), 'a static file arrives with a validator', String(tag));
+          const cc = first.headers.get('Cache-Control') || '';
+          c.ok(/no-cache/.test(cc), 'which may not be reused without asking', cc);
+          c.ok(!/no-store/.test(cc),
+            'and may be kept, or there would be nothing to ask about', cc);
+
+          const match = await fetch(url, {
+            cache: 'no-store', headers: { 'If-None-Match': tag },
+          });
+          c.eq(match.status, 304, 'the same validator is answered 304');
+          c.eq((await match.text()).length, 0, 'and a 304 carries no body');
+
+          const stale = await fetch(url, {
+            cache: 'no-store', headers: { 'If-None-Match': '"0-0"' },
+          });
+          c.eq(stale.status, 200, 'a validator that does not match gets the file');
+          c.ok((await stale.text()).length > 0, 'and gets the whole of it');
+        },
+      },
+      {
+        id: 'text_arrives_compressed',
+        title: 'Text is compressed on the way out',
+        async run(c) {
+          c.feature('transport');
+          // Asserted on SIZES, from Resource Timing, rather than on the
+          // Content-Encoding header. The header only says compression was
+          // claimed; encoded-versus-decoded says it happened and by how much,
+          // which is the property worth defending.
+          const entryFor = async (u) => {
+            const want = new URL(u, location.origin).href;
+            for (let i = 0; i < 40; i += 1) {
+              const hit = performance.getEntriesByType('resource')
+                .filter((r) => r.name === want).pop();
+              if (hit && hit.responseEnd) return hit;
+              // eslint-disable-next-line no-await-in-loop
+              await new Promise((r) => setTimeout(r, 25));
+            }
+            return null;
+          };
+          const url = `/data/compendium/glossary.json?t=${Date.now()}`;
+          await fetch(url, { cache: 'no-store' }).then((r) => r.arrayBuffer());
+          const e = await entryFor(url);
+          c.ok(Boolean(e), 'the response is visible to Resource Timing');
+          c.ok(e.decodedBodySize > 20000,
+            'the file under test is a big one', String(e?.decodedBodySize));
+          c.ok(e.encodedBodySize > 0 && e.encodedBodySize < e.decodedBodySize / 2,
+            'and it crosses the wire at less than half its size',
+            `${e?.encodedBodySize} of ${e?.decodedBodySize}`);
+          c.metric('wire_ratio', +(e.encodedBodySize / e.decodedBodySize).toFixed(3),
+            { of: 'glossary.json' });
+        },
+      },
+      {
+        id: 'already_compressed_is_left_alone',
+        title: 'A font is not compressed a second time',
+        async run(c) {
+          c.feature('transport');
+          // woff2 carries its own compression. Measured, gzipping one made it
+          // LARGER - 116,000 to 116,153 - so the allowlist is by type, not by
+          // size, and a font must come back untouched.
+          const entryFor = async (u) => {
+            const want = new URL(u, location.origin).href;
+            for (let i = 0; i < 40; i += 1) {
+              const hit = performance.getEntriesByType('resource')
+                .filter((r) => r.name === want).pop();
+              if (hit && hit.responseEnd) return hit;
+              // eslint-disable-next-line no-await-in-loop
+              await new Promise((r) => setTimeout(r, 25));
+            }
+            return null;
+          };
+          const url = `/data/fonts/alegreya-400.woff2?t=${Date.now()}`;
+          await fetch(url, { cache: 'no-store' }).then((r) => r.arrayBuffer());
+          const e = await entryFor(url);
+          c.ok(Boolean(e), 'the response is visible to Resource Timing');
+          c.eq(e.encodedBodySize, e.decodedBodySize,
+            'a woff2 arrives exactly as it is stored');
+        },
+      },
+    ],
+  },
+
   /* ---------------- connectors ------------------------------------- */
   {
     id: 'connectors',

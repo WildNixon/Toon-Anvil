@@ -15,6 +15,21 @@ and are left as they are.
 
 ## [Unreleased]
 
+### Changed
+- **Files now arrive compressed, and the browser is allowed to keep them.**
+  Every response used to say "do not store this", which also made it impossible
+  for the browser to ask "has this changed?" - so every start re-downloaded the
+  whole app and all of the rules data, every time. Text is now compressed on
+  the way out, and each file carries a fingerprint that moves the moment the
+  file does, so opening the app a second time asks a few dozen cheap questions
+  instead of fetching 2.4 MB. You still never run yesterday's code: the
+  browser may keep a copy but may never reuse one without asking first.
+  Measured on one cold start into the Stage: 2,462 KB before, 704 KB the first
+  time, 127 KB the second. Fonts and sound effects are deliberately left alone,
+  because they are already compressed and squeezing them again makes them
+  bigger. Over the wifi to a phone at the table this is the difference you
+  feel; on the DM's own machine it is worth about 50-100 ms.
+
 ### Fixed
 - **The offline cache stops re-downloading what cannot change.** Fonts, icons,
   sound effects and the SRD compendium - about 1.7 MB - were served from the
