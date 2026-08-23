@@ -15,6 +15,26 @@ and are left as they are.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-08-22
+
+The release that measured itself first. The app was reported as sluggish; the
+first commit here only took the numbers, and they said the screens were already
+fast - 16 to 44 ms to switch, 119 ms from a cold start to the Stage. What was
+actually slow was one screen waiting three seconds on a question nobody needed
+asked, and what was actually wasteful was the amount the app moved over the
+wire to do any of it.
+
+### Added
+- **The app measures how long its screens take to arrive.** A render ring
+  (`app/core/perf.js`) records every screen that reaches the glass: how long
+  its module took, when it first had content on it, and when it stopped
+  changing. Mounts and repaints are kept apart, the gym drains the ring into
+  every run's metrics, and `window.__perf.table()` prints the same numbers in
+  devtools. `?perf=1` adds a console line per render and a tap that attributes
+  time to the state key that woke each listener. Nothing is gated on the
+  numbers - they are the baseline everything in this release was measured
+  against, and they are what said the screens were not the problem.
+
 ### Changed
 - **Files now arrive compressed, and the browser is allowed to keep them.**
   Every response used to say "do not store this", which also made it impossible
@@ -46,16 +66,6 @@ and are left as they are.
   3,000. "Check again" still really looks. This was not only the Settings
   screen: choosing a model for any writing or picture task asked the same
   question first, and paid the same three seconds.
-
-### Added
-- **The app measures how long its screens take to arrive.** A render ring
-  (`app/core/perf.js`) records every screen that reaches the glass: how long
-  its module took, when it first had content on it, and when it stopped
-  changing. Mounts and repaints are kept apart, the gym drains the ring into
-  every run's metrics, and `window.__perf.table()` prints the same numbers in
-  devtools. `?perf=1` adds a console line per render and a tap that attributes
-  time to the state key that woke each listener. Nothing is gated on the
-  numbers yet - this commit is the baseline the rest is measured against.
 
 ## [2.2.0] - 2026-08-21
 
@@ -130,7 +140,8 @@ The table half. Toon Anvil 1.0 measured homebrew; 2.0 also hosts the game.
 The workshop: ingest, map, simulate, grade, balance, emit. See the `v1.0.0`
 tag and the README's status tables, which are the 1.0 release notes.
 
-[Unreleased]: https://github.com/WildNixon/Toon-Anvil/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/WildNixon/Toon-Anvil/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/WildNixon/Toon-Anvil/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/WildNixon/Toon-Anvil/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/WildNixon/Toon-Anvil/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/WildNixon/Toon-Anvil/compare/v1.0.0...v2.0.0

@@ -67,7 +67,11 @@ raw JSON, and a play guide — every line tagged with where it came from:
 
 ---
 
-## Status: v2.2.0 (see [CHANGELOG.md](CHANGELOG.md))
+## Status: v2.3.0 (see [CHANGELOG.md](CHANGELOG.md))
+
+2.3.0 is the one that measures itself. A cold start into the Stage used to move
+2,462 KB and keep none of it; it now moves 704 KB the first time and 127 KB the
+second, and the app records how long every screen takes to appear.
 
 The tables below are the 1.0 release notes, kept as they were: everything in
 them was exercised by hand before that release — not "it renders", but "it
