@@ -62,45 +62,6 @@ export const PENDING = [
     },
   },
   {
-    id: 'API-1-nondict-body-drops',
-    title: 'A JSON body that is not an object is refused, not dropped',
-    why: '_read_json only rejects null, so a list or a number reaches code '
-       + 'that assumes a dict and the handler thread dies with the '
-       + 'connection. Eleven routes do this.',
-    async run(c) {
-      for (const [label, body] of [['a list', '[1,2]'],
-        ['a string', '"hello"'], ['a number', '42']]) {
-        let status = null;
-        try {
-          // eslint-disable-next-line no-await-in-loop
-          const r = await fetch(`${base()}/api/characters/pending-probe`,
-            { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-              body });
-          status = r.status;
-        } catch {
-          status = null;   // the connection went away
-        }
-        c.eq(status, 400, `${label} body is refused with 400`, String(status));
-      }
-    },
-  },
-  {
-    id: 'PWA-1-stale-service-worker',
-    title: 'The service worker caches the modules the app actually imports',
-    why: 'sw.js is still v9 and its SHELL lists none of the five modules the '
-       + 'LAN epics added, so an installed PWA opened offline fails to '
-       + 'import them.',
-    async run(c) {
-      const src = await fetch(`${base()}/sw.js`).then((r) => r.text());
-      const want = ['ui/qr.js', 'ui/vendor/qrcodegen.js',
-        'ui/components/rollcard.js', 'ui/components/dicerail.js',
-        'core/pregen.js'];
-      const missing = want.filter((m) => !src.includes(m));
-      c.eq(missing.length, 0,
-        'every module the LAN epics added is in the shell', missing.join(', '));
-    },
-  },
-  {
     id: 'RAIL-1-createdAt-no-offset',
     title: 'The table records when it opened in a format with a timezone',
     why: 'table.py writes createdAt as a bare local wall clock while every '

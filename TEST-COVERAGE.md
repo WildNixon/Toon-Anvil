@@ -8,6 +8,26 @@ The short version: the browser gym is unusually disciplined, and everything
 outside it is untested. The gaps are structural, not cultural. Twenty-five of
 the last forty commits changed the gym alongside the feature they shipped.
 
+## What landed since
+
+Every gap below has a change against it. The audit stays as written so the
+reasoning can be read; this is the ledger.
+
+| Gap | Change |
+|---|---|
+| 1. No Python tests | `tests/`, a stdlib `unittest` suite: pure server rules, the permission model, both redactors and the event log's, the shelf detector, the splitter's self-test, and the server over raw HTTP. 112 tests. |
+| 2. Nothing runs headless | `tools/gym.py` drives the gym in headless Chromium on an isolated copy; `.github/workflows/checks.yml` runs it, the Python suite and `run.py --check` on every push. |
+| 3. No isolation guard | The gym page refuses any server whose data directory does not look disposable, the fuzz tool's rule. `tools/gym.py --open` starts one that does. |
+| 4. Service worker tested by string match | A scenario walks the import graph from `app.js` and fails on any module the shell omits; the runner loads the app, cuts the network, reloads, and fetches every shell file. Found four modules missing on the first run. |
+| 5. API-1 and API-2 open | Both fixed, both pinned by route tests and (API-1) a gym scenario. The fuzz sweep reports nothing. |
+| 6. Mutations stop at the older suites | Eight mutations added across deeds, roll cards, the dice feed, the QR, the change feed, the store and effect shapes. The mutation check is a bar. |
+| 7. Six modules no suite imported | Six suites, fifteen scenarios; the coverage bar rose from 63 to 70. |
+| 8. README figures unenforced | `tests/test_readme.py` counts suites, journeys, mutations and invariants from the sources; scenario and check counts are reported by the gym, not written down. |
+
+Found along the way, and fixed: `safe_id` accepted an id with a trailing
+newline, because `$` matches before one; `cleanTitle` kept `.pdf` on a name
+with a trailing space, for the same reason.
+
 ## What exists
 
 Testing lives in `app/sim/`, run by opening a page in a browser with the

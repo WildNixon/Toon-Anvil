@@ -623,6 +623,24 @@ python tools/grade.py       # grade a sweep
 python tools/charts.py      # render the report
 ```
 
+Three things run before a commit, and the same three run in CI on every push
+(`.github/workflows/checks.yml`):
+
+```bash
+python -m unittest discover -s tests -t .   # the Python side, ~2 s
+python run.py --check                        # the setup and the version mirrors
+python tools/gym.py                          # the app, headless, ~15 min
+python tools/gym.py --logic --no-mutations   # the fast gate, ~30 s
+```
+
+The unit tests cover what the browser cannot reach as a function call: the
+server's pure rules (the idle-stop ceiling, the change feed's gap semantics,
+the id and name guards, the cost clamp), the whole permission model in
+`tools/table.py`, the shelf's book detector, the PDF splitter's self-test,
+and the server over raw HTTP, sending what a hand-crafted client sends and
+the app never would. They run against a sandboxed data directory; nothing
+they write can reach `data/`.
+
 Closing the app stops its server too: the launcher and the server are one
 process, and it exits about two minutes after the last browser goes away. A
 table with players seated gets a longer grace, so a DM closing their own tab
@@ -649,16 +667,32 @@ Two harnesses run in the browser once the server is up:
 | Page | Asks |
 |---|---|
 | `/sim/sim.html` | **Is this subclass balanced?** Campaigns, ablation, auto-tune. |
-| `/sim/gym.html` | **Does the app work?** Graded integration tests across 11 suites. |
+| `/sim/gym.html` | **Does the app work?** Graded integration tests across 38 suites. |
 
 ### The application gym
 
+`python tools/gym.py` runs it without a person: it copies the tree to a
+throwaway directory, serves that copy on a free port, drives the gym page in
+headless Chromium, and exits red on any failed bar, any mutation that
+escaped, or an app that does not reload offline. `--logic --no-mutations` is
+the thirty-second version; `--open` starts the same isolated instance and
+opens the gym in your browser for a look by hand.
+
+It has to be an isolated instance. The gym closes tables and writes records,
+so the page **refuses to run** against any server whose data directory does
+not look disposable (the same rule `tools/fuzz.py` has always applied), and
+says how to start one that does. `?force=1` overrides it, for somebody who
+has read that and means it.
+
 Press **Run the gym**. It exercises the real modules against a memory-backed
 store with a seeded RNG, then grades the result against bars written down
-*before* the run — currently 38 scenarios and 784 assertions across derivation,
-storage, the play loop, dice, combat, encounters, spells, the chronicle, the
-homebrew pipeline, cross-engine agreement, and integration journeys that span
-several features at once.
+*before* the run, across derivation, storage, the play loop, dice, combat,
+encounters, spells, the chronicle, the homebrew pipeline, cross-engine
+agreement, the table's permissions, the change feed, the offline shell, and
+integration journeys that span several features at once. The gym reports its
+own scenario and assertion counts on every run rather than having them
+written here, where they went stale; the figures this page does quote are
+checked against the sources by `tests/test_readme.py`.
 
 Two rules keep it honest:
 
@@ -667,12 +701,13 @@ Two rules keep it honest:
 - **The coverage bar rises when the suite grows.** A fixed bar goes green
   forever while the ratio of tested to shipped quietly falls.
 
-**Include UI tier** drives the real app the way a person does — 11 journeys and
-65 assertions that click, type, and then check what the *screen* says. It
-builds a character, levels it, damages it, rests it off, toggles conditions,
-generates a shop and buys something, runs an encounter through initiative,
-records a roleplay beat and finds it in the chronicle, exports for a DM,
-searches the bestiary, and ingests the shipped example end to end.
+**Include UI tier** drives the real app the way a person does — 52 journeys
+that click, type, and then check what the *screen* says. It builds a
+character, levels it, damages it, rests it off, toggles conditions, generates
+a shop and buys something, runs an encounter through initiative, records a
+roleplay beat and finds it in the chronicle, exports for a DM, searches the
+bestiary, ingests the shipped example end to end, seats a second client and
+keeps the two in step, and plays on a phone-width screen.
 
 It runs against `/?storage=memory` — an ephemeral boot where both the character
 store and the event log live in memory and vanish on reload, so driving the app
@@ -688,12 +723,20 @@ suite gets ignored, and an ignored suite is worse than none.
 across runs.
 
 **Mutation check** answers the question a green suite cannot answer about
-itself: *would it notice if something broke?* It injects five known defects —
-resistance that stops halving, hit points allowed to go negative, resource
-pools that never refuse, roll tables that pick an index instead of rolling the
-die, encounters that ignore the monster cap — and confirms the board goes red
-for each. Currently 5/5 detected. A mutation that survives is a blind spot, and
-the response is to write the missing assertion, not to enjoy the green.
+itself: *would it notice if something broke?* It injects 45 mutations, each a
+known defect — resistance that stops halving, hit points allowed to go
+negative, resource pools that never refuse, roll tables that pick an index
+instead of rolling the die, encounters that ignore the monster cap, a change
+feed that re-renders a tab on its own writes, a dice feed that forgets its
+allowlist — and confirms the board goes red for each. It is a bar, not a
+note beside the board: a mutation that survives fails the run, because it
+names a defect class the gym cannot see, and the response is to write the
+missing assertion, not to enjoy the green.
+
+The campaign emulator has its own gate: 15 invariants (hit points within
+bounds, slots within the pool, one concentration at a time, no NaN in a
+derived sheet) checked after every simulated action, with a tolerance of
+zero.
 
 The roll-table mutation is not hypothetical: it is a bug this project actually
 shipped once, where a d20 table with 8 entries gave its last row 12% of the

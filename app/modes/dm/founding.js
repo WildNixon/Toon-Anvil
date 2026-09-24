@@ -23,7 +23,9 @@ import { log } from '../../core/events.js';
 
 /** 'Plane-Shift_Kaladesh.pdf' -> 'Plane Shift Kaladesh'. */
 export function cleanTitle(name) {
-  return String(name || '').replace(/\.pdf$/i, '')
+  // Trim FIRST: the suffix match is anchored to the end, and a trailing
+  // space left '.pdf' in the title.
+  return String(name || '').trim().replace(/\.pdf$/i, '')
     .replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 

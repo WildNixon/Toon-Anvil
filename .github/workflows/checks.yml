@@ -1,0 +1,51 @@
+# The three things a contributor runs before a commit, run on every push.
+#
+# Two jobs on purpose. `fast` is the gate a pull request waits on: the Python
+# suite, the setup check, and the gym's logic tier, about a minute. `full`
+# adds the UI journeys, the mutation check, the offline reload and the fuzz
+# sweep, which together take a quarter of an hour, so it runs alongside
+# rather than in front.
+name: checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt playwright
+      - run: playwright install --with-deps chromium
+      - name: Python tests
+        run: python -m unittest discover -s tests -t . -v
+      - name: Setup check
+        run: python run.py --check
+      - name: Gym, logic tier
+        run: python tools/gym.py --logic --no-mutations --no-offline
+
+  full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt playwright
+      - run: playwright install --with-deps chromium
+      - name: Gym, every tier, mutations, offline, fuzz
+        run: python tools/gym.py --fuzz --json gym-result.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gym-result
+          path: gym-result.json
+          if-no-files-found: ignore

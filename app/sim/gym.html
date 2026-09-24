@@ -70,7 +70,7 @@ import { runLogic, grade, publishRun, loadHistory, runMutations, Check, BARS }
   from './appgym.js';
 import { runFlows } from './uiflows.js';
 import { initDb, MemoryAdapter, db, KINDS, compendia, dataFile,
-  compendiumWithCustom } from '../core/db.js';
+  compendiumWithCustom, CLIENT_ID } from '../core/db.js';
 import * as engine from '../core/engine.js';
 import * as events from '../core/events.js';
 import * as adapters from '../homebrew/adapters.js';
@@ -97,7 +97,16 @@ import * as theme from '../ui/theme.js';
 import { weatherFor, forecastFor } from '../core/weather.js';
 import {
   newCampaign, newRegion, stampDay, newClock, tickClock, advanceDayClocks,
+  listCampaigns, activeCampaign,
 } from '../core/campaign.js';
+// The modules no suite imported until the coverage audit found them: each
+// could only fail through the UI tier, the slowest place to find out.
+import * as live from '../core/live.js';
+import * as store from '../core/store.js';
+import * as effects from '../homebrew/effects.js';
+import * as founding from '../modes/dm/founding.js';
+import * as chart from '../ui/chart.js';
+import { mapView, PIN_KINDS } from '../ui/map.js';
 import { unitPrice, sellBack } from '../modes/shop/pricing.js';
 import {
   parseStartingEquipment, pointBuySpend, arrayAssignment,
@@ -115,6 +124,29 @@ const log = (m) => { $('#log').textContent += `${m}\n`;
                      $('#log').scrollTop = 1e6; };
 
 let lastRun = null;
+
+/**
+ * Refuse to run against anything that is not obviously disposable.
+ *
+ * The table suite closes the live table - sixty times - and the shared
+ * suites PUT real records. Opened against the server a DM is actually using,
+ * that ends their game and salts data/ with gym-* characters. tools/fuzz.py
+ * has refused exactly this since it was written, by the same rule: the
+ * server's own report of where its data lives must contain one of these
+ * words. `python tools/gym.py --open` starts an instance that does.
+ *
+ * ?force=1 is the override, for somebody who has read this and means it.
+ */
+const DISPOSABLE = ['gym', 'soak', 'fuzz', 'scratch', 'tmp', 'temp', 'test'];
+async function isolation() {
+  try {
+    const h = await fetch('/api/health', { cache: 'no-store' }).then((r) => r.json());
+    const dir = String(h.dataDir || '');
+    return { ok: DISPOSABLE.some((w) => dir.toLowerCase().includes(w)), dir };
+  } catch (err) {
+    return { ok: false, dir: '', error: String(err) };
+  }
+}
 
 /** Build the context the suites run against. Memory-backed, never the real DB. */
 async function buildCtx() {
@@ -147,7 +179,15 @@ async function buildCtx() {
     session,
     theme,
     campaign: { weatherFor, forecastFor, newCampaign, newRegion, stampDay,
-      unitPrice, sellBack, newClock, tickClock, advanceDayClocks },
+      unitPrice, sellBack, newClock, tickClock, advanceDayClocks,
+      listCampaigns, activeCampaign },
+    live,
+    store,
+    effects,
+    founding,
+    chart,
+    map: { mapView, PIN_KINDS },
+    clientId: CLIENT_ID,
     rules: { parseStartingEquipment, pointBuySpend, arrayAssignment,
       spellBudget, spellbookProblems },
     vec,
@@ -417,18 +457,19 @@ async function run(withUi) {
     for (const f of g.failures) log(`  ✗ ${f}`);
     for (const e of g.errors) log(`  ! ${e}`);
     window.__GYM = lastRun;
+    return lastRun;
   } catch (err) {
     log(`harness error: ${err.stack || err.message}`);
+    throw err;
   } finally {
     $('#run').disabled = $('#runui').disabled = false;
   }
 }
 
-$('#mut').onclick = async () => {
+async function mutate() {
   // Calibration, not testing: break the code on purpose and confirm the suite
   // notices. A mutation that survives is a blind spot, not a success.
   $('#mut').disabled = true;
-  $('#log').textContent = '';
   try {
     log('mutation check - injecting known defects…');
     const ctx = await buildCtx();
@@ -444,13 +485,63 @@ $('#mut').onclick = async () => {
 ${escaped === 0 ? 'PASS' : 'FAIL'} — ${results.length - escaped}/${results.length} `
       + `mutations detected${escaped ? `, ${escaped} ESCAPED (blind spots)` : ''}`);
     window.__MUTATIONS = results;
+    return { results, escaped };
   } catch (err) {
     log(`mutation harness error: ${err.stack || err.message}`);
+    throw err;
   } finally { $('#mut').disabled = false; }
-};
+}
 
-$('#run').onclick = () => run(false);
-$('#runui').onclick = () => run(true);
+$('#mut').onclick = () => { $('#log').textContent = ''; mutate().catch(() => {}); };
+$('#run').onclick = () => run(false).catch(() => {});
+$('#runui').onclick = () => run(true).catch(() => {});
+
+/**
+ * The isolation guard, then the headless entry.
+ *
+ * tools/gym.py opens this page with ?auto=logic or ?auto=ui, plus &mutate=1
+ * for the mutation check, and waits for window.__GYM_DONE. A harness error
+ * lands in window.__GYM_ERROR instead, so a run that dies is a red exit and
+ * never a hang.
+ */
+(async () => {
+  const params = new URLSearchParams(location.search);
+  const iso = await isolation();
+  if (!iso.ok && params.get('force') !== '1') {
+    for (const id of ['#run', '#runui', '#mut']) $(id).disabled = true;
+    log(`REFUSING to run against this server.\n`
+      + `  its data directory is ${iso.dir || '(unreachable)'}\n`
+      + `  which does not look disposable (wanted one of: ${DISPOSABLE.join(', ')}).\n`
+      + `  The gym closes tables and writes records. Start an isolated instance:\n`
+      + `      python tools/gym.py --open\n`
+      + `  or add ?force=1 to this URL if you have read this and mean it.`);
+    window.__GYM_ERROR = `not isolated: ${iso.dir}`;
+    return;
+  }
+  log(`isolated: dataDir = ${iso.dir}`);
+  const auto = params.get('auto');
+  if (!auto) return;
+  try {
+    const result = await run(auto === 'ui');
+    let mutations = null;
+    if (params.get('mutate') === '1') {
+      mutations = await mutate();
+      // Re-grade with the mutation results in: a mutation that escaped is
+      // a failed bar, not a note beside a green board.
+      result.grade = grade(result.suites, result.ui, mutations.results);
+      drawBars(result.grade);
+    }
+    window.__GYM_DONE = {
+      grade: result.grade, bars: result.bars,
+      suites: result.suites.map((s) => ({ id: s.id, passed: s.passed, total: s.total,
+        checks: s.checks, checksPassed: s.checksPassed })),
+      ui: result.ui,
+      mutations,
+    };
+  } catch (err) {
+    window.__GYM_ERROR = String(err?.stack || err);
+  }
+})();
 $('#pub').onclick = async () => {
   if (!lastRun) return log('run it first');
   const g = lastRun.grade;

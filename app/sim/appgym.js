@@ -2087,6 +2087,57 @@ export const SUITES = [
             'and a version bump still drops the whole cache');
         },
       },
+      {
+        id: 'shell_lists_every_module_the_app_imports',
+        title: 'The offline shell is derived from the import graph, not remembered',
+        why: 'Soak finding PWA-1: five modules the LAN epics added were '
+           + 'missing from the shell, so an installed app opened offline '
+           + 'failed to import them. The list had been maintained by hand and '
+           + 'by memory. This walks every import from app.js outward and '
+           + 'refuses any module the shell does not carry - so the next epic '
+           + 'cannot forget one. Promoted from sim/pending.js.',
+        async run(c) {
+          c.feature('version', 'offline');
+          const sw = await fetch('/sw.js', { cache: 'no-store' }).then((r) => r.text());
+          const block = (sw.match(/const SHELL = \[([\s\S]*?)\n\];/) || [])[1] || '';
+          const shell = new Set([...block.matchAll(/^\s*'\.\/([^']*)',/gm)].map((m) => `/${m[1]}`));
+          c.ok(shell.size > 60, 'the shell is readable from the worker source', String(shell.size));
+
+          const seen = new Set();
+          const queue = ['/app.js'];
+          const importsIn = (src, from) => {
+            const out = [];
+            const specs = [
+              ...src.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g),
+              ...src.matchAll(/\bimport\s+['"]([^'"]+)['"]/g),
+              ...src.matchAll(/\bimport\(\s*['"`]([^'"`$]+)['"`]\s*\)/g),
+            ].map((m) => m[1]);
+            for (const spec of specs) {
+              if (!spec.startsWith('.') && !spec.startsWith('/')) continue;
+              const u = new URL(spec, location.origin + from);
+              if (u.origin !== location.origin || !u.pathname.endsWith('.js')) continue;
+              // The harnesses are not the app; nothing offline needs them.
+              if (u.pathname.startsWith('/sim/')) continue;
+              out.push(u.pathname);
+            }
+            return out;
+          };
+          while (queue.length) {
+            const path = queue.shift();
+            if (seen.has(path)) continue;
+            seen.add(path);
+            // eslint-disable-next-line no-await-in-loop
+            const src = await fetch(path, { cache: 'no-store' }).then((r) => (r.ok ? r.text() : ''));
+            for (const dep of importsIn(src, path)) if (!seen.has(dep)) queue.push(dep);
+          }
+          c.ok(seen.size > 40, 'the walk found the app', String(seen.size));
+          const missing = [...seen].filter((p) => !shell.has(p)).sort();
+          c.eq(missing, [], 'every module the app can import is in the shell', missing.join(', '));
+          const named = ['/ui/qr.js', '/ui/vendor/qrcodegen.js', '/ui/components/rollcard.js',
+            '/ui/components/dicerail.js', '/core/pregen.js'];
+          c.ok(named.every((p) => shell.has(p)), 'and the five PWA-1 named are among them');
+        },
+      },
     ],
   },
 
@@ -2216,6 +2267,33 @@ export const SUITES = [
           c.ok(Boolean(e), 'the response is visible to Resource Timing');
           c.eq(e.encodedBodySize, e.decodedBodySize,
             'a woff2 arrives exactly as it is stored');
+        },
+      },
+      {
+        id: 'a_body_that_is_not_an_object_is_refused',
+        title: 'A JSON body of the wrong shape gets a 400, not a dropped connection',
+        why: 'Soak finding API-1: a list, a string or a number where an object '
+           + 'belonged raised inside the handler thread on eleven routes, and '
+           + 'the caller got a closed socket with no answer. Nothing in app/ '
+           + 'ever sends these shapes, which is exactly why nothing had tested '
+           + 'them. Promoted from sim/pending.js when the fix landed.',
+        async run(c, { table }) {
+          c.feature('transport', 'safety');
+          for (const [label, body] of [['a list', [1, 2]], ['a string', 'hello'],
+            ['a number', 42], ['a bool', true], ['a nested list', [[]]]]) {
+            // eslint-disable-next-line no-await-in-loop
+            const r = await table.put('characters', 'gym-shape-probe', body, null)
+              .catch(() => ({ status: null }));
+            c.eq(r.status, 400, `PUT with ${label} for a body is refused with 400`,
+              String(r.status));
+          }
+          const ev = await table.logEvents([1, 2], null).catch(() => ({ status: null }));
+          c.eq(ev.status, 400, 'a list of non-objects to the event log is refused');
+          const one = await table.logEvents([{ type: 'roll', payload: {} }], null);
+          c.eq(one.status, 200, 'a list of objects still lands');
+          const alive = await fetch('/api/health', { cache: 'no-store' })
+            .then((r) => r.json()).catch(() => null);
+          c.ok(alive?.ok === true, 'and the server is still serving afterwards');
         },
       },
     ],
@@ -5520,6 +5598,475 @@ export const SUITES = [
       },
     ],
   },
+
+  /* ---------------- the modules no suite imported ------------------ */
+  //
+  // Found by the coverage audit: each of these is pure enough to grade in a
+  // function call, and until now could only fail through a UI journey - the
+  // slowest and coarsest place to find out, and the one that names a screen
+  // rather than the rule that broke.
+  {
+    id: 'changefeed_client',
+    title: 'The client side of the change feed',
+    why: 'The server says WHAT changed; this module decides what a screen is '
+       + 'told. Three rules live here and each has a failure that looks like '
+       + 'health: an echo of your own write re-renders Build under your '
+       + 'cursor, a revision that went backwards is a restart nobody noticed, '
+       + 'and a gap that only reaches the subscribers who asked for that kind '
+       + 'leaves the others believing they are current.',
+    scenarios: [
+      {
+        id: 'feed_drops_echoes_and_routes_by_kind',
+        title: 'A subscriber hears about its kinds, and never about itself',
+        async run(c, { live, clientId }) {
+          c.feature('live', 'changes');
+          const heard = [];
+          const un = live.subscribe(['characters'], (m) => heard.push(m));
+          try {
+            const base = live.status().rev + 10;
+            live.apply({ rev: base, changes: [{ rev: base, kind: 'campaigns', id: 'x', by: 'tab-9' }] });
+            c.eq(heard.length, 0, 'a kind not subscribed to is not delivered');
+            live.apply({ rev: base + 1,
+              changes: [{ rev: base + 1, kind: 'characters', id: 'kim', by: 'tab-9' }] });
+            c.eq(heard.length, 1, 'a subscribed kind is');
+            c.eq(heard[0]?.changes?.[0]?.id, 'kim', 'with the change itself');
+            c.eq(heard[0]?.gap, false, 'and no gap');
+            live.apply({ rev: base + 2,
+              changes: [{ rev: base + 2, kind: 'characters', id: 'kim', by: clientId }] });
+            c.eq(heard.length, 1, 'the echo of this tab\'s own write is dropped');
+            c.eq(live.status().rev, base + 2, 'but the revision still advances past it');
+          } finally { un(); }
+        },
+      },
+      {
+        id: 'feed_treats_a_rewind_as_a_gap',
+        title: 'A revision that went backwards is a gap, and a gap reaches everyone',
+        async run(c, { live }) {
+          c.feature('live', 'changes');
+          const narrow = [];
+          const wide = [];
+          const un1 = live.subscribe(['maps'], (m) => narrow.push(m));
+          const un2 = live.subscribe(null, (m) => wide.push(m));
+          try {
+            const base = live.status().rev + 10;
+            live.apply({ rev: base, changes: [] });
+            c.eq(narrow.length + wide.length, 0, 'nothing changed, nobody is told');
+            // The server restarted: its counter reset below ours.
+            live.apply({ rev: 1, changes: [] });
+            c.eq(narrow.length, 1, 'a rewind reaches a subscriber that asked for other kinds');
+            c.eq(narrow[0]?.gap, true, 'as a gap');
+            c.eq(wide[0]?.gap, true, 'and the catch-all subscriber too');
+            c.eq(live.status().rev, 1, 'and we now believe the server\'s number, not ours');
+            // A gap the server reports outright, with a change of an
+            // unsubscribed kind riding along.
+            live.apply({ rev: 5, gap: true,
+              changes: [{ rev: 5, kind: 'campaigns', id: 'c', by: 'tab-2' }] });
+            c.eq(narrow.length, 2, 'a reported gap is delivered whatever the kinds');
+            c.eq(narrow[1]?.changes?.length, 1,
+              'with everything the server sent, unfiltered - a partial list is worse than none');
+          } finally { un1(); un2(); }
+        },
+      },
+      {
+        id: 'feed_subscribers_are_isolated',
+        title: 'One subscriber throwing does not silence the next',
+        async run(c, { live }) {
+          c.feature('live');
+          const heard = [];
+          const un1 = live.subscribe(null, () => { throw new Error('bad subscriber'); });
+          const un2 = live.subscribe(null, (m) => heard.push(m));
+          try {
+            const base = live.status().rev + 10;
+            live.apply({ rev: base, changes: [{ rev: base, kind: 'npcs', id: 'n', by: 'tab-3' }] });
+            c.eq(heard.length, 1, 'the second subscriber was still told');
+          } finally { un1(); un2(); }
+          c.ok(typeof live.serverReachable() === 'boolean', 'reachability is a boolean');
+          c.ok(['off', 'poll', 'stream'].includes(live.status().mode),
+            'the mode is one of the three', live.status().mode);
+        },
+      },
+    ],
+  },
+  {
+    id: 'store',
+    title: 'The state store and its DOM helpers',
+    why: 'Every screen renders from setState and every ingested string goes '
+       + 'through esc() before it touches innerHTML. A store that notifies on '
+       + 'an unchanged key re-renders the sheet on every toast; an escape '
+       + 'that misses a quote is how homebrew text becomes script.',
+    scenarios: [
+      {
+        id: 'store_notifies_only_what_changed',
+        title: 'Listeners hear about the keys that changed, and only those',
+        async run(c, { store }) {
+          c.feature('store');
+          const before = store.getState();
+          const toastHeard = [];
+          const anyHeard = [];
+          const unA = store.watch('toast', (s) => toastHeard.push(s.toast));
+          const unB = store.subscribe(() => anyHeard.push(1));
+          try {
+            store.setState({ toast: { message: 'gym', kind: 'info', at: 1 } });
+            c.eq(toastHeard.length, 1, 'a key watcher hears its key change');
+            c.eq(anyHeard.length, 1, 'and the catch-all hears once');
+            store.setState({ toast: store.getState().toast });
+            c.eq(anyHeard.length, 1, 'the same value again is not a change');
+            store.setState((s) => ({ toast: s.toast ? null : 1 }));
+            c.eq(toastHeard.length, 2, 'a functional patch is applied and heard');
+            c.eq(store.getState().toast, null, 'and landed');
+            store.setState(null);
+            c.eq(anyHeard.length, 2, 'a null patch is a no-op');
+          } finally {
+            unA(); unB();
+            store.setState({ toast: before.toast });
+          }
+        },
+      },
+      {
+        id: 'store_listener_isolation',
+        title: 'A listener that throws does not stop the others',
+        async run(c, { store }) {
+          c.feature('store');
+          const before = store.getState();
+          const heard = [];
+          const un1 = store.watch('toast', () => { throw new Error('bad listener'); });
+          const un2 = store.watch('toast', () => heard.push(1));
+          const quiet = console.error;
+          console.error = () => {};
+          try {
+            store.setState({ toast: { message: 'x', kind: 'info', at: 2 } });
+            c.eq(heard.length, 1, 'the second listener still ran');
+            c.eq(store.getState().toast?.message, 'x', 'and the state change itself landed');
+          } finally {
+            console.error = quiet;
+            un1(); un2();
+            store.setState({ toast: before.toast });
+          }
+        },
+      },
+      {
+        id: 'store_escapes_before_marking_up',
+        title: 'Ingested text cannot become markup',
+        async run(c, { store }) {
+          c.feature('store', 'security');
+          const hostile = '<img src=x onerror=alert(1)> & "quotes" \'apos\'';
+          c.eq(store.esc(hostile),
+            '&lt;img src=x onerror=alert(1)&gt; &amp; &quot;quotes&quot; &#39;apos&#39;',
+            'every one of the five characters is escaped');
+          const html = store.md(`**Bold** and _italic_\n\n${hostile}`);
+          c.ok(html.includes('<strong>Bold</strong>') && html.includes('<em>italic</em>'),
+            'the trusted subset renders');
+          c.ok(!/<img/.test(html) && /&lt;img src=x onerror=alert\(1\)&gt;/.test(html),
+            'and the hostile text is text', html.slice(0, 80));
+          c.eq((html.match(/<p>/g) || []).length, 2, 'a blank line is a paragraph');
+          c.eq(store.md('**_Term._** rest'), '<p><strong class="term">Term.</strong> rest</p>',
+            'the compendium\'s bold-italic term form');
+          c.eq(store.esc(null), '', 'null escapes to nothing');
+          c.eq(store.sign(3), '+3', 'signed positive');
+          c.eq(store.sign(-1), '-1', 'signed negative');
+          c.eq(store.sign(0), '+0', 'zero is +0');
+        },
+      },
+      {
+        id: 'store_el_builds_what_it_is_told',
+        title: 'el() sets attributes, handlers, datasets and children as asked',
+        async run(c, { store }) {
+          c.feature('store');
+          let clicks = 0;
+          const node = store.el('button', {
+            class: 'act', 'data-id': 'k', dataset: { seat: 'dm' }, hidden: false,
+            title: null, onClick: () => { clicks += 1; },
+          }, 'Go', null, ['a', 'b'], store.el('em', {}, '!'));
+          c.eq(node.tagName, 'BUTTON', 'the tag');
+          c.eq(node.className, 'act', 'class is a property, not an attribute');
+          c.eq(node.dataset.id, 'k', 'a data attribute');
+          c.eq(node.dataset.seat, 'dm', 'a dataset object');
+          c.ok(!node.hasAttribute('hidden') && !node.hasAttribute('title'),
+            'false and null attributes are absent');
+          c.eq(node.textContent, 'Goab!', 'children flatten and nulls vanish');
+          node.click();
+          c.eq(clicks, 1, 'an onX attribute is a listener');
+          // Disabled on its own node: a disabled button swallows click().
+          c.ok(store.el('button', { disabled: true }).disabled, 'true is a bare attribute');
+          c.eq(store.el('div', { html: '<b>x</b>' }).innerHTML, '<b>x</b>',
+            'html sets innerHTML, for the callers that escaped already');
+        },
+      },
+    ],
+  },
+  {
+    id: 'effects',
+    title: 'Homebrew effect shapes',
+    why: 'Every mapped homebrew feature becomes one of these. A formula that '
+       + 'resolves an alias to zero makes a resource that exists and can never '
+       + 'be spent; a describer that throws on one type takes the whole '
+       + 'mapping editor down with it.',
+    scenarios: [
+      {
+        id: 'formula_aliases_resolve',
+        title: 'Every alias for a stat resolves to the stat, never to zero',
+        async run(c, { effects }) {
+          c.feature('effects', 'homebrew');
+          const ctx = { level: 7, proficiencyBonus: 3,
+            abilities: { str: 8, dex: 14, con: 16, int: 10, wis: 12, cha: 20 } };
+          for (const [f, want] of [['level', 7], ['classLevel', 7], ['pb', 3],
+            ['prof', 3], ['proficiencyBonus', 3], ['PROFICIENCYBONUS', 3],
+            ['cha', 5], ['charisma', 5], ['str', -1], ['strength', -1],
+            ['level/2', 3], ['pb + cha', 8], ['3', 3], [4, 4], ['level * 2', 14]]) {
+            c.eq(effects.resolveFormula(f, ctx), want, `'${f}' resolves to ${want}`);
+          }
+          c.eq(effects.resolveFormula('nonsense', ctx), 0, 'an unknown token is zero');
+          c.eq(effects.resolveFormula('level; alert(1)', ctx), 0,
+            'anything but arithmetic is refused outright');
+          c.eq(effects.resolveFormula('1/0', ctx), 0, 'division by zero is zero, not Infinity');
+          c.eq(effects.resolveFormula(undefined, ctx), 0, 'no formula is zero');
+        },
+      },
+      {
+        id: 'effect_gating',
+        title: 'Toggle and level gates decide whether an effect is live',
+        async run(c, { effects }) {
+          c.feature('effects');
+          c.ok(effects.isActive({ type: 'resistance' }, {}), 'an ungated effect is live');
+          c.ok(!effects.isActive({ type: 'x', requiresToggle: 'polarity' }, { toggles: {} }),
+            'a bare toggle gate needs the toggle on');
+          c.ok(effects.isActive({ type: 'x', requiresToggle: 'polarity' },
+            { toggles: { polarity: true } }), 'and is live when it is');
+          c.ok(!effects.isActive({ type: 'x', requiresToggle: 'polarity:attract' },
+            { toggles: { polarity: 'repel' } }), 'a valued gate needs that value');
+          c.ok(effects.isActive({ type: 'x', requiresToggle: 'polarity:attract' },
+            { toggles: { polarity: 'attract' } }), 'and is live with it');
+          c.ok(!effects.isActive({ type: 'x', minLevel: 5 }, { level: 4 }), 'below the level');
+          c.ok(effects.isActive({ type: 'x', minLevel: 5 }, { level: 5 }), 'at the level');
+        },
+      },
+      {
+        id: 'every_effect_type_describes_and_validates',
+        title: 'No effect type makes the editor throw',
+        async run(c, { effects }) {
+          c.feature('effects');
+          const types = Object.keys(effects.EFFECT_TYPES);
+          c.ok(types.length >= 15, 'the catalogue is populated', String(types.length));
+          for (const type of types) {
+            let text = null;
+            try { text = effects.describeEffect({ type, ...effects.EFFECT_TYPES[type].example }); }
+            catch (err) { text = null; }
+            c.ok(typeof text === 'string' && text.length > 0,
+              `${type} describes as a non-empty line`, String(text));
+            let errs = null;
+            try { errs = effects.validateEffect({ type }); } catch { errs = null; }
+            c.ok(Array.isArray(errs), `${type} validates to a list`);
+          }
+          c.eq(effects.validateEffect({ type: 'nope' }), ['unknown effect type "nope"'],
+            'an unknown type is one clear error');
+          c.eq(effects.validateEffect(null)[0], 'unknown effect type "undefined"',
+            'and so is nothing at all');
+          c.ok(effects.validateEffect({ type: 'resource' }).length === 2,
+            'a resource without a name or max is two errors');
+          c.eq(effects.validateEffect({ type: 'resource', name: 'Ki', max: 'level' }), [],
+            'and none once both are present');
+          c.ok(effects.validateEffect({ type: 'toggle', key: 'k' }).includes('toggle: needs options'),
+            'a toggle needs options');
+          c.eq(effects.describeEffect({ type: 'unheard_of' }), 'unheard_of',
+            'an unknown type describes as its own name rather than throwing');
+        },
+      },
+    ],
+  },
+  {
+    id: 'founding',
+    title: 'Founding a campaign',
+    why: 'The Deck and the Lobby share one founding so they cannot drift into '
+       + 'two subtly different campaigns. The record shape, which campaign '
+       + 'becomes active, and the event that records the founding are the '
+       + 'three things both rooms depend on.',
+    scenarios: [
+      {
+        id: 'titles_and_books',
+        title: 'A filename becomes a title, and only Deck material founds a campaign',
+        async run(c, { founding }) {
+          c.feature('founding', 'shelf');
+          c.eq(founding.cleanTitle('Plane-Shift_Kaladesh.pdf'), 'Plane Shift Kaladesh',
+            'dashes and underscores become spaces, the suffix goes');
+          c.eq(founding.cleanTitle('  Curse   of Strahd.PDF '), 'Curse of Strahd',
+            'whitespace collapses, the suffix is case-blind');
+          c.eq(founding.cleanTitle(null), '', 'nothing is nothing');
+          const listing = { categories: {
+            settings: [{ slug: 's1' }], adventures: [{ slug: 'a1' }, { slug: 'a2' }],
+            bestiaries: [{ slug: 'b1' }], options: [{ slug: 'o1' }] } };
+          c.eq(founding.deckBooks(listing).map((b) => b.slug), ['s1', 'a1', 'a2'],
+            'settings and adventures, in that order; bestiaries and options are the workshop\'s');
+          c.eq(founding.deckBooks(null), [], 'no shelf, no books');
+        },
+      },
+      {
+        id: 'founding_writes_one_record_and_one_event',
+        title: 'Founding saves the record, activates the first, and logs it',
+        async run(c, { founding, campaign, events, db }) {
+          c.feature('founding', 'campaign', 'events');
+          const before = (await campaign.listCampaigns()).length;
+          const seen = [];
+          const un = events.subscribe((ev) => seen.push(ev));
+          let made;
+          try {
+            made = await founding.foundCampaign({
+              name: '', book: { slug: 'gym-book', name: 'Gym_Book.pdf' },
+              existingCount: before,
+            });
+          } finally { un(); }
+          c.eq(made.name, 'Gym Book', 'named for the book when no name is typed');
+          c.eq(made.sourceSlug, 'gym-book', 'and it remembers the book');
+          c.eq(made.active, before === 0, 'the first campaign is active, a later one is not');
+          const stored = (await campaign.listCampaigns()).find((x) => x.id === made.id);
+          c.ok(!!stored, 'the record was saved');
+          c.eq((await campaign.activeCampaign())?.id, made.id,
+            'and it is the active one, because setActive flips it on');
+          const founded = seen.find((e) => e.type === 'campaign_founded');
+          c.ok(!!founded, 'a campaign_founded event was logged');
+          c.eq(founded?.campaignId, made.id, 'stamped with the campaign');
+          c.eq(founded?.payload?.source, 'Gym_Book.pdf', 'and the book it came from');
+          const named = await founding.foundCampaign({ name: 'Typed Name', existingCount: 1 });
+          c.eq(named.name, 'Typed Name', 'a typed name wins over the book');
+          c.eq(named.sourceSlug, undefined, 'a blank start has no source');
+          await db.del('campaigns', made.id);
+          await db.del('campaigns', named.id);
+        },
+      },
+    ],
+  },
+  {
+    id: 'charts',
+    title: 'The Deck\'s charts',
+    why: 'A chart that throws on an empty series takes the Deck down with '
+       + 'it; a chart that draws nothing for a flat line reads as a missing '
+       + 'reading. These draw on a real canvas and are graded on the pixels.',
+    scenarios: [
+      {
+        id: 'charts_draw_and_survive_edge_cases',
+        title: 'Empty, flat, and full series all draw without throwing',
+        async run(c, { chart }) {
+          c.feature('charts');
+          const canvas = document.createElement('canvas');
+          canvas.style.width = '400px';
+          document.body.append(canvas);
+          const inked = () => {
+            const g = canvas.getContext('2d');
+            const { data } = g.getImageData(0, 0, canvas.width, canvas.height);
+            let n = 0;
+            for (let i = 3; i < data.length; i += 4) if (data[i] > 0) n += 1;
+            return n;
+          };
+          try {
+            let threw = false;
+            try { chart.lineChart(canvas, { series: [] }); } catch { threw = true; }
+            c.ok(!threw, 'an empty line chart does not throw');
+            try { chart.barChart(canvas, { bars: [] }); } catch { threw = true; }
+            c.ok(!threw, 'nor an empty bar chart');
+
+            chart.lineChart(canvas, { series: [{ label: 'flat', points: [{ x: 1, y: 5 }, { x: 2, y: 5 }] }] });
+            const flat = inked();
+            c.ok(flat > 50, 'a flat line is still drawn', String(flat));
+
+            chart.lineChart(canvas, { series: [
+              { label: 'a', points: [{ x: 3, y: 1 }, { x: 1, y: 4 }, { x: 2, y: 2 }] },
+              { label: 'b', points: [{ x: 1, y: 9 }, { x: 3, y: 0 }] },
+            ], refY: 5 });
+            const full = inked();
+            c.ok(full > flat, 'two series and a reference line ink more than one flat line',
+              `${full} vs ${flat}`);
+
+            chart.barChart(canvas, { bars: [
+              { label: 'gold', value: 3 }, { label: 'silver', value: 0 }, { label: 'over', value: 99 },
+            ], max: 10 });
+            c.ok(inked() > 0, 'bars draw');
+            c.ok(canvas.width >= 400, 'the canvas is scaled for the device', String(canvas.width));
+          } finally { canvas.remove(); }
+        },
+      },
+    ],
+  },
+  {
+    id: 'map',
+    title: 'The campaign map',
+    why: 'Pins are buttons so a screen reader can read them, hidden pins say '
+       + 'so, and the read-only face a player gets has no editor at all. The '
+       + 'server already stripped what a player must not see; this is the '
+       + 'half the client still owes.',
+    scenarios: [
+      {
+        id: 'map_pins_are_buttons_that_say_what_they_are',
+        title: 'Every pin renders as a labelled button, hidden ones marked',
+        async run(c, { map }) {
+          c.feature('map');
+          const host = document.createElement('div');
+          document.body.append(host);
+          const record = { id: 'm', name: 'Gym', image: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
+            pins: [
+              { id: 'p1', kind: 'location', label: 'Inn', x: 0.2, y: 0.3, revealed: true, note: 'warm' },
+              { id: 'p2', kind: 'quest', label: 'Ambush', x: 0.7, y: 0.6, revealed: false },
+              { id: 'p3', kind: 'party', label: 'Us', x: 0.5, y: 0.5, revealed: true },
+            ] };
+          try {
+            const view = map.mapView(host, { record, editable: true });
+            const pins = [...host.querySelectorAll('button.map-pin')];
+            c.eq(pins.length, 3, 'three pins, three buttons');
+            c.eq(pins.map((p) => p.dataset.kind), ['location', 'quest', 'party'], 'each with its kind');
+            c.ok(pins[0].getAttribute('aria-label').includes('Inn')
+              && pins[0].getAttribute('aria-label').includes('location'), 'labelled with name and kind');
+            c.ok(pins[1].getAttribute('aria-label').includes('hidden from players'),
+              'a hidden pin says so');
+            c.ok(pins[1].classList.contains('hidden-pin') && !pins[0].classList.contains('hidden-pin'),
+              'and is styled as hidden');
+            c.eq(pins[0].title, 'Inn — warm', 'the note rides the tooltip');
+            c.near(parseFloat(pins[0].style.left), 20, 0.01, 'positioned by its normalised x');
+            c.near(parseFloat(pins[0].style.top), 30, 0.01, 'and y');
+            c.ok(map.PIN_KINDS.includes('party') && map.PIN_KINDS.length === 5, 'five pin kinds');
+            view.destroy();
+            c.eq(host.querySelectorAll('.map-frame').length, 0, 'destroy removes the frame');
+          } finally { host.remove(); }
+        },
+      },
+      {
+        id: 'map_editor_only_on_the_editable_face',
+        title: 'Clicking a pin opens an editor for the DM and only a label for a player',
+        async run(c, { map }) {
+          c.feature('map');
+          const host = document.createElement('div');
+          document.body.append(host);
+          const record = { id: 'm', image: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
+            pins: [{ id: 'p1', kind: 'npc', label: 'Mayor', x: 0.1, y: 0.1, revealed: true }] };
+          const changes = [];
+          try {
+            map.mapView(host, { record, editable: true, onChange: (r) => changes.push(r) });
+            host.querySelector('button.map-pin').click();
+            const editor = host.querySelector('.map-editor');
+            c.ok(editor && !editor.hidden, 'the editor opens');
+            c.ok(editor.querySelector('input[aria-label="Pin label"]'), 'with a label field');
+            c.ok(editor.querySelector('select[aria-label="Pin kind"]'), 'a kind picker');
+            const reveal = [...editor.querySelectorAll('button')]
+              .find((b) => /^(Revealed|Hidden)$/.test(b.textContent.trim()));
+            c.eq(reveal?.textContent.trim(), 'Revealed', 'and the reveal toggle reads the pin');
+            reveal.click();
+            c.eq(record.pins[0].revealed, false, 'toggling hides the pin');
+            c.eq(changes.length, 1, 'and reports one change, not one per redraw');
+            c.ok(host.querySelector('button.map-pin').classList.contains('hidden-pin'),
+              'the pin redraws as hidden');
+            host.querySelector('button.map-pin').click();
+            c.ok(editor.hidden, 'clicking again closes the editor');
+            host.innerHTML = '';
+
+            map.mapView(host, { record, editable: false, onChange: (r) => changes.push(r) });
+            host.querySelector('button.map-pin').click();
+            const ro = host.querySelector('.map-editor');
+            c.ok(ro && !ro.hidden, 'a player sees the label');
+            c.eq(ro.querySelectorAll('input, select, button').length, 0,
+              'and nothing to edit with');
+            c.eq(changes.length, 1, 'and nothing was written');
+          } finally { host.remove(); }
+        },
+      },
+    ],
+  },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -5621,14 +6168,22 @@ export const BARS = {
   // And again (60 -> 61) with deeds earned only from the record.
   // And again (61 -> 62) with the DM's voice, measured rather than heard.
   // And again (62 -> 63) with saved voices that live only on the server.
-  minFeaturesCovered: 63,
+  // And again (63 -> 70) when the coverage audit brought the change feed's
+  // client, the store, effect shapes, founding, the charts and the map
+  // into the logic tier.
+  minFeaturesCovered: 70,
+  // The mutation check used to sit beside the gate: a green board with a
+  // mutation that escaped was still reported as a pass. A mutation that
+  // survives is a defect class the gym cannot see, so it is a bar now, and
+  // the headless runner grades it on every run.
+  mutationsCaught: 1.0,
   // Renamed from uiModesRendering when the UI tier stopped merely checking
   // that a mode rendered and started clicking through it. "Rendering" was a
   // much weaker claim and the name would have kept implying it.
   uiFlowsPassing: 1.0,
 };
 
-export function grade(suites, ui = null) {
+export function grade(suites, ui = null, mutations = null) {
   const scenarios = suites.flatMap((s) => s.scenarios);
   const checks = scenarios.reduce((n, s) => n + s.total, 0);
   const checksPassed = scenarios.reduce((n, s) => n + s.passed, 0);
@@ -5663,6 +6218,11 @@ export function grade(suites, ui = null) {
   if (uiRate !== null) {
     bars.push({ id: 'uiFlowsPassing', value: uiRate, bar: BARS.uiFlowsPassing,
       ok: uiRate >= BARS.uiFlowsPassing });
+  }
+  if (mutations) {
+    const caught = mutations.filter((m) => m.caught).length / Math.max(1, mutations.length);
+    bars.push({ id: 'mutationsCaught', value: caught, bar: BARS.mutationsCaught,
+      ok: caught >= BARS.mutationsCaught });
   }
 
   // UI assertions are counted and reported SEPARATELY rather than folded into
@@ -5735,6 +6295,9 @@ export function grade(suites, ui = null) {
       ...(ui || []).flatMap((s) => s.failures.map(
         (f) => `ui/${s.id}: ${f.label}${f.detail ? ` - ${f.detail}` : ''}`,
       )),
+      ...(mutations || []).filter((m) => !m.caught).map(
+        (m) => `mutation/${m.id}: ESCAPED - ${m.what}`,
+      ),
     ],
     bars,
     pass: bars.every((b) => b.ok),
@@ -6149,6 +6712,68 @@ export const MUTATIONS = [
           const c = ctx.dm.runner.state.combatants.find((v) => v.id === id);
           if (c) { c.x = Number(x); c.y = Number(y); }
         } } } }),
+  },
+  // The suites the coverage audit found no mutation reaching: deeds, roll
+  // cards, the dice feed, the QR, the change feed's client, the store, and
+  // effect shapes. Each of these is the plainest way the module could break
+  // while every screen kept looking right.
+  {
+    id: 'deeds_from_thin_air',
+    what: 'earnedDeeds() hands out a natural twenty nobody rolled',
+    patch: (ctx) => ({ deeds: { ...ctx.deeds,
+      earnedDeeds: (evs, o) => [...ctx.deeds.earnedDeeds(evs, o),
+        { id: 'natural_twenty', earnedAt: null }] } }),
+  },
+  {
+    id: 'rollcard_marks_every_face',
+    what: 'the card marks both advantage faces as used',
+    patch: (ctx) => ({ rollcard: { ...ctx.rollcard,
+      cardModel: (r) => {
+        const m = ctx.rollcard.cardModel(r);
+        return { ...m, faces: m.faces.map((f) => ({ ...f, used: true })) };
+      } } }),
+  },
+  {
+    id: 'dicefeed_leaks_the_payload',
+    what: 'safeRollPayload() passes every key through - the allowlist is gone',
+    // The wall between "Pip rolled a 19" and whatever a screen was trusted
+    // to keep quiet. Nothing errors; a secret note simply reaches every seat.
+    patch: (ctx) => ({ dicerail: { ...ctx.dicerail, safeRollPayload: (p) => ({ ...p }) } }),
+  },
+  {
+    id: 'qr_ignores_the_url',
+    what: 'qrSvg() draws the same code for every join URL',
+    patch: (ctx) => ({ qr: { ...ctx.qr,
+      qrSvg: () => ctx.qr.qrSvg('http://10.0.0.1:7801/?code=ANVIL-0000') } }),
+  },
+  {
+    id: 'feed_delivers_echoes',
+    what: 'the change feed re-renders a tab on its own writes',
+    // The cursor-jumps-mid-word bug, reintroduced: the tab id is scrubbed
+    // off every change before the echo filter can see it.
+    patch: (ctx) => ({ live: { ...ctx.live,
+      apply: (p) => ctx.live.apply({ ...p,
+        changes: (p?.changes || []).map((ch) => ({ ...ch, by: 'somebody-else' })) }) } }),
+  },
+  {
+    id: 'feed_ignores_a_rewind',
+    what: 'a revision that went backwards is quietly clamped instead of reported',
+    patch: (ctx) => ({ live: { ...ctx.live,
+      apply: (p) => ctx.live.apply({ ...p,
+        rev: Math.max(Number(p?.rev) || 0, ctx.live.status().rev) }) } }),
+  },
+  {
+    id: 'store_stops_escaping',
+    what: 'md() renders ingested text as markup',
+    patch: (ctx) => ({ store: { ...ctx.store,
+      md: (t) => `<p>${String(t ?? '')}</p>`, esc: (s) => String(s ?? '') } }),
+  },
+  {
+    id: 'formula_aliases_forgotten',
+    what: "resolveFormula() knows digits and nothing else - 'pb' is a pool of zero",
+    patch: (ctx) => ({ effects: { ...ctx.effects,
+      resolveFormula: (f) => (typeof f === 'number' ? f
+        : /^\d+$/.test(String(f || '').trim()) ? parseInt(f, 10) : 0) } }),
   },
 ];
 

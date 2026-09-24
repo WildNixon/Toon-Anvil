@@ -25,8 +25,43 @@ and are left as they are.
   self-test, and the server over raw HTTP - the requests a hand-crafted
   client makes and the app never would, which is where the fuzz tool found
   every finding it found.
+- **The gym runs without a person.** `python tools/gym.py` copies the tree
+  to a throwaway directory, serves it, drives the gym page in headless
+  Chromium, and exits red on a failed bar, an escaped mutation, or an app
+  that does not reload offline. `--logic --no-mutations` is the thirty-second
+  gate; `--open` starts the same isolated instance for a look by hand. A
+  GitHub Actions workflow runs the Python suite, the setup check and the gym
+  on every push.
+- **The gym refuses a server that is not disposable.** It closes tables and
+  writes records, and opened against the server a DM was using it ended their
+  game. The page now applies the rule `tools/fuzz.py` always has: the data
+  directory the server reports must look like a throwaway, or nothing runs.
+- **The offline shell is graded against the import graph.** A scenario walks
+  every import from `app.js` outward and fails on any module the service
+  worker's shell does not carry, so the next epic cannot forget one the way
+  the LAN epics did (soak PWA-1). The headless runner also loads the app,
+  cuts the network, reloads, and checks that every shell file is served from
+  cache.
+- **The mutation check is a bar.** A mutation that escapes fails the run
+  instead of sitting beside a green board. Eight mutations join the
+  thirty-seven: deeds from thin air, a roll card that marks both faces, a
+  dice feed that forgets its allowlist, a QR that ignores the URL, a change
+  feed that delivers echoes or clamps a rewind, a store that stops escaping,
+  a formula resolver that forgets its aliases.
+- **Six modules no suite imported are in the logic tier**: the change feed's
+  client, the state store, homebrew effect shapes, founding, the Deck's
+  charts, and the map. The coverage bar rises from 63 to 70 with them.
+- **The README's figures are checked.** `tests/test_readme.py` counts the
+  suites, journeys, mutations and invariants in the sources and fails when
+  the README disagrees; every figure it quoted had drifted by a factor of two
+  or more.
 
 ### Fixed
+- **Four modules the app imports were missing from the offline shell**,
+  found the first time the import-graph scenario ran: `core/perf.js`, a
+  static import of `app.js` since 2.3.0, and the three workshop modules the
+  Deck and the homebrew screens import. An install that had never loaded
+  them online would not have booted offline.
 - **A JSON body that is not an object is refused, not dropped** (soak API-1).
   A list, string or number where an object belonged used to raise inside the
   handler thread on eleven routes and the caller got a closed connection

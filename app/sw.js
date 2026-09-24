@@ -113,6 +113,15 @@ const SHELL = [
   './modes/lobby/lobby.js',
   './modes/settings/connectors-panel.js',
   './homebrew/parse-content.js',
+  // Found by the gym's import-graph walk the first time it ran: perf.js is
+  // a STATIC import of app.js, so an install that had never loaded it would
+  // not boot offline at all, and the three workshop modules are what the
+  // Deck and the homebrew screens import. The list is graded against the
+  // import graph now, so the next one cannot be forgotten.
+  './core/perf.js',
+  './homebrew/adapters.js',
+  './homebrew/emit-html.js',
+  './homebrew/sheet.js',
   './data/dm-tables.json',
   './data/srd-effects.json',
   './data/spell-mechanics.json',
