@@ -242,7 +242,10 @@ def safe_name(raw: str) -> bool:
     """Filenames may contain spaces and parentheses; they may not traverse."""
     if not raw or ".." in raw or "/" in raw or "\\" in raw:
         return False
-    return bool(NAME_RE.match(raw))
+    # fullmatch, not match: `$` in a pattern matches BEFORE a trailing
+    # newline, so "book.pdf\n" used to pass and name a file with a newline
+    # in it. Same for safe_id below.
+    return bool(NAME_RE.fullmatch(raw))
 
 
 def extract_pdf_text(path) -> tuple[str, str | None]:
@@ -305,7 +308,7 @@ def _clamp(raw, low: float, high: float, default: float) -> float:
 
 def safe_id(raw: str) -> str | None:
     """Reject anything that could escape the data directory."""
-    if not ID_RE.match(raw or ""):
+    if not isinstance(raw, str) or not ID_RE.fullmatch(raw):
         return None
     if ".." in raw or "/" in raw or "\\" in raw:
         return None
@@ -458,7 +461,17 @@ class Handler(SimpleHTTPRequestHandler):
         return False, ({"error": why, "needsJoin": who is None},
                        401 if who is None else 403)
 
-    def _read_json(self):
+    def _read_json(self, shape: str = "object"):
+        """The request body as JSON, or None when it is not the shape asked.
+
+        `shape` is "object" (a dict, which is what every route but one
+        takes) or "events" (a dict, or a list of dicts). Checked HERE, once,
+        because a body that parsed as a list where a dict was expected used
+        to reach `payload.get(...)` and raise inside the handler thread: the
+        caller got a dropped connection instead of a refusal, on eleven
+        routes (API-1). None is the one answer every caller already turns
+        into a 400.
+        """
         try:
             n = int(self.headers.get("Content-Length") or 0)
         except ValueError:
@@ -466,9 +479,15 @@ class Handler(SimpleHTTPRequestHandler):
         if n <= 0 or n > 32 * 1024 * 1024:
             return None
         try:
-            return json.loads(self.rfile.read(n).decode("utf-8"))
+            payload = json.loads(self.rfile.read(n).decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             return None
+        if isinstance(payload, dict):
+            return payload
+        if shape == "events" and isinstance(payload, list) \
+                and all(isinstance(e, dict) for e in payload):
+            return payload
+        return None
 
     def _read_bytes(self, cap: int = 64 * 1024 * 1024):
         """Raw request body. _read_json cannot carry a PDF: it utf-8-decodes,
@@ -913,6 +932,14 @@ class Handler(SimpleHTTPRequestHandler):
             if payload is None:
                 return self._send_json({"error": "bad json body"}, 400)
             sheet = payload.get("sheet") or payload
+            if not isinstance(sheet, dict):
+                return self._send_json({"error": "sheet must be an object"}, 400)
+            # The name becomes a filename and a title. Unbounded, a 20,000
+            # character name made the path too long for the filesystem and
+            # the route answered 500 (API-2). A character's name on a sheet
+            # is a line, not a page: bound it here, once, for both uses.
+            name = str(sheet.get("name") or "sheet").strip()[:120] or "sheet"
+            sheet = dict(sheet, name=name)
             try:
                 tools_on_path()
                 from make_pdf import build as build_pdf   # noqa: PLC0415
@@ -923,7 +950,7 @@ class Handler(SimpleHTTPRequestHandler):
             out_dir = DATA / "sheets"
             out_dir.mkdir(parents=True, exist_ok=True)
             stem = re.sub(r"[^A-Za-z0-9._-]", "-",
-                          f"{sheet.get('name', 'sheet')}-L{sheet.get('level', '')}")
+                          f"{name}-L{sheet.get('level', '')}").strip("-.") or "sheet"
             path = out_dir / f"{stem}.pdf"
             try:
                 with _write_lock:
@@ -1264,7 +1291,7 @@ class Handler(SimpleHTTPRequestHandler):
 
         if parsed.path != "/api/events":
             return self._send_json({"error": "unknown endpoint"}, 404)
-        payload = self._read_json()
+        payload = self._read_json(shape="events")
         if payload is None:
             return self._send_json({"error": "bad json body"}, 400)
         events = payload if isinstance(payload, list) else [payload]

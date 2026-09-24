@@ -15,6 +15,29 @@ and are left as they are.
 
 ## [Unreleased]
 
+### Added
+- **The Python side has tests of its own.** `python -m unittest discover -s
+  tests -t .` runs a stdlib suite against a sandboxed data directory: the
+  server's pure rules (the idle-stop ceiling, the change feed's gap
+  semantics, the id and name guards, the cost clamp), the whole permission
+  model in `tools/table.py` (who may write what, every redactor, the event
+  log's fail-closed rules), the shelf's book detector, the PDF splitter's
+  self-test, and the server over raw HTTP - the requests a hand-crafted
+  client makes and the app never would, which is where the fuzz tool found
+  every finding it found.
+
+### Fixed
+- **A JSON body that is not an object is refused, not dropped** (soak API-1).
+  A list, string or number where an object belonged used to raise inside the
+  handler thread on eleven routes and the caller got a closed connection
+  with no answer. The body reader now checks the shape once, and every route
+  answers 400.
+- **A long character name no longer turns the sheet export into a 500**
+  (soak API-2). The name is bounded before it becomes a filename or a title.
+- **An id with a trailing newline was accepted.** The guard's pattern ended
+  in `$`, which matches before a final newline, so `con\n` named a file with
+  a newline in it. Both guards use a full match now.
+
 ## [2.3.1] - 2026-08-22
 
 A stray-process fix. The server has always been meant to stop when you close
