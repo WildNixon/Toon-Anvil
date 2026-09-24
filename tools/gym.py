@@ -260,14 +260,20 @@ def check_offline(browser, base: str, console_log: Path) -> list[str]:
     context.set_offline(True)
     errors.clear()
     page.reload()
-    booted = page.wait_for_function(
-        "() => (document.querySelector('main')?.textContent || '').trim().length > 0",
-        timeout=30_000)
-    if not booted:
-        red.append("the app did not render offline")
-    nav = page.evaluate("() => document.querySelectorAll('#modes button').length")
-    if not nav:
-        red.append("no navigation rendered offline")
+    # Booted means the app's OWN chrome is on screen: the mode bar, or the
+    # welcome gate a fresh browser meets first. The static shell paints
+    # "Loading…" into <main> before app.js runs at all, so text in <main> is
+    # not evidence of anything.
+    booted = True
+    try:
+        page.wait_for_function(
+            "() => document.querySelectorAll('#modes button, .welcome').length > 0"
+            " && !(document.querySelector('main')?.textContent || '').includes('Loading')",
+            timeout=30_000)
+    except Exception:                                            # noqa: BLE001
+        booted = False
+        red.append("the app did not boot offline: no mode bar or welcome gate "
+                   "within 30 s (see the console log)")
 
     # Every module and data file in the shell must come back from cache.
     wanted = [u for u in shell_urls(base)
